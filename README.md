@@ -1,3 +1,6 @@
+# ExamAI1
+ExamAI smart hall ticket and exam system
+
 # 🎓 ExamShield AI – Full Stack with MySQL (No Mock Data)
 
 A complete, production-ready **Intelligent Hall Ticket Generation and Student Authentication System** with:
