@@ -75,7 +75,8 @@ def monitor_students(db: Session = Depends(get_db), current: models.User = Depen
     s = db.query(models.Student).filter(models.Student.department == dept, models.Student.is_deleted == False).all()
     return [{"id": x.id, "name": x.user.name, "roll_no": x.roll_no, "photo": x.photo,
              "attendance": x.attendance_percentage, "internal_marks": x.internal_marks,
-             "previous_result": x.previous_result, "backlogs": x.backlogs, "is_eligible": x.is_eligible} for x in s]
+             "previous_result": x.previous_result, "backlogs": x.backlogs, "is_eligible": x.is_eligible,
+             "department": x.department} for x in s]
 
 
 @router.post("/face-verify", response_model=schemas.FaceVerifyResponse)

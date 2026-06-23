@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
-import { fetchStudents, fetchTeachers, fetchExams, getStudentEligibility } from "../../data/apiData";
+import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility } from "../../data/apiData";
 import type { Student, Teacher, Exam } from "../../data/mockData";
 import { useNotifications } from "../../contexts/AppContext";
 import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database } from "lucide-react";
@@ -409,7 +409,7 @@ export function AdminExams() {
   const [list, setList] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  useEffect(() => { fetchExams().then((e) => { setList(e); setLoading(false); }); }, []);
+  useEffect(() => { fetchAdminExams().then((e) => { setList(e); setLoading(false); }); }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading exams from MySQL…</div>;
   return (
     <div>
@@ -670,7 +670,7 @@ export function AdminHallTickets() {
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchStudents(), fetchExams()]).then(([s, e]) => {
+    Promise.all([fetchStudents(), fetchAdminExams()]).then(([s, e]) => {
       setStudents(s); setExams(e); setLoading(false);
     });
   }, []);

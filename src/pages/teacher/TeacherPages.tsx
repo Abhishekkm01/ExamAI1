@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
-import { fetchStudents, getStudentEligibility } from "../../data/apiData";
+import { fetchTeacherStudents, getStudentEligibility } from "../../data/apiData";
 import type { Student, Exam } from "../../data/mockData";
 import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
@@ -12,7 +12,7 @@ const token = () => localStorage.getItem("examshield_token") || "";
 export function TeacherDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
+  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
 
   const csStudents = students.filter(s => s.department === "Computer Science");
@@ -107,7 +107,7 @@ export function TeacherAttendance() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchStudents().then((s) => {
+    fetchTeacherStudents().then((s) => {
       const cs = s.filter(x => x.department === "Computer Science");
       setStudents(cs);
       setRecords(Object.fromEntries(cs.map((x) => [x.id, true])));
@@ -196,7 +196,7 @@ export function TeacherMarks() {
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
+  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -258,7 +258,7 @@ export function TeacherStudents() {
   const [students, setStudents] = useState<Student[]>([]);
   const [filter, setFilter] = useState<"all" | "at-risk">("all");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
+  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
 
   const list = students.map((s) => ({ s, e: getStudentEligibility(s) }));

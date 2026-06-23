@@ -1,6 +1,6 @@
 import { Card, StatCard, PageHeader, Badge, Button } from "../../components/Layout";
 import { useEffect, useState } from "react";
-import { fetchStudents, fetchExams, fetchTeachers, getStudentEligibility } from "../../data/apiData";
+import { fetchStudents, fetchAdminExams, fetchTeachers, getStudentEligibility } from "../../data/apiData";
 import type { Student, Exam, Teacher } from "../../data/mockData";
 import { GraduationCap, TicketCheck, Users, Calendar, BrainCircuit, Database } from "lucide-react";
 import {
@@ -20,7 +20,7 @@ export default function AdminDashboard() {
 
   const loadData = () => {
     setLoading(true); setError(null);
-    Promise.all([fetchStudents(), fetchExams(), fetchTeachers()])
+    Promise.all([fetchStudents(), fetchAdminExams(), fetchTeachers()])
       .then(([s, e, t]) => { setStudents(s); setExams(e); setTeachers(t); setLoading(false); })
       .catch((err) => { setError(err?.message || "Failed to load data"); setLoading(false); });
   };

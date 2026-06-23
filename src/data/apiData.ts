@@ -42,6 +42,17 @@ export async function fetchStudents(): Promise<Student[]> {
   return (data.students || []).map(mapApiStudent);
 }
 
+export async function fetchTeacherStudents(): Promise<Student[]> {
+  const data = await api.teacherStudents();
+  return (data || []).map((s: any) => ({
+    id: `s${s.id}`, rollNo: s.roll_no, name: s.name, email: "",
+    mobile: "", department: s.department || "Computer Science", semester: 0, section: "", photo: s.photo,
+    attendance: s.attendance, internalMarks: s.internal_marks, assignmentMarks: 0,
+    previousResult: s.previous_result, backlogs: s.backlogs, feePaid: true,
+    feeAmount: 0, feeDueDate: "", createdAt: "2023-08-12",
+  }));
+}
+
 export async function fetchTeachers(): Promise<Teacher[]> {
   const data = await api.adminTeachers();
   return (data || []).map((t: any) => ({
@@ -52,6 +63,15 @@ export async function fetchTeachers(): Promise<Teacher[]> {
 
 export async function fetchExams(): Promise<Exam[]> {
   const data = await api.studentExams();
+  return (data || []).map((e: any) => ({
+    id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name,
+    department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time,
+    duration: e.duration, room: e.room, totalMarks: e.total_marks,
+  }));
+}
+
+export async function fetchAdminExams(): Promise<Exam[]> {
+  const data = await api.adminExams();
   return (data || []).map((e: any) => ({
     id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name,
     department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time,
