@@ -27,7 +27,11 @@ def dashboard(db: Session = Depends(get_db), current: models.User = Depends(auth
 def profile(db: Session = Depends(get_db), current: models.User = Depends(auth.get_current_student)):
     s = db.query(models.Student).filter(models.Student.user_id == current.id).first()
     return {"id": s.id, "name": current.name, "email": current.email, "roll_no": s.roll_no,
-            "mobile": s.mobile, "department": s.department, "semester": s.semester, "section": s.section, "photo": s.photo}
+            "mobile": s.mobile, "department": s.department, "semester": s.semester, "section": s.section, "photo": s.photo,
+            "attendance": s.attendance_percentage, "internal_marks": s.internal_marks, "assignment_marks": s.assignment_marks,
+            "previous_result": s.previous_result, "backlogs": s.backlogs, "fee_paid": s.fee_paid,
+            "fee_amount": s.fee_amount, "fee_due_date": s.fee_due_date, "is_eligible": s.is_eligible,
+            "eligibility_percentage": s.eligibility_percentage, "ai_risk_score": s.ai_risk_score}
 
 
 @router.put("/profile")

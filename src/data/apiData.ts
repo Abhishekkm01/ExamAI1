@@ -51,7 +51,7 @@ export async function fetchTeachers(): Promise<Teacher[]> {
 }
 
 export async function fetchExams(): Promise<Exam[]> {
-  const data = await api.adminExams();
+  const data = await api.studentExams();
   return (data || []).map((e: any) => ({
     id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name,
     department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time,

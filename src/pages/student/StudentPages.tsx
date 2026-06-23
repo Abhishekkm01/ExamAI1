@@ -14,15 +14,17 @@ const token = () => localStorage.getItem("examshield_token") || "";
 
 async function fetchMe(): Promise<Student | null> {
   try {
-    const res = await fetch(`${API}/api/student/profile`, 
-      { headers: { Authorization: `Bearer ${token()}` } }
-    
-    );
+    const res = await fetch(`${API}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
     if (!res.ok) return null;
     const p = await res.json();
-    // Find a matching student record by email
-    const all = await fetchStudents();
-    return all.find(s => s.email === p.email) || all[0] || null;
+    // Map the API response to Student type
+    return {
+      id: `s${p.id}`, rollNo: p.roll_no, name: p.name, email: p.email, mobile: p.mobile || "",
+      department: p.department, semester: p.semester, section: p.section, photo: p.photo,
+      attendance: p.attendance, internalMarks: p.internal_marks, assignmentMarks: p.assignment_marks,
+      previousResult: p.previous_result, backlogs: p.backlogs, feePaid: p.fee_paid,
+      feeAmount: p.fee_amount, feeDueDate: p.fee_due_date, createdAt: "2023-08-12",
+    };
   } catch { return null; }
 }
 
@@ -249,7 +251,7 @@ export function StudentEligibility() {
     { label: "Internal Marks ≥ 40%", passed: checks.internals, value: `${Math.round((student.internalMarks/40)*100)}%`, target: "40%" },
     { label: "No Backlogs", passed: checks.backlogs, value: `${student.backlogs} pending`, target: "0" },
     { label: "Fee Paid", passed: checks.fee, value: student.feePaid ? "Paid" : "Pending", target: "Paid" },
-    { label: "Previous SGPA ≥ 5", passed: checks.previous, value: student.previousResult.toString(), target: "5.0" },
+    { label: "Previous SGPA ≥ 5", passed: checks.previous, value: (student.previousResult ?? 0).toString(), target: "5.0" },
   ];
 
   return (
