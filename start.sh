@@ -53,8 +53,8 @@ else
   fi
 fi
 
-echo "[4/4] Starting FastAPI backend on http://localhost:8000 ..."
-( uvicorn main:app --host 0.0.0.0 --port 8000 > "$ROOT_DIR/backend.log" 2>&1 & echo $! > "$ROOT_DIR/backend.pid" )
+echo "[4/4] Starting Django backend on http://localhost:8000 ..."
+( python manage.py runserver 0.0.0.0:8000 > "$ROOT_DIR/backend.log" 2>&1 & echo $! > "$ROOT_DIR/backend.pid" )
 
 # --- Frontend ---
 cd "$ROOT_DIR"
@@ -65,7 +65,7 @@ fi
 echo ""
 echo "=========================================="
 echo "  Backend running on http://localhost:8000"
-echo "  API docs:        http://localhost:8000/docs"
+echo "  Admin panel:     http://localhost:8000/admin"
 echo "  Frontend:        http://localhost:5173"
 echo ""
 echo "  Default logins:"
@@ -74,6 +74,7 @@ echo "    teacher@examshield.ai / teacher123"
 echo "    student@examshield.ai / student123"
 echo ""
 echo "  Check backend.log for any startup errors."
+echo "  Open http://localhost:8000/admin to verify Django is running."
 echo "  Press CTRL+C to stop everything."
 echo "=========================================="
 

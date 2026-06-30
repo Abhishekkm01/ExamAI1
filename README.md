@@ -5,7 +5,7 @@ ExamAI smart hall ticket and exam system
 
 A complete, production-ready **Intelligent Hall Ticket Generation and Student Authentication System** with:
 - ⚛️ **React + Vite + Tailwind** frontend
-- 🐍 **Python FastAPI** backend
+- 🐍 **Python Django + Django REST Framework** backend
 - 🗄️ **MySQL** database (uses local SQLite only as a development fallback if MySQL isn't running)
 
 > Everything you see in the UI comes from your MySQL server. No hard-coded mock data is shipped in the React app.
@@ -68,7 +68,7 @@ This will:
 1. Create a Python venv (if not present)
 2. Install dependencies
 3. Test your MySQL connection (falls back to SQLite if MySQL is unreachable)
-4. Start the FastAPI backend on http://localhost:8000
+4. Start the Django backend on http://localhost:8000
 5. Start the React frontend on http://localhost:5173
 
 ---
@@ -135,7 +135,7 @@ All data is saved to MySQL and reflected immediately in the UI.
 | `POST /api/student/chatbot` | student | AI assistant |
 | `GET  /api/public/verify-hallticket/{ht_no}` | public | QR verification |
 
-Full interactive docs: http://localhost:8000/docs
+Django Admin Panel: http://localhost:8000/admin
 
 ---
 
@@ -148,6 +148,12 @@ DROP DATABASE examshield_db;
 Then re-run `backend/examshield_schema.sql`.
 
 **If the backend can't reach MySQL** — the app falls back to SQLite automatically, and the login page shows "Offline mode". Edit `backend/.env` to fix the MySQL credentials and restart the backend.
+
+**To switch between MySQL and SQLite** — edit `backend/.env`:
+- For MySQL: `DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/examshield_db`
+- For SQLite: `DATABASE_URL=sqlite:///./db.sqlite3`
+
+Then run `python manage.py migrate` to apply migrations.
 
 **If you forgot your admin password** — connect to MySQL and:
 ```sql
