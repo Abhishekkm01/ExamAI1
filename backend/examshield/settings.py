@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
 
 ALLOWED_HOSTS = ['*']
 
@@ -82,9 +82,10 @@ WSGI_APPLICATION = 'examshield.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://root:AbhiKm%401998@localhost:3306/examshield_db')
+# Check if SQLite is explicitly requested
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-if DATABASE_URL.startswith('sqlite'):
+if DATABASE_URL and DATABASE_URL.startswith('sqlite'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -92,29 +93,23 @@ if DATABASE_URL.startswith('sqlite'):
         }
     }
 else:
-    # Parse MySQL URL with proper URL decoding
-    from urllib.parse import urlparse, unquote
-    parsed = urlparse(DATABASE_URL)
-    
-    if parsed.scheme.startswith('mysql'):
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.mysql',
-                'NAME': parsed.path.lstrip('/'),
-                'USER': parsed.username,
-                'PASSWORD': unquote(parsed.password) if parsed.password else '',
-                'HOST': parsed.hostname,
-                'PORT': parsed.port or 3306,
-            }
+    # Use Django-style environment variables for MySQL
+    DB_NAME = os.getenv('DB_NAME', 'examshield_db')
+    DB_USER = os.getenv('DB_USER', 'root')
+    DB_PASSWORD = os.getenv('DB_PASSWORD', '')
+    DB_HOST = os.getenv('DB_HOST', 'localhost')
+    DB_PORT = os.getenv('DB_PORT', '3306')
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
         }
-    else:
-        # Fallback to SQLite
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
+    }
 
 
 # Password validation

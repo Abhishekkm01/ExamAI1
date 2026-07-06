@@ -42,9 +42,9 @@ if errorlevel 1 (
   exit /b 1
 ) else (
   echo       MySQL OK
-  if not exist "backend\.env" (
+  if not exist ".env" (
     copy .env.example .env >nul
-    echo       Created backend\.env from .env.example - please edit it with your MySQL password
+    echo       Created .env from .env.example - please edit it with your MySQL password
   )
 )
 
