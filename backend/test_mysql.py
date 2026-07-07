@@ -1,32 +1,37 @@
-"""Quick connectivity test for the MySQL database.
-Run this if you want to verify your MySQL server is reachable and the credentials are correct.
-Usage: python test_mysql.py
+"""
+Django-compatible MySQL connection test for ExamShield AI
+Tests database connectivity using Django settings
 """
 import os
 import sys
-from dotenv import load_dotenv
+import django
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:AbhiKm%401998@localhost:3306/examshield_db")
-print(f"Using DATABASE_URL: {DATABASE_URL}")
+# Setup Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'examshield.settings')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+django.setup()
 
-try:
-    from sqlalchemy import create_engine, text
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT VERSION() AS version"))
-        version = result.fetchone()[0]
-        print(f"[OK] Connected to MySQL. Server version: {version}")
+from django.db import connection
+from django.core.exceptions import ImproperlyConfigured
 
-        # Make sure database exists
-        db_name = DATABASE_URL.rsplit("/", 1)[-1].split("?")[0]
-        print(f"[OK] Database in use: {db_name}")
-    print("\n[OK] MySQL connection is good! You can now run start.bat / start.sh")
-except Exception as e:
-    print(f"\n[ERROR] Connection failed: {e}")
-    print("\nTroubleshooting tips:")
-    print("  1. Make sure MySQL server is running (net start mysql in admin cmd)")
-    print("  2. Open MySQL and run: CREATE DATABASE examshield;")
-    print("  3. Edit backend/.env and set the correct password in DATABASE_URL")
-    print("  4. Try: mysql -u root -p   then enter your password")
-    sys.exit(1)
+def test_mysql_connection():
+    """Test MySQL database connection"""
+    try:
+        # Try to connect to the database
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            if result and result[0] == 1:
+                print("MySQL connection successful")
+                return True
+    except ImproperlyConfigured as e:
+        print(f"Configuration error: {e}")
+        return False
+    except Exception as e:
+        print(f"MySQL connection failed: {e}")
+        return False
+    return False
+
+if __name__ == "__main__":
+    success = test_mysql_connection()
+    sys.exit(0 if success else 1)
