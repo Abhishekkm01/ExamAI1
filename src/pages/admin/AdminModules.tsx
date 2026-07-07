@@ -462,7 +462,18 @@ function ExamModal({ onClose, onAdded }: { onClose: () => void; onAdded: (e: Exa
     setSaving(true); setErr(null);
     try {
       const res = await apiAddExam(form);
-      onAdded({ id: `e${res.exam_id}`, ...form, totalMarks: form.total_marks } as any);
+      onAdded({
+        id: `e${res.exam_id}`,
+        subjectCode: form.subject_code,
+        subjectName: form.subject_name,
+        department: form.department,
+        semester: form.semester,
+        date: form.exam_date,
+        time: form.exam_time,
+        duration: form.duration,
+        room: form.room,
+        totalMarks: form.total_marks,
+      });
     } catch (e: any) { setErr(e.message); }
     setSaving(false);
   };
