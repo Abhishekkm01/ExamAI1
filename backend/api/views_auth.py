@@ -80,7 +80,11 @@ def bootstrap_admin(request):
 @permission_classes([AllowAny])  # Will be protected by middleware
 def setup_teacher(request):
     """Admin-only: create a new teacher account."""
+    print(f"[DEBUG] setup_teacher called, data: {request.data}")
     serializer = SetupTeacherSerializer(data=request.data)
+    if not serializer.is_valid():
+        print(f"[DEBUG] Teacher creation validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     if serializer.is_valid():
         # Check if user is admin (this will be handled by authentication middleware)
         current_user = getattr(request, '_jwt_user', request.user)

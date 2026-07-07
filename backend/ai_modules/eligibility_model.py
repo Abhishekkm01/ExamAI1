@@ -13,14 +13,9 @@ class EligibilityModel:
         self.load_or_train_model()
 
     def load_or_train_model(self):
-        if os.path.exists(MODEL_PATH):
-            try:
-                with open(MODEL_PATH, "rb") as f:
-                    self.model = pickle.load(f)
-                return
-            except Exception:
-                pass
+        # Always retrain to avoid feature name mismatch issues
         self.train_initial_model()
+        return
 
     def train_initial_model(self):
         np.random.seed(42)
@@ -40,18 +35,18 @@ class EligibilityModel:
         except Exception:
             pass
 
-    def predict_eligibility(self, attendance: float, internal_marks: float, previous_sgpa: float, backlogs: int):
+    def predict_eligibility(self, attendance_percentage: float, internal_marks: float, previous_result: float, backlogs: int):
         if not self.model:
             self.train_initial_model()
-        X_input = pd.DataFrame({"attendance": [attendance], "internals": [internal_marks], "previous_sgpa": [previous_sgpa], "backlogs": [backlogs]})
+        X_input = pd.DataFrame({"attendance": [attendance_percentage], "internals": [internal_marks], "previous_sgpa": [previous_result], "backlogs": [backlogs]})
         prob = self.model.predict_proba(X_input)[0]
         success_probability = float(prob[1])
         risk_score = float(prob[0] * 100.0)
         if backlogs > 0:
             risk_score = min(100.0, risk_score + (backlogs * 15.0))
-        if attendance < 75.0:
-            risk_score = min(100.0, risk_score + ((75.0 - attendance) * 2.0))
-        is_eligible = success_probability >= 0.5 and attendance >= 75.0 and backlogs == 0
+        if attendance_percentage < 75.0:
+            risk_score = min(100.0, risk_score + ((75.0 - attendance_percentage) * 2.0))
+        is_eligible = success_probability >= 0.5 and attendance_percentage >= 75.0 and backlogs == 0
         return {"is_eligible": bool(is_eligible), "probability": round(success_probability, 4), "risk_score": round(risk_score, 1)}
 
 

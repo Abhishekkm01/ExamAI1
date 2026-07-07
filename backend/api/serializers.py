@@ -164,7 +164,7 @@ class StudentCreateSerializer(serializers.Serializer):
     department = serializers.CharField()
     semester = serializers.IntegerField()
     section = serializers.CharField(required=False)
-    photo = serializers.URLField(required=False)
+    photo = serializers.URLField(required=False, allow_blank=True)
     attendance_percentage = serializers.FloatField(default=0)
     internal_marks = serializers.FloatField(default=0)
     assignment_marks = serializers.FloatField(default=0)
