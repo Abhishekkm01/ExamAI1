@@ -76,16 +76,23 @@ def bootstrap_admin(request):
 @permission_classes([AllowAny])  # Will be protected by middleware
 def setup_teacher(request):
     """Admin-only: create a new teacher account."""
+    print(f"[DEBUG] setup_teacher called, data: {request.data}")
     serializer = SetupTeacherSerializer(data=request.data)
+    if not serializer.is_valid():
+        print(f"[DEBUG] Teacher creation validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     if serializer.is_valid():
         # Check if user is admin (this will be handled by authentication middleware)
         user = getattr(request, '_jwt_user', request.user)
+        print(f"[DEBUG] user: {user}, type: {type(user)}")
+        if hasattr(user, 'role'):
+            print(f"[DEBUG] user.role: {user.role}")
         if not user or not hasattr(user, 'role') or user.role != RoleEnum.ADMIN:
             return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
         
         with transaction.atomic():
             user = User.objects.create(
-                username=None,  # Set username to None since we use email as USERNAME_FIELD
+                username=serializer.validated_data['email'],  # Use email as username for compatibility
                 email=serializer.validated_data['email'],
                 hashed_password=get_password_hash(serializer.validated_data.get('password', 'teacher123')),
                 name=serializer.validated_data['name'],
@@ -145,7 +152,7 @@ def setup_student(request):
         
         with transaction.atomic():
             user = User.objects.create(
-                username=None,  # Set username to None since we use email as USERNAME_FIELD
+                username=data['email'],  # Use email as username for compatibility
                 email=data['email'],
                 hashed_password=get_password_hash(data.get('password', 'student123')),
                 name=data['name'],

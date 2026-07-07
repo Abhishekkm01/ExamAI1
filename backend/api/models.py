@@ -24,8 +24,8 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
-    
-    # Make username nullable and not unique since we use email as USERNAME_FIELD
+
+    # Override username to be non-unique since we use email as USERNAME_FIELD
     username = models.CharField(max_length=150, blank=True, null=True, unique=False)
     
     # Add a property to access hashed_password for compatibility with existing code

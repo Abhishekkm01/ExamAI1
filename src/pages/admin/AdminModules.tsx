@@ -12,7 +12,7 @@ const API = "http://localhost:8000";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 async function apiAddStudent(form: any) {
-  const res = await fetch(`${API}/api/auth/setup-student`, {
+  const res = await fetch(`${API}/api/admin/students/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
     body: JSON.stringify(form),

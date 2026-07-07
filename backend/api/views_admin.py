@@ -160,54 +160,62 @@ def get_student(request, sid):
 
 @api_view(['POST'])
 @authentication_classes([])
-@rf_permission_classes([IsAdmin])
+@permission_classes([AllowAny])  # Will be protected by middleware
 def create_student(request):
     """Create a new student"""
+    print(f"[DEBUG] create_student called, data: {request.data}")
+    admin_user = getattr(request, '_jwt_user', request.user)
+    print(f"[DEBUG] admin_user: {admin_user}, type: {type(admin_user)}")
+    if hasattr(admin_user, 'role'):
+        print(f"[DEBUG] admin_user.role: {admin_user.role}")
+    if not admin_user or not hasattr(admin_user, 'role') or admin_user.role != 'admin':
+        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
     serializer = StudentCreateSerializer(data=request.data)
-    if serializer.is_valid():
-        data = serializer.validated_data
-        
-        with transaction.atomic():
-            user = User.objects.create(
-                email=data['email'],
-                hashed_password=get_password_hash(data['password']),
-                name=data['name'],
-                role=RoleEnum.STUDENT,
-                avatar=data.get('photo') or f"https://api.dicebear.com/7.x/avataaars/svg?seed={data['roll_no']}",
-            )
-            
-            ai = eligibility_ai.predict_eligibility(
-                data['attendance_percentage'],
-                data['internal_marks'],
-                data['previous_result'],
-                data['backlogs'],
-            )
-            
-            student = Student.objects.create(
-                user=user,
-                roll_no=data['roll_no'],
-                mobile=data.get('mobile'),
-                department=data['department'],
-                semester=data['semester'],
-                section=data.get('section', 'A'),
-                photo=user.avatar,
-                attendance_percentage=data['attendance_percentage'],
-                internal_marks=data['internal_marks'],
-                assignment_marks=data['assignment_marks'],
-                previous_result=data['previous_result'],
-                backlogs=data['backlogs'],
-                fee_paid=data['fee_paid'],
-                fee_amount=data['fee_amount'],
-                fee_due_date=data.get('fee_due_date'),
-                is_eligible=ai['is_eligible'],
-                eligibility_percentage=ai['probability'] * 100.0,
-                ai_risk_score=ai['risk_score'],
-            )
-        
-        return Response({'message': 'Student created', 'student_id': student.id}, 
+    if not serializer.is_valid():
+        print(f"[DEBUG] Student creation validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    data = serializer.validated_data
+
+    with transaction.atomic():
+        new_user = User.objects.create(
+            username=data['email'],  # Use email as username for compatibility
+            email=data['email'],
+            hashed_password=get_password_hash(data['password']),
+            name=data['name'],
+            role=RoleEnum.STUDENT,
+            avatar=data.get('photo') or f"https://api.dicebear.com/7.x/avataaars/svg?seed={data['roll_no']}",
+        )
+
+        ai = eligibility_ai.predict_eligibility(
+            data['attendance_percentage'],
+            data['internal_marks'],
+            data['previous_result'],
+            data['backlogs'],
+        )
+
+        student = Student.objects.create(
+            user=new_user,
+            roll_no=data['roll_no'],
+            mobile=data.get('mobile'),
+            department=data['department'],
+            semester=data['semester'],
+            section=data.get('section', 'A'),
+            photo=new_user.avatar,
+            attendance_percentage=data['attendance_percentage'],
+            internal_marks=data['internal_marks'],
+            assignment_marks=data['assignment_marks'],
+            previous_result=data['previous_result'],
+            backlogs=data['backlogs'],
+            fee_paid=data['fee_paid'],
+            fee_amount=data['fee_amount'],
+            fee_due_date=data.get('fee_due_date'),
+            is_eligible=ai['is_eligible'],
+            eligibility_percentage=ai['probability'] * 100.0,
+            ai_risk_score=ai['risk_score'],
+        )
+
+        return Response({'message': 'Student created', 'student_id': student.id},
                        status=status.HTTP_201_CREATED)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['PUT'])
