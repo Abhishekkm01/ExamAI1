@@ -192,7 +192,7 @@ export function AdminStudents() {
         <StudentModal
           student={editing.id ? editing : null}
           onClose={() => setEditing(null)}
-          onSave={async (s) => {
+          onSave={async (s, opts) => {
             if (s.id) {
               // Edit — call PUT
               try {
@@ -213,7 +213,7 @@ export function AdminStudents() {
               // Create — call setup-student API
               try {
                 const result = await apiAddStudent({
-                  email: s.email, name: s.name, password: "student123",
+                  email: s.email, name: s.name, password: opts?.password || "student123",
                   roll_no: s.rollNo, mobile: s.mobile, department: s.department,
                   semester: s.semester, section: s.section, photo: s.photo,
                   attendance_percentage: s.attendance, internal_marks: s.internalMarks,
@@ -236,12 +236,13 @@ export function AdminStudents() {
   );
 }
 
-function StudentModal({ student, onClose, onSave }: { student: Student | null; onClose: () => void; onSave: (s: Student) => void }) {
+function StudentModal({ student, onClose, onSave }: { student: Student | null; onClose: () => void; onSave: (s: Student, opts?: { password?: string }) => void }) {
   const [form, setForm] = useState<Student>(student || {
     id: "", rollNo: "", name: "", email: "", mobile: "", department: "Computer Science",
     semester: 5, section: "A", photo: "", attendance: 75, internalMarks: 30, assignmentMarks: 7,
     previousResult: 7.0, backlogs: 0, feePaid: false, feeAmount: 45000, feeDueDate: "2026-09-30", createdAt: new Date().toISOString().slice(0, 10),
   });
+  const [password, setPassword] = useState("");
   const update = (k: keyof Student, v: any) => setForm({ ...form, [k]: v } as Student);
 
   return (
@@ -255,6 +256,9 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
           <Field label="Roll No"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
           <Field label="Name"><TextInput value={form.name} onChange={(e) => update("name", e.target.value)} /></Field>
           <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => update("email", e.target.value)} /></Field>
+          {!student?.id && (
+            <Field label="Password"><TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Student login password (min 6 chars)" /></Field>
+          )}
           <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
           <Field label="Department">
             <Select value={form.department} onChange={(e) => update("department", e.target.value)}>
@@ -278,7 +282,13 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
         </div>
         <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(form)}><Save className="w-4 h-4" /> Save Student</Button>
+          <Button onClick={() => {
+            if (!student?.id && password && password.length < 6) {
+              alert("Password must be at least 6 characters");
+              return;
+            }
+            onSave(form, student?.id ? undefined : { password: password || undefined });
+          }}><Save className="w-4 h-4" /> Save Student</Button>
         </div>
       </div>
     </div>

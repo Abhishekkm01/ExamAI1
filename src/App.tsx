@@ -8,6 +8,7 @@ import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, Tea
 import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
 import { FirstTimeSetup } from "./pages/Setup";
+import StudentRegister from "./pages/StudentRegister";
 import type { Role } from "./data/mockData";
 
 function ProtectedRoute({ role, children }: { role: Role; children: React.ReactNode }) {
@@ -41,6 +42,7 @@ function Router() {
       {/* /setup is the first-time admin creation page. Accessible even when logged in (lets a fresh setup happen if needed) */}
       <Route path="/setup" element={<FirstTimeSetup />} />
       <Route path="/first-time" element={<Navigate to="/setup" replace />} />
+      <Route path="/register" element={<PublicRoute><StudentRegister /></PublicRoute>} />
 
       {/* Login page - redirects to dashboard if already logged in */}
       <Route path="/login" element={<PublicRoute><LoginOrRedirect /></PublicRoute>} />

@@ -4,7 +4,8 @@ import { fetchStudents, fetchExams, getStudentEligibility } from "../../data/api
 import type { Student, Exam } from "../../data/mockData";
 import { useAuth, useNotifications } from "../../contexts/AppContext";
 import { useNavigate } from "react-router-dom";
-import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit } from "lucide-react";
+import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit, Lock } from "lucide-react";
+import { PhotoUpload, validatePhotoFile } from "../../components/PhotoUpload";
 import { QRCodeSVG } from "qrcode.react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LineChart, Line } from "recharts";
 import { cn } from "../../utils/cn";
@@ -159,52 +160,176 @@ export function StudentProfile() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Student | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
   useEffect(() => { fetchMe().then((s) => { setStudent(s); setForm(s); setLoading(false); }); }, []);
+
+  const onPhotoSelect = async (file: File) => {
+    const err = validatePhotoFile(file);
+    if (err) { setSaveError(err); return; }
+    setPhotoUploading(true);
+    setSaveError(null);
+    try {
+      const body = new FormData();
+      body.append("photo", file);
+      const res = await fetch(`${API}/api/student/profile/photo`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}` },
+        body,
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || "Failed to upload photo");
+      }
+      const data = await res.json();
+      setStudent((s) => s ? { ...s, photo: data.photo } : s);
+      setForm((f) => f ? { ...f, photo: data.photo } : f);
+      setSaveSuccess("Profile photo updated");
+    } catch (e: any) {
+      setSaveError(e.message || "Photo upload failed");
+    }
+    setPhotoUploading(false);
+  };
+
+  const saveProfile = async () => {
+    if (!form) return;
+    setSaveError(null);
+    setSaveSuccess(null);
+    const res = await fetch(`${API}/api/student/profile/update`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({ name: form.name, mobile: form.mobile, section: form.section }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setSaveError(j.detail || "Failed to save profile");
+      return;
+    }
+    setStudent(form);
+    setEditing(false);
+    setSaveSuccess("Profile saved");
+  };
+
+  const changePassword = async () => {
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    if (passwordForm.next.length < 6) {
+      setPasswordError("New password must be at least 6 characters");
+      return;
+    }
+    if (passwordForm.next !== passwordForm.confirm) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      const res = await fetch(`${API}/api/student/profile/update`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          current_password: passwordForm.current,
+          new_password: passwordForm.next,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || "Failed to change password");
+      }
+      setPasswordForm({ current: "", next: "", confirm: "" });
+      setPasswordSuccess("Password updated successfully");
+    } catch (e: any) {
+      setPasswordError(e.message || "Failed to change password");
+    }
+    setPasswordSaving(false);
+  };
+
   if (loading || !student || !form) return <div className="p-10 text-center text-slate-500">Loading…</div>;
 
   return (
     <div>
       <PageHeader title="My Profile" subtitle="View and update your personal information (live from MySQL)" />
+      {(saveError || saveSuccess) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", saveError ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {saveError || saveSuccess}
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="p-6 lg:col-span-1">
           <div className="text-center">
-            <img src={student.photo} alt="" className="w-32 h-32 rounded-full bg-slate-200 mx-auto border-4 border-indigo-100 dark:border-indigo-900" />
+            <PhotoUpload
+              photoUrl={student.photo}
+              onFileSelect={onPhotoSelect}
+              uploading={photoUploading}
+              className="mx-auto"
+            />
+            <p className="text-xs text-slate-500 mt-2">Click camera to change photo</p>
             <h3 className="text-xl font-bold mt-4">{student.name}</h3>
             <p className="text-sm text-slate-500">{student.rollNo}</p>
             <Badge variant="indigo">{student.department}</Badge>
             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2 text-sm">
               <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-slate-400" /> {student.email}</p>
-              <p className="flex items-center gap-2"><UserIcon className="w-4 h-4 text-slate-400" /> {student.mobile}</p>
+              <p className="flex items-center gap-2"><UserIcon className="w-4 h-4 text-slate-400" /> {student.mobile || "—"}</p>
               <p className="flex items-center gap-2"><GraduationCap className="w-4 h-4 text-slate-400" /> Semester {student.semester} • Section {student.section}</p>
             </div>
           </div>
         </Card>
-        <Card className="p-6 lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold">Personal Information</h3>
-            <Button variant="secondary" onClick={() => setEditing(!editing)}>{editing ? "Cancel" : "Edit"}</Button>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <PField label="Full Name" value={form.name} editing={editing} onChange={(v) => setForm({ ...form, name: v })} />
-            <PField label="Email" value={form.email} disabled />
-            <PField label="Mobile" value={form.mobile} editing={editing} onChange={(v) => setForm({ ...form, mobile: v })} />
-            <PField label="Department" value={form.department} disabled />
-            <PField label="Semester" value={String(form.semester)} disabled />
-            <PField label="Section" value={form.section} editing={editing} onChange={(v) => setForm({ ...form, section: v })} />
-          </div>
-          {editing && (
-            <div className="mt-4 flex gap-2">
-              <Button variant="primary" onClick={async () => {
-                await fetch(`${API}/api/student/profile`, {
-                  method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-                  body: JSON.stringify({ name: form.name, mobile: form.mobile, section: form.section }),
-                });
-                setStudent(form); setEditing(false);
-              }}>Save Changes</Button>
-              <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold">Personal Information</h3>
+              <Button variant="secondary" onClick={() => { setEditing(!editing); setForm(student); setSaveError(null); }}>
+                {editing ? "Cancel" : "Edit"}
+              </Button>
             </div>
-          )}
-        </Card>
+            <div className="grid grid-cols-2 gap-4">
+              <PField label="Full Name" value={form.name} editing={editing} onChange={(v) => setForm({ ...form, name: v })} />
+              <PField label="Email" value={form.email} disabled />
+              <PField label="Mobile" value={form.mobile} editing={editing} onChange={(v) => setForm({ ...form, mobile: v })} />
+              <PField label="Department" value={form.department} disabled />
+              <PField label="Semester" value={String(form.semester)} disabled />
+              <PField label="Section" value={form.section} editing={editing} onChange={(v) => setForm({ ...form, section: v })} />
+            </div>
+            {editing && (
+              <div className="mt-4 flex gap-2">
+                <Button variant="primary" onClick={saveProfile}>Save Changes</Button>
+                <Button variant="secondary" onClick={() => { setEditing(false); setForm(student); }}>Cancel</Button>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Lock className="w-4 h-4 text-indigo-600" />
+              <h3 className="font-bold">Change Password</h3>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">Update your login password anytime.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Current password</label>
+                <TextInput type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} placeholder="••••••••" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">New password</label>
+                <TextInput type="password" value={passwordForm.next} onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })} placeholder="At least 6 characters" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Confirm new password</label>
+                <TextInput type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} placeholder="Re-enter new password" />
+              </div>
+            </div>
+            {passwordError && <p className="mt-3 text-sm text-rose-600">{passwordError}</p>}
+            {passwordSuccess && <p className="mt-3 text-sm text-emerald-600">{passwordSuccess}</p>}
+            <Button variant="primary" className="mt-4" onClick={changePassword} disabled={passwordSaving || !passwordForm.current || !passwordForm.next}>
+              {passwordSaving ? "Updating…" : "Update Password"}
+            </Button>
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -103,6 +103,31 @@ class SetupTeacherSerializer(serializers.Serializer):
     assigned_subjects = serializers.CharField(required=False, allow_blank=True)
 
 
+class RegisterStudentSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(min_length=6)
+    name = serializers.CharField()
+    roll_no = serializers.CharField()
+    department = serializers.CharField()
+    semester = serializers.IntegerField(min_value=1, max_value=8)
+    section = serializers.CharField(required=False, allow_blank=True, default="A")
+    mobile = serializers.CharField(required=False, allow_blank=True)
+
+
+class StudentProfileUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    section = serializers.CharField(required=False, allow_blank=True)
+    current_password = serializers.CharField(required=False)
+    new_password = serializers.CharField(required=False, min_length=6)
+
+    def validate(self, data):
+        new_pw = data.get('new_password')
+        if new_pw and not data.get('current_password'):
+            raise serializers.ValidationError({'current_password': 'Current password is required to set a new password.'})
+        return data
+
+
 class SetupStudentSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(required=False)

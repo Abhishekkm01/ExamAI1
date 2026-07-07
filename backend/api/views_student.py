@@ -4,8 +4,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from .models import User, Student, Exam, Notification, ChatbotLog
-from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer
+from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, StudentProfileUpdateSerializer
 from .permissions import IsStudent
+from .auth_utils import verify_password, get_password_hash
+from .photo_utils import save_profile_photo
 import sys
 import os
 import io
@@ -106,26 +108,74 @@ def profile(request):
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def update_profile(request):
-    """Update student profile"""
+    """Update student profile fields and optionally change password."""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'student':
         return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
     try:
         s = Student.objects.get(user_id=user.id)
     except Student.DoesNotExist:
         return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    if 'mobile' in request.data:
-        s.mobile = request.data['mobile']
-    if 'section' in request.data:
-        s.section = request.data['section']
-    if 'name' in request.data:
-        user.name = request.data['name']
-        user.save()
+
+    serializer = StudentProfileUpdateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+
+    if 'new_password' in data:
+        if not verify_password(data['current_password'], user.hashed_password):
+            return Response({'detail': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+        user.hashed_password = get_password_hash(data['new_password'])
+
+    if 'name' in data:
+        user.name = data['name']
+    if 'mobile' in data:
+        s.mobile = data['mobile']
+    if 'section' in data:
+        s.section = data['section']
+
+    user.save()
     s.save()
-    
-    return Response({'message': 'Profile updated'})
+
+    return Response({
+        'message': 'Profile updated',
+        'photo': s.photo,
+        'name': user.name,
+        'mobile': s.mobile,
+        'section': s.section,
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])  # Will be protected by middleware
+def upload_profile_photo(request):
+    """Upload or replace the student's profile photo."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if 'photo' not in request.FILES:
+        return Response({'detail': 'No photo file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        photo_url = save_profile_photo(request.FILES['photo'], 'student')
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    s.photo = photo_url
+    user.avatar = photo_url
+    s.save()
+    user.save()
+
+    return Response({'message': 'Photo updated', 'photo': photo_url})
 
 
 @api_view(['GET'])

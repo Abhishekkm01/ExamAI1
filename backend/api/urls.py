@@ -5,6 +5,7 @@ urlpatterns = [
     # Auth endpoints
     path('auth/login', views_auth.login, name='login'),
     path('auth/bootstrap-admin', views_auth.bootstrap_admin, name='bootstrap_admin'),
+    path('auth/register-student', views_auth.register_student, name='register_student'),
     path('auth/setup-teacher', views_auth.setup_teacher, name='setup_teacher'),
     path('auth/setup-student', views_auth.setup_student, name='setup_student'),
     path('auth/setup-exam', views_auth.setup_exam, name='setup_exam'),
@@ -44,6 +45,7 @@ urlpatterns = [
     path('student/dashboard', views_student.dashboard, name='student_dashboard'),
     path('student/profile', views_student.profile, name='student_profile'),
     path('student/profile/update', views_student.update_profile, name='student_update_profile'),
+    path('student/profile/photo', views_student.upload_profile_photo, name='student_upload_photo'),
     path('student/eligibility', views_student.eligibility, name='student_eligibility'),
     path('student/hallticket', views_student.get_hallticket, name='student_hallticket'),
     path('student/hallticket/download', views_student.download_hallticket, name='student_download_hallticket'),

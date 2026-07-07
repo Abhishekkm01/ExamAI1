@@ -191,9 +191,12 @@ export default function LoginPage() {
             </div>
             <BackendStatus />
 
-            <div className="mt-4 text-center">
-              <Link to="/setup" className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+            <div className="mt-4 text-center space-y-2">
+              <Link to="/setup" className="block text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
                 First time? Set up your admin account →
+              </Link>
+              <Link to="/register" className="block text-xs text-emerald-600 dark:text-emerald-400 hover:underline">
+                New student? Register here →
               </Link>
             </div>
           </div>
