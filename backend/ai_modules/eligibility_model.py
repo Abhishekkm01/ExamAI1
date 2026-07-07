@@ -47,11 +47,9 @@ class EligibilityModel:
         prob = self.model.predict_proba(X_input)[0]
         success_probability = float(prob[1])
         risk_score = float(prob[0] * 100.0)
-        if backlogs > 0:
-            risk_score = min(100.0, risk_score + (backlogs * 15.0))
         if attendance < 75.0:
             risk_score = min(100.0, risk_score + ((75.0 - attendance) * 2.0))
-        is_eligible = success_probability >= 0.5 and attendance >= 75.0 and backlogs == 0
+        is_eligible = success_probability >= 0.5 and attendance >= 75.0
         return {"is_eligible": bool(is_eligible), "probability": round(success_probability, 4), "risk_score": round(risk_score, 1)}
 
 

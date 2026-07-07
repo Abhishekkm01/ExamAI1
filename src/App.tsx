@@ -7,7 +7,7 @@ import { AdminStudents, AdminTeachers, AdminExams, AdminMarks, AdminEligibility,
 import { AdminProfileSettings } from "./pages/admin/AdminProfile";
 import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, TeacherFaceVerify } from "./pages/teacher/TeacherPages";
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
-import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot } from "./pages/student/StudentPages";
+import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot, StudentPayments } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
 import { FirstTimeSetup } from "./pages/Setup";
 import StudentRegister from "./pages/StudentRegister";
@@ -84,6 +84,7 @@ function Router() {
       {/* Student routes */}
       <Route element={<ProtectedRoute role="student"><Layout /></ProtectedRoute>}>
         <Route path="/student" element={<StudentDashboard />} />
+        <Route path="/student/payments" element={<StudentPayments />} />
         <Route path="/student/profile" element={<StudentProfile />} />
         <Route path="/student/eligibility" element={<StudentEligibility />} />
         <Route path="/student/hallticket" element={<StudentHallTicket />} />

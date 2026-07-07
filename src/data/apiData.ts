@@ -8,7 +8,6 @@ export function getStudentEligibilityLocal(s: Student) {
   const checks = {
     attendance: s.attendance >= 75,
     internals:  (s.internalMarks / 40) * 100 >= 40,
-    backlogs:   s.backlogs === 0,
     fee:        s.feePaid,
     previous:   s.previousResult >= 5.0,
   };
@@ -20,7 +19,7 @@ export function getStudentEligibilityLocal(s: Student) {
     s.attendance * 0.35 +
     ((s.internalMarks / 40) * 100) * 0.25 +
     (s.previousResult / 10) * 100 * 0.2 +
-    (s.backlogs === 0 ? 100 : Math.max(0, 100 - s.backlogs * 30)) * 0.2
+    100 * 0.2
   ));
   return { checks, passed, total, eligible, eligibilityPct, score };
 }

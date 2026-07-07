@@ -4,7 +4,7 @@ import { fetchStudents, fetchExams, getStudentEligibility } from "../../data/api
 import type { Student, Exam } from "../../data/mockData";
 import { useAuth, useNotifications } from "../../contexts/AppContext";
 import { useNavigate } from "react-router-dom";
-import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit, Lock } from "lucide-react";
+import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit, Lock, Wallet } from "lucide-react";
 import { PhotoUpload, validatePhotoFile } from "../../components/PhotoUpload";
 import { QRCodeSVG } from "qrcode.react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -94,6 +94,45 @@ export function StudentDashboard() {
         <StatCard label="Hall Ticket" value={e.eligible ? "Ready" : "Pending"} icon={TicketCheck} color={e.eligible ? "emerald" : "amber"} />
         <StatCard label="Next Exam" value={upcoming[0]?.date.split("-")[2] || "—"} icon={Calendar} color="violet" delta={upcoming[0]?.subjectName.slice(0, 15)} />
       </div>
+
+      {/* Fee Payment Card */}
+      <Card className={cn("p-6 mb-6", student.feePaid ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800" : "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800")}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <Wallet className={cn("w-5 h-5", student.feePaid ? "text-emerald-600" : "text-amber-600")} />
+              Fee Payment Status
+            </h3>
+            <div className="mt-3 space-y-2">
+              <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
+                {student.feePaid ? "✓ Fee Paid" : "⚠ Fee Pending"}
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Amount: <span className="font-semibold">₹{student.feeAmount.toLocaleString()}</span>
+              </p>
+              {student.feeDueDate && (
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Due Date: <span className="font-semibold">{student.feeDueDate}</span>
+                </p>
+              )}
+            </div>
+          </div>
+          {!student.feePaid && (
+            <Button 
+              variant="primary" 
+              className="whitespace-nowrap"
+              onClick={() => alert("Payment gateway would be integrated here. Amount: ₹" + student.feeAmount)}
+            >
+              <Wallet className="w-4 h-4" /> Pay Now
+            </Button>
+          )}
+          {student.feePaid && (
+            <div className="text-emerald-600 dark:text-emerald-400 text-right">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+          )}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <Card className="p-5 lg:col-span-2">
@@ -367,14 +406,13 @@ export function StudentEligibility() {
   }, []);
   if (loading || !student) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   const e = getStudentEligibility(student);
-  const checks = eligibility?.checks || { attendance: e.checks.attendance, internals: e.checks.internals, backlogs: e.checks.backlogs, fee: e.checks.fee, previous: e.checks.previous };
+  const checks = eligibility?.checks || { attendance: e.checks.attendance, internals: e.checks.internals, fee: e.checks.fee, previous: e.checks.previous };
   const passedCount = Object.values(checks).filter(Boolean).length;
   const isEligible = eligibility?.is_eligible ?? e.eligible;
 
   const criteria = [
     { label: "Attendance ≥ 75%", passed: checks.attendance, value: `${student.attendance}%`, target: "75%" },
     { label: "Internal Marks ≥ 40%", passed: checks.internals, value: `${Math.round((student.internalMarks/40)*100)}%`, target: "40%" },
-    { label: "No Backlogs", passed: checks.backlogs, value: `${student.backlogs} pending`, target: "0" },
     { label: "Fee Paid", passed: checks.fee, value: student.feePaid ? "Paid" : "Pending", target: "Paid" },
     { label: "Previous SGPA ≥ 5", passed: checks.previous, value: (student.previousResult ?? 0).toString(), target: "5.0" },
   ];
@@ -389,7 +427,7 @@ export function StudentEligibility() {
           <div className="w-32 h-32 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-5xl font-extrabold">{e.eligibilityPct}%</div>
           <div>
             <h3 className="text-3xl font-bold">{isEligible ? "You are ELIGIBLE" : "Currently NOT ELIGIBLE"}</h3>
-            <p className="mt-1 text-white/80">You meet {passedCount} of 5 criteria • AI Risk Score: {e.score}</p>
+            <p className="mt-1 text-white/80">You meet {passedCount} of 4 criteria • AI Risk Score: {e.score}</p>
           </div>
         </div>
       </div>
@@ -813,6 +851,197 @@ function StatMini({ label, value, ok }: { label: string; value: string | number;
       <span className="text-sm text-slate-500">{label}</span>
       <span className={cn("font-bold text-sm",
         ok === undefined ? "text-slate-800 dark:text-white" : ok ? "text-emerald-600" : "text-rose-600")}>{value}</span>
+    </div>
+  );
+}
+
+// ============ PAYMENTS ============
+export function StudentPayments() {
+  const [student, setStudent] = useState<Student | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const me = await fetchMe();
+      setStudent(me);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading || !student) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+
+  return (
+    <div>
+      <PageHeader title="Fee Payments" subtitle="Manage your fee payments and payment history" />
+
+      {/* Main Payment Card */}
+      <Card className={cn("p-8 mb-6 rounded-2xl", student.feePaid ? "bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border-2 border-emerald-200 dark:border-emerald-800" : "bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 border-2 border-amber-200 dark:border-amber-800")}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={cn("p-3 rounded-full", student.feePaid ? "bg-emerald-500" : "bg-amber-500")}>
+                <Wallet className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{student.feePaid ? "Fee Paid" : "Fee Pending"}</h2>
+                <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
+                  {student.feePaid ? "✓ Your fees are up to date" : "⚠ Action required"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-3">
+              <div className="p-3 rounded-lg bg-white/50 dark:bg-slate-800/30">
+                <p className="text-sm text-slate-600 dark:text-slate-400">Total Amount Due</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-white">₹{student.feeAmount.toLocaleString()}</p>
+              </div>
+              {student.feeDueDate && (
+                <div className="p-3 rounded-lg bg-white/50 dark:bg-slate-800/30">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Due Date</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{student.feeDueDate}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-center">
+            {!student.feePaid && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-lg">Payment Methods</h3>
+                <div className="space-y-2">
+                  <Button 
+                    variant="primary" 
+                    className="w-full py-3"
+                    onClick={() => alert(`Redirecting to payment gateway...\n\nAmount: ₹${student.feeAmount}\n\nIn production, this would integrate with Razorpay, PayPal, or Stripe.`)}
+                  >
+                    <Wallet className="w-5 h-5" /> Pay Online
+                  </Button>
+                  <Button 
+                    variant="secondary" 
+                    className="w-full"
+                    onClick={() => alert("Bank Transfer Details:\n\nBank: SBI\nAccount: 1234567890\nIFSC: SBIN0001234\nSwift: SBININBBXXX")}
+                  >
+                    Bank Transfer
+                  </Button>
+                  <Button 
+                    variant="secondary" 
+                    className="w-full"
+                    onClick={() => alert("You can pay at the college office:\n\nCash Counter - Admin Block, 2nd Floor\n\nMon-Fri: 9 AM - 5 PM\nAccept: Cash, Cheque, DD")}
+                  >
+                    Pay at College
+                  </Button>
+                </div>
+              </div>
+            )}
+            {student.feePaid && (
+              <div className="text-center">
+                <CheckCircle2 className="w-20 h-20 text-emerald-600 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-emerald-700 dark:text-emerald-300">Payment Completed</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">Your fee payment has been processed successfully. Thank you!</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Payment Info Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <Card className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+              <Wallet className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">Academic Year</p>
+              <p className="text-lg font-bold mt-1">2024-2025</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">Status</p>
+              <p className={cn("text-lg font-bold mt-1", student.feePaid ? "text-emerald-600" : "text-amber-600")}>
+                {student.feePaid ? "Paid" : "Pending"}
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">Eligibility Impact</p>
+              <p className={cn("text-lg font-bold mt-1", student.feePaid ? "text-emerald-600" : "text-rose-600")}>
+                {student.feePaid ? "Eligible" : "Not Eligible"}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Payment Receipt / Summary */}
+      <Card className="p-6">
+        <h3 className="font-bold text-lg mb-4">Payment Summary</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <div>
+              <p className="font-semibold">Semester Fees</p>
+              <p className="text-xs text-slate-500">Tuition & Infrastructure</p>
+            </div>
+            <p className="text-lg font-bold">₹{(student.feeAmount * 0.7).toLocaleString()}</p>
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <div>
+              <p className="font-semibold">Miscellaneous Charges</p>
+              <p className="text-xs text-slate-500">Library, Lab, Technology</p>
+            </div>
+            <p className="text-lg font-bold">₹{(student.feeAmount * 0.3).toLocaleString()}</p>
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-800">
+            <div>
+              <p className="font-bold text-indigo-700 dark:text-indigo-300">Total Amount Due</p>
+            </div>
+            <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">₹{student.feeAmount.toLocaleString()}</p>
+          </div>
+        </div>
+
+        {student.feePaid && (
+          <div className="mt-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800">
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">
+              ✓ <span className="font-semibold">Payment Verified</span> on {new Date().toLocaleDateString()}
+            </p>
+          </div>
+        )}
+      </Card>
+
+      {/* FAQ Section */}
+      <Card className="p-6 mt-6">
+        <h3 className="font-bold text-lg mb-4">Frequently Asked Questions</h3>
+        <div className="space-y-4">
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-white mb-1">When is the fee due?</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Fees are due by {student.feeDueDate}. Late payment may impact your eligibility for exams.</p>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-white mb-1">What payment methods are accepted?</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">We accept online payments (Razorpay), bank transfers, and cash/cheque at the college office.</p>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-white mb-1">Can I pay in installments?</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Contact the Admin office to arrange installment payments. Charges may apply.</p>
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-white mb-1">Is there a late payment fee?</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Yes, 2% per month late payment charge applies if paid after the due date.</p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

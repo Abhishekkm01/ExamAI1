@@ -38,6 +38,7 @@ const teacherNav: NavItem[] = [
 
 const studentNav: NavItem[] = [
   { to: "/student", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/student/payments", label: "Payments", icon: Wallet },
   { to: "/student/profile", label: "Profile", icon: UserIcon },
   { to: "/student/eligibility", label: "Eligibility", icon: TicketCheck },
   { to: "/student/hallticket", label: "Hall Ticket", icon: TicketCheck },
