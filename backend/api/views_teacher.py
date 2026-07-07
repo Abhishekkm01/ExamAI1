@@ -12,6 +12,28 @@ import os
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.face_recognition_module import face_ai
+from ai_modules.eligibility_model import eligibility_ai
+
+
+def _parse_student_id(raw):
+    """Accept ids sent as 1, "1" or the frontend's "s1" form."""
+    digits = ''.join(ch for ch in str(raw) if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def _recompute_eligibility(s):
+    """Recompute a student's cached eligibility after marks/attendance change."""
+    ai = eligibility_ai.predict_eligibility(
+        s.attendance_percentage,
+        s.internal_marks,
+        s.previous_result,
+        s.backlogs,
+    )
+    s.is_eligible = (s.attendance_percentage >= 75.0) and \
+        ((s.internal_marks / 40.0) >= 0.4) and \
+        (s.backlogs == 0) and s.fee_paid and (s.previous_result >= 5.0)
+    s.eligibility_percentage = round(ai['probability'] * 100.0, 1)
+    s.ai_risk_score = ai['risk_score']
 
 
 @api_view(['GET'])
@@ -106,26 +128,48 @@ def mark_attendance(request):
     subject_code = request.data.get('subject_code', 'CS301')
     date = request.data.get('date', '2026-11-01')
     
+    saved = 0
     for sid, present in records.items():
+        student_id = _parse_student_id(sid)
+        if student_id is None:
+            continue
         try:
-            s = Student.objects.get(id=int(sid))
+            s = Student.objects.get(id=student_id)
         except Student.DoesNotExist:
             continue
         
-        Attendance.objects.create(
-            student=s,
-            subject_code=subject_code,
-            record_date=date,
-            status='Present' if present else 'Absent'
-        )
+        new_status = 'Present' if present else 'Absent'
         
-        if present and s.attendance_percentage < 100:
-            s.attendance_percentage = min(100.0, s.attendance_percentage + 0.5)
-        elif not present and s.attendance_percentage > 0:
-            s.attendance_percentage = max(0.0, s.attendance_percentage - 0.5)
-        s.save()
+        # One record per student/subject/day: re-saving updates it instead of
+        # piling up duplicate rows (which used to inflate attendance on every save).
+        existing = Attendance.objects.filter(
+            student=s, subject_code=subject_code, record_date=date
+        ).first()
+        old_status = existing.status if existing else None
+        
+        if existing:
+            existing.status = new_status
+            existing.save()
+        else:
+            Attendance.objects.create(
+                student=s,
+                subject_code=subject_code,
+                record_date=date,
+                status=new_status,
+            )
+        
+        # Adjust the cached percentage only by the change in this record's
+        # contribution (+0.5 present / -0.5 absent) so repeated saves are idempotent.
+        def contribution(status):
+            return 0.5 if status == 'Present' else -0.5
+        delta = contribution(new_status) - (contribution(old_status) if old_status else 0.0)
+        if delta:
+            s.attendance_percentage = max(0.0, min(100.0, s.attendance_percentage + delta))
+            _recompute_eligibility(s)
+            s.save()
+        saved += 1
     
-    return Response({'message': 'Attendance saved'})
+    return Response({'message': 'Attendance saved', 'records_saved': saved})
 
 
 @api_view(['GET'])
@@ -169,10 +213,13 @@ def update_marks(request):
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
     
-    student_id = request.data.get('student_id')
+    student_id = _parse_student_id(request.data.get('student_id'))
     subject_code = request.data.get('subject_code', 'CS301')
     internal_marks = request.data.get('internal_marks')
     assignment_marks = request.data.get('assignment_marks')
+    
+    if student_id is None:
+        return Response({'detail': 'A valid student_id is required'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         s = Student.objects.get(id=student_id)
@@ -183,13 +230,17 @@ def update_marks(request):
         s.internal_marks = float(internal_marks)
     if assignment_marks is not None:
         s.assignment_marks = float(assignment_marks)
+    _recompute_eligibility(s)
     s.save()
     
-    InternalMark.objects.create(
+    # Keep a single per-subject row instead of appending a new one every save.
+    InternalMark.objects.update_or_create(
         student=s,
         subject_code=subject_code,
-        internal_score=s.internal_marks,
-        assignment_score=s.assignment_marks
+        defaults={
+            'internal_score': s.internal_marks,
+            'assignment_score': s.assignment_marks,
+        },
     )
     
     return Response({'message': 'Marks updated'})
@@ -221,6 +272,7 @@ def monitor_students(request):
             'photo': s.photo,
             'attendance': s.attendance_percentage,
             'internal_marks': s.internal_marks,
+            'assignment_marks': s.assignment_marks,
             'previous_result': s.previous_result,
             'backlogs': s.backlogs,
             'is_eligible': s.is_eligible,

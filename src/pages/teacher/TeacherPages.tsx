@@ -121,12 +121,17 @@ export function TeacherAttendance() {
   const save = async () => {
     setSaving(true);
     try {
-      await fetch(`${API}/api/teacher/attendance`, {
+      // Backend keys students by numeric id; strip the "s" prefix the UI uses.
+      const payload = Object.fromEntries(
+        Object.entries(records).map(([id, present]) => [id.replace(/^s/, ""), present])
+      );
+      const res = await fetch(`${API}/api/teacher/attendance/mark`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ subject_code: subject, date, records }),
+        body: JSON.stringify({ subject_code: subject, date, records: payload }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       alert("Attendance saved to MySQL ✓");
-    } catch { alert("Backend not reachable"); }
+    } catch { alert("Could not save attendance. Please try again."); }
     setSaving(false);
   };
 
@@ -195,10 +200,40 @@ export function TeacherAttendance() {
 export function TeacherMarks() {
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
+  const [subject, setSubject] = useState("CS301");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  // Edited values, keyed by student id, so inputs are controlled and the edited
+  // numbers (not the stale originals) are what actually get saved.
+  const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
+
+  useEffect(() => {
+    fetchTeacherStudents().then((s) => {
+      const cs = s.filter(x => x.department === "Computer Science");
+      setStudents(cs);
+      setMarks(Object.fromEntries(cs.map((x) => [x.id, { internal: x.internalMarks, assignment: x.assignmentMarks }])));
+      setLoading(false);
+    });
+  }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+
+  const setMark = (id: string, field: "internal" | "assignment", value: number) =>
+    setMarks((m) => ({ ...m, [id]: { ...m[id], [field]: value } }));
+
+  const save = async (s: Student) => {
+    const m = marks[s.id] ?? { internal: s.internalMarks, assignment: s.assignmentMarks };
+    setSavingId(s.id);
+    try {
+      const res = await fetch(`${API}/api/teacher/marks/update`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ student_id: parseInt(s.id.replace("s", "")), subject_code: subject, internal_marks: m.internal, assignment_marks: m.assignment }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      alert("Marks saved to MySQL ✓");
+    } catch { alert("Could not save marks. Please try again."); }
+    setSavingId(null);
+  };
 
   return (
     <div>
@@ -208,7 +243,10 @@ export function TeacherMarks() {
           <div className="relative flex-1">
             <TextInput placeholder="Search student..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <Select><option>CS301 - Data Structures</option><option>CS302 - DBMS</option></Select>
+          <Select value={subject} onChange={(e) => setSubject(e.target.value)}>
+            <option value="CS301">CS301 - Data Structures</option>
+            <option value="CS302">CS302 - DBMS</option>
+          </Select>
         </div>
       </Card>
       <Card className="overflow-hidden">
@@ -224,7 +262,9 @@ export function TeacherMarks() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((s) => (
+              {filtered.map((s) => {
+                const m = marks[s.id] ?? { internal: s.internalMarks, assignment: s.assignmentMarks };
+                return (
                 <tr key={s.id}>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
@@ -232,20 +272,13 @@ export function TeacherMarks() {
                       <div><p className="font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.rollNo}</p></div>
                     </div>
                   </td>
-                  <td className="p-4"><input type="number" defaultValue={s.internalMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4"><input type="number" defaultValue={s.assignmentMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4 font-semibold">{s.internalMarks + s.assignmentMarks}/50</td>
-                  <td className="p-4 text-right"><Button variant="primary" onClick={async () => {
-                    try {
-                      await fetch(`${API}/api/teacher/marks`, {
-                        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-                        body: JSON.stringify({ student_id: parseInt(s.id.replace("s", "")), subject_code: "CS301", internal_marks: s.internalMarks, assignment_marks: s.assignmentMarks }),
-                      });
-                      alert("Marks saved to MySQL ✓");
-                    } catch { alert("Backend not reachable"); }
-                  }}><CheckCircle2 className="w-3.5 h-3.5" /> Save</Button></td>
+                  <td className="p-4"><input type="number" min={0} max={40} value={m.internal} onChange={(e) => setMark(s.id, "internal", Number(e.target.value))} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
+                  <td className="p-4"><input type="number" min={0} max={10} value={m.assignment} onChange={(e) => setMark(s.id, "assignment", Number(e.target.value))} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
+                  <td className="p-4 font-semibold">{m.internal + m.assignment}/50</td>
+                  <td className="p-4 text-right"><Button variant="primary" disabled={savingId === s.id} onClick={() => save(s)}><CheckCircle2 className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving..." : "Save"}</Button></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
