@@ -24,6 +24,7 @@ const adminNav: NavItem[] = [
   { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/admin/reports", label: "Reports", icon: FileText },
   { to: "/admin/settings", label: "Settings", icon: Settings },
+  { to: "/admin/profile", label: "My Profile", icon: UserIcon },
 ];
 
 const teacherNav: NavItem[] = [
@@ -32,6 +33,7 @@ const teacherNav: NavItem[] = [
   { to: "/teacher/marks", label: "Internal Marks", icon: FileText },
   { to: "/teacher/students", label: "Student Monitoring", icon: GraduationCap },
   { to: "/teacher/face-verify", label: "Face Verification", icon: Camera },
+  { to: "/teacher/profile", label: "My Profile", icon: UserIcon },
 ];
 
 const studentNav: NavItem[] = [

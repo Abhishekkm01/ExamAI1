@@ -7,9 +7,10 @@ from django.db import transaction
 from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
-                          NotificationCreateSerializer, NotificationSerializer)
+                          NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer)
 from .permissions import IsAdmin
-from .auth_utils import get_password_hash
+from .auth_utils import get_password_hash, verify_password
+from .photo_utils import save_profile_photo
 import sys
 import os
 import io
@@ -579,3 +580,79 @@ def export_report(request):
     response = HttpResponse(out.read(), content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename={report_type}.pdf'
     return response
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def profile(request):
+    """Get admin's own profile"""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'admin':
+        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+    
+    return Response({
+        'id': user.id,
+        'name': user.name,
+        'email': user.email,
+        'avatar': user.avatar,
+        'role': user.role,
+        'created_at': user.created_at,
+        'updated_at': user.updated_at
+    })
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_profile(request):
+    """Update admin's profile fields and optionally change password."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'admin':
+        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = AdminProfileUpdateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+
+    if 'new_password' in data:
+        if not verify_password(data['current_password'], user.hashed_password):
+            return Response({'detail': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+        user.hashed_password = get_password_hash(data['new_password'])
+
+    if 'name' in data:
+        user.name = data['name']
+
+    user.save()
+
+    return Response({
+        'message': 'Profile updated',
+        'name': user.name,
+        'email': user.email,
+        'avatar': user.avatar
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def upload_profile_photo(request):
+    """Upload or replace the admin's profile photo."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'admin':
+        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    if 'photo' not in request.FILES:
+        return Response({'detail': 'No photo file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        photo_url = save_profile_photo(request.FILES['photo'], 'admin')
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.avatar = photo_url
+    user.save()
+
+    return Response({'message': 'Photo updated', 'photo': photo_url})

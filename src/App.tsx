@@ -4,7 +4,9 @@ import LoginPage from "./pages/LoginPage";
 import Layout from "./components/Layout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import { AdminStudents, AdminTeachers, AdminExams, AdminMarks, AdminEligibility, AdminHallTickets, AdminBacklogs, AdminFees, AdminNotifications, AdminAnalytics, AdminReports, AdminSettings } from "./pages/admin/AdminModules";
+import { AdminProfileSettings } from "./pages/admin/AdminProfile";
 import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, TeacherFaceVerify } from "./pages/teacher/TeacherPages";
+import { TeacherProfile } from "./pages/teacher/TeacherProfile";
 import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
 import { FirstTimeSetup } from "./pages/Setup";
@@ -66,7 +68,7 @@ function Router() {
         <Route path="/admin/analytics" element={<AdminAnalytics />} />
         <Route path="/admin/reports" element={<AdminReports />} />
         <Route path="/admin/settings" element={<AdminSettings />} />
-        <Route path="/admin/profile" element={<AdminDashboard />} />
+        <Route path="/admin/profile" element={<AdminProfileSettings />} />
       </Route>
 
       {/* Teacher routes */}
@@ -76,7 +78,7 @@ function Router() {
         <Route path="/teacher/marks" element={<TeacherMarks />} />
         <Route path="/teacher/students" element={<TeacherStudents />} />
         <Route path="/teacher/face-verify" element={<TeacherFaceVerify />} />
-        <Route path="/teacher/profile" element={<TeacherDashboard />} />
+        <Route path="/teacher/profile" element={<TeacherProfile />} />
       </Route>
 
       {/* Student routes */}

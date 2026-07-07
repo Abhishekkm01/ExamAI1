@@ -13,6 +13,9 @@ urlpatterns = [
     
     # Admin endpoints
     path('admin/dashboard', views_admin.dashboard, name='admin_dashboard'),
+    path('admin/profile', views_admin.profile, name='admin_profile'),
+    path('admin/profile/update', views_admin.update_profile, name='admin_update_profile'),
+    path('admin/profile/photo', views_admin.upload_profile_photo, name='admin_upload_photo'),
     path('admin/students', views_admin.list_students, name='admin_list_students'),
     path('admin/students/<int:sid>', views_admin.get_student, name='admin_get_student'),
     path('admin/students/create', views_admin.create_student, name='admin_create_student'),
@@ -34,6 +37,9 @@ urlpatterns = [
     
     # Teacher endpoints
     path('teacher/dashboard', views_teacher.dashboard, name='teacher_dashboard'),
+    path('teacher/profile', views_teacher.profile, name='teacher_profile'),
+    path('teacher/profile/update', views_teacher.update_profile, name='teacher_update_profile'),
+    path('teacher/profile/photo', views_teacher.upload_profile_photo, name='teacher_upload_photo'),
     path('teacher/attendance', views_teacher.get_roll, name='teacher_get_roll'),
     path('teacher/attendance/mark', views_teacher.mark_attendance, name='teacher_mark_attendance'),
     path('teacher/marks', views_teacher.get_marks, name='teacher_get_marks'),

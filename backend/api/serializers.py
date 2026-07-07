@@ -248,3 +248,27 @@ class ChatbotRequestSerializer(serializers.Serializer):
 
 class ChatbotResponseSerializer(serializers.Serializer):
     response = serializers.CharField()
+
+
+class TeacherProfileUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    current_password = serializers.CharField(required=False)
+    new_password = serializers.CharField(required=False, min_length=6)
+
+    def validate(self, data):
+        new_pw = data.get('new_password')
+        if new_pw and not data.get('current_password'):
+            raise serializers.ValidationError({'current_password': 'Current password is required to set a new password.'})
+        return data
+
+
+class AdminProfileUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    current_password = serializers.CharField(required=False)
+    new_password = serializers.CharField(required=False, min_length=6)
+
+    def validate(self, data):
+        new_pw = data.get('new_password')
+        if new_pw and not data.get('current_password'):
+            raise serializers.ValidationError({'current_password': 'Current password is required to set a new password.'})
+        return data
