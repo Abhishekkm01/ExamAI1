@@ -47,7 +47,7 @@ export async function fetchTeacherStudents(): Promise<Student[]> {
   return (data || []).map((s: any) => ({
     id: `s${s.id}`, rollNo: s.roll_no, name: s.name, email: "",
     mobile: "", department: s.department || "Computer Science", semester: 0, section: "", photo: s.photo,
-    attendance: s.attendance, internalMarks: s.internal_marks, assignmentMarks: 0,
+    attendance: s.attendance, internalMarks: s.internal_marks, assignmentMarks: s.assignment_marks ?? 0,
     previousResult: s.previous_result, backlogs: s.backlogs, feePaid: true,
     feeAmount: 0, feeDueDate: "", createdAt: "2023-08-12",
   }));

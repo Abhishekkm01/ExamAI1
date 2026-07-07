@@ -119,9 +119,9 @@ export const api = {
   teacherAttendance: (subject = "CS301") =>
     tryFetch(`/api/teacher/attendance?subject_code=${subject}`),
   markAttendance: (data: any) =>
-    tryFetch("/api/teacher/attendance", { method: "POST", body: JSON.stringify(data) }),
+    tryFetch("/api/teacher/attendance/mark", { method: "POST", body: JSON.stringify(data) }),
   updateMarks: (data: any) =>
-    tryFetch("/api/teacher/marks", { method: "POST", body: JSON.stringify(data) }),
+    tryFetch("/api/teacher/marks/update", { method: "POST", body: JSON.stringify(data) }),
 
   // -------- Student --------
   studentDashboard: () => tryFetch("/api/student/dashboard"),
