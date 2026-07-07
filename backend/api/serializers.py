@@ -100,7 +100,7 @@ class SetupTeacherSerializer(serializers.Serializer):
     name = serializers.CharField()
     emp_id = serializers.CharField()
     department = serializers.CharField()
-    assigned_subjects = serializers.CharField(required=False)
+    assigned_subjects = serializers.CharField(required=False, allow_blank=True)
 
 
 class SetupStudentSerializer(serializers.Serializer):
@@ -110,13 +110,17 @@ class SetupStudentSerializer(serializers.Serializer):
     roll_no = serializers.CharField()
     department = serializers.CharField()
     semester = serializers.IntegerField()
-    section = serializers.CharField(required=False)
-    mobile = serializers.CharField(required=False)
+    section = serializers.CharField(required=False, allow_blank=True)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    photo = serializers.CharField(required=False, allow_blank=True)
     attendance_percentage = serializers.FloatField(default=0)
     internal_marks = serializers.FloatField(default=0)
     assignment_marks = serializers.FloatField(default=0)
     previous_result = serializers.FloatField(default=0)
     backlogs = serializers.IntegerField(default=0)
+    fee_paid = serializers.BooleanField(default=False)
+    fee_amount = serializers.FloatField(default=45000)
+    fee_due_date = serializers.CharField(required=False, allow_blank=True)
 
 
 class LoginSerializer(serializers.Serializer):

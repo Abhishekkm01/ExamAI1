@@ -11,32 +11,41 @@ import { cn } from "../../utils/cn";
 const API = "http://localhost:8000";
 const token = () => localStorage.getItem("examshield_token") || "";
 
-async function apiAddStudent(form: any) {
-  const res = await fetch(`${API}/api/auth/setup-student`, {
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  // The backend returns JSON errors, but an unexpected 500 renders an HTML page.
+  // Parse defensively so the admin always sees a readable message.
+  try {
+    const j = await res.clone().json();
+    if (j && typeof j === "object") {
+      if (j.detail) return j.detail;
+      // DRF field validation errors: { field: ["message", ...], ... }
+      const parts = Object.entries(j).map(([k, v]) =>
+        `${k}: ${Array.isArray(v) ? v.join(", ") : v}`
+      );
+      if (parts.length) return parts.join(" | ");
+    }
+  } catch {}
+  return `${fallback} (HTTP ${res.status})`;
+}
+
+async function apiPost(path: string, form: any, fallback: string) {
+  const res = await fetch(`${API}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
     body: JSON.stringify(form),
   });
-  if (!res.ok) throw new Error((await res.json()).detail || "Failed to add student");
+  if (!res.ok) throw new Error(await errorMessage(res, fallback));
   return res.json();
+}
+
+async function apiAddStudent(form: any) {
+  return apiPost("/api/auth/setup-student", form, "Failed to add student");
 }
 async function apiAddTeacher(form: any) {
-  const res = await fetch(`${API}/api/auth/setup-teacher`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(form),
-  });
-  if (!res.ok) throw new Error((await res.json()).detail || "Failed to add teacher");
-  return res.json();
+  return apiPost("/api/auth/setup-teacher", form, "Failed to add teacher");
 }
 async function apiAddExam(form: any) {
-  const res = await fetch(`${API}/api/auth/setup-exam`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(form),
-  });
-  if (!res.ok) throw new Error((await res.json()).detail || "Failed to add exam");
-  return res.json();
+  return apiPost("/api/auth/setup-exam", form, "Failed to add exam");
 }
 
 // ==================== STUDENTS ====================
@@ -69,11 +78,12 @@ export function AdminStudents() {
     if (!confirm("Delete this student?")) return;
     try {
       const sid = id.replace("s", "");
-      await fetch(`http://localhost:8000/api/admin/students/${sid}`, {
+      const res = await fetch(`http://localhost:8000/api/admin/students/${sid}/delete`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${localStorage.getItem("examshield_token") || ""}` }
       });
-    } catch {}
+      if (!res.ok) { alert(await errorMessage(res, "Failed to delete student")); return; }
+    } catch { alert("Failed to delete student: backend not reachable"); return; }
     setList((l) => l.filter((s) => s.id !== id));
   };
 
@@ -187,7 +197,7 @@ export function AdminStudents() {
               // Edit — call PUT
               try {
                 const sid = parseInt(s.id.replace("s", ""));
-                await fetch(`${API}/api/admin/students/${sid}`, {
+                const res = await fetch(`${API}/api/admin/students/${sid}/update`, {
                   method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
                   body: JSON.stringify({
                     mobile: s.mobile, department: s.department, semester: s.semester, section: s.section,
@@ -196,7 +206,8 @@ export function AdminStudents() {
                     backlogs: s.backlogs, fee_paid: s.feePaid,
                   }),
                 });
-              } catch {}
+                if (!res.ok) { alert(await errorMessage(res, "Failed to update student")); return; }
+              } catch { alert("Failed to update student: backend not reachable"); return; }
               setList((l) => l.map((x) => x.id === s.id ? s : x));
             } else {
               // Create — call setup-student API
