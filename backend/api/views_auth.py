@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from .models import User, Student, Teacher, Exam, Notification, RoleEnum
 from .serializers import (UserSerializer, TokenSerializer, BootstrapAdminSerializer, 
                           SetupTeacherSerializer, SetupStudentSerializer, SetupExamSerializer,
@@ -57,6 +57,10 @@ def bootstrap_admin(request):
             return Response({'detail': 'An admin account already exists. Use the login page.'}, 
                           status=status.HTTP_400_BAD_REQUEST)
         
+        if User.objects.filter(email=serializer.validated_data['email']).exists():
+            return Response({'detail': f"A user with email {serializer.validated_data['email']} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        
         user = User.objects.create(
             username=None,  # Set username to None since we use email as USERNAME_FIELD
             email=serializer.validated_data['email'],
@@ -83,30 +87,52 @@ def setup_teacher(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     if serializer.is_valid():
         # Check if user is admin (this will be handled by authentication middleware)
-        user = getattr(request, '_jwt_user', request.user)
-        print(f"[DEBUG] user: {user}, type: {type(user)}")
-        if hasattr(user, 'role'):
-            print(f"[DEBUG] user.role: {user.role}")
-        if not user or not hasattr(user, 'role') or user.role != RoleEnum.ADMIN:
+        current_user = getattr(request, '_jwt_user', request.user)
+        if not current_user or not hasattr(current_user, 'role') or current_user.role != RoleEnum.ADMIN:
             return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
         
-        with transaction.atomic():
-            user = User.objects.create(
-                username=serializer.validated_data['email'],  # Use email as username for compatibility
-                email=serializer.validated_data['email'],
-                hashed_password=get_password_hash(serializer.validated_data.get('password', 'teacher123')),
-                name=serializer.validated_data['name'],
-                role=RoleEnum.TEACHER,
-                avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={serializer.validated_data.get('emp_id', serializer.validated_data['email'])}",
-            )
-            
-            teacher = Teacher.objects.create(
-                user=user,
-                emp_id=serializer.validated_data['emp_id'],
-                department=serializer.validated_data['department'],
-                photo=user.avatar,
-                assigned_subjects=serializer.validated_data.get('assigned_subjects', ''),
-            )
+        data = serializer.validated_data
+        email = data['email']
+        emp_id = data['emp_id']
+        avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={emp_id or email}"
+        
+        # Reject clashes with active records, otherwise reuse soft-deleted rows so the
+        # DB unique constraints on email/emp_id are not violated (delete + re-add flow).
+        existing_user = User.objects.filter(email=email).first()
+        existing_teacher = Teacher.objects.filter(emp_id=emp_id).first()
+        
+        if existing_user and not existing_user.is_deleted:
+            return Response({'detail': f"A user with email {email} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_teacher and not existing_teacher.is_deleted:
+            return Response({'detail': f"A teacher with employee ID {emp_id} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_user and existing_teacher and existing_user.id != existing_teacher.user_id:
+            return Response({'detail': "This email and employee ID belong to different deleted records. Use unique values."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            with transaction.atomic():
+                user = existing_user or User(username=None, email=email)
+                user.username = None
+                user.email = email
+                user.hashed_password = get_password_hash(data.get('password', 'teacher123'))
+                user.name = data['name']
+                user.role = RoleEnum.TEACHER
+                user.avatar = avatar
+                user.is_deleted = False
+                user.save()
+                
+                teacher = Teacher.objects.filter(user=user).first() or Teacher(user=user)
+                teacher.emp_id = emp_id
+                teacher.department = data['department']
+                teacher.photo = avatar
+                teacher.assigned_subjects = data.get('assigned_subjects', '')
+                teacher.is_deleted = False
+                teacher.save()
+        except IntegrityError:
+            return Response({'detail': "Could not create teacher: the email or employee ID is already in use."},
+                          status=status.HTTP_400_BAD_REQUEST)
         
         return Response({'message': f"Teacher {user.name} created", 'teacher_id': teacher.id}, 
                        status=status.HTTP_201_CREATED)
@@ -122,11 +148,26 @@ def setup_student(request):
     serializer = SetupStudentSerializer(data=request.data)
     if serializer.is_valid():
         # Check if user is admin
-        user = getattr(request, '_jwt_user', request.user)
-        if not user or not hasattr(user, 'role') or user.role != RoleEnum.ADMIN:
+        current_user = getattr(request, '_jwt_user', request.user)
+        if not current_user or not hasattr(current_user, 'role') or current_user.role != RoleEnum.ADMIN:
             return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
         
         data = serializer.validated_data
+        
+        # Reject clashes with active records; reuse soft-deleted rows so the DB unique
+        # constraints on email/roll_no are not violated (delete + re-add flow).
+        existing_user = User.objects.filter(email=data['email']).first()
+        existing_student = Student.objects.filter(roll_no=data['roll_no']).first()
+        
+        if existing_user and not existing_user.is_deleted:
+            return Response({'detail': f"A user with email {data['email']} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_student and not existing_student.is_deleted:
+            return Response({'detail': f"A student with roll number {data['roll_no']} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_user and existing_student and existing_user.id != existing_student.user_id:
+            return Response({'detail': "This email and roll number belong to different deleted records. Use unique values."},
+                          status=status.HTTP_400_BAD_REQUEST)
         
         # Run AI eligibility check
         ai = eligibility_ai.predict_eligibility(
@@ -150,36 +191,42 @@ def setup_student(request):
             data.get('previous_result', 0) >= 5.0,
         ]) / 5) * 100)
         
-        with transaction.atomic():
-            user = User.objects.create(
-                username=data['email'],  # Use email as username for compatibility
-                email=data['email'],
-                hashed_password=get_password_hash(data.get('password', 'student123')),
-                name=data['name'],
-                role=RoleEnum.STUDENT,
-                avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={data.get('roll_no', data['email'])}",
-            )
-            
-            student = Student.objects.create(
-                user=user,
-                roll_no=data['roll_no'],
-                mobile=data.get('mobile'),
-                department=data['department'],
-                semester=data.get('semester', 5),
-                section=data.get('section', 'A'),
-                photo=user.avatar,
-                attendance_percentage=data.get('attendance_percentage', 0),
-                internal_marks=data.get('internal_marks', 0),
-                assignment_marks=data.get('assignment_marks', 0),
-                previous_result=data.get('previous_result', 0),
-                backlogs=data.get('backlogs', 0),
-                fee_paid=data.get('fee_paid', False),
-                fee_amount=data.get('fee_amount', 45000),
-                fee_due_date=data.get('fee_due_date'),
-                is_eligible=passed,
-                eligibility_percentage=pct,
-                ai_risk_score=ai['risk_score'],
-            )
+        avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={data.get('roll_no') or data['email']}"
+        try:
+            with transaction.atomic():
+                user = existing_user or User(username=None, email=data['email'])
+                user.username = None
+                user.email = data['email']
+                user.hashed_password = get_password_hash(data.get('password', 'student123'))
+                user.name = data['name']
+                user.role = RoleEnum.STUDENT
+                user.avatar = avatar
+                user.is_deleted = False
+                user.save()
+                
+                student = Student.objects.filter(user=user).first() or Student(user=user)
+                student.roll_no = data['roll_no']
+                student.mobile = data.get('mobile')
+                student.department = data['department']
+                student.semester = data.get('semester', 5)
+                student.section = data.get('section', 'A')
+                student.photo = avatar
+                student.attendance_percentage = data.get('attendance_percentage', 0)
+                student.internal_marks = data.get('internal_marks', 0)
+                student.assignment_marks = data.get('assignment_marks', 0)
+                student.previous_result = data.get('previous_result', 0)
+                student.backlogs = data.get('backlogs', 0)
+                student.fee_paid = data.get('fee_paid', False)
+                student.fee_amount = data.get('fee_amount', 45000)
+                student.fee_due_date = data.get('fee_due_date')
+                student.is_eligible = passed
+                student.eligibility_percentage = pct
+                student.ai_risk_score = ai['risk_score']
+                student.is_deleted = False
+                student.save()
+        except IntegrityError:
+            return Response({'detail': "Could not create student: the email or roll number is already in use."},
+                          status=status.HTTP_400_BAD_REQUEST)
         
         return Response({'message': f"Student {user.name} created", 'student_id': student.id, 'is_eligible': passed}, 
                        status=status.HTTP_201_CREATED)
@@ -199,7 +246,15 @@ def setup_exam(request):
         if not user or not hasattr(user, 'role') or user.role != RoleEnum.ADMIN:
             return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
         
-        exam = Exam.objects.create(**serializer.validated_data)
+        subject_code = serializer.validated_data['subject_code']
+        if Exam.objects.filter(subject_code=subject_code, is_deleted=False).exists():
+            return Response({'detail': f"An exam with subject code {subject_code} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exam = Exam.objects.create(**serializer.validated_data)
+        except IntegrityError:
+            return Response({'detail': f"Could not create exam: subject code {subject_code} is already in use."},
+                          status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': f"Exam {exam.subject_code} created", 'exam_id': exam.id}, 
                        status=status.HTTP_201_CREATED)
     
