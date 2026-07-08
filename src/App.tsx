@@ -9,6 +9,7 @@ import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, Tea
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
 import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot, StudentPayments } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
+import AdminSeating from "./pages/admin/AdminSeating";
 import { FirstTimeSetup } from "./pages/Setup";
 import StudentRegister from "./pages/StudentRegister";
 import type { Role } from "./data/mockData";
@@ -61,6 +62,7 @@ function Router() {
         <Route path="/admin/exams" element={<AdminExams />} />
         <Route path="/admin/marks" element={<AdminMarks />} />
         <Route path="/admin/eligibility" element={<AdminEligibility />} />
+        <Route path="/admin/seating" element={<AdminSeating />} />
         <Route path="/admin/halltickets" element={<AdminHallTickets />} />
         <Route path="/admin/backlogs" element={<AdminBacklogs />} />
         <Route path="/admin/fees" element={<AdminFees />} />

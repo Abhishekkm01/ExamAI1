@@ -272,3 +272,95 @@ class AdminProfileUpdateSerializer(serializers.Serializer):
         if new_pw and not data.get('current_password'):
             raise serializers.ValidationError({'current_password': 'Current password is required to set a new password.'})
         return data
+
+
+class HallTicketUpdateSerializer(serializers.Serializer):
+    seat_number = serializers.CharField(required=False)
+    room = serializers.CharField(required=False)
+
+
+class SeatingRoomSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    room_code = serializers.CharField()
+    room_name = serializers.CharField()
+    building = serializers.CharField(allow_null=True, required=False)
+    floor = serializers.IntegerField()
+    capacity = serializers.IntegerField()
+    rows = serializers.IntegerField()
+    columns = serializers.IntegerField()
+    has_projector = serializers.BooleanField()
+    has_ac = serializers.BooleanField()
+    is_active = serializers.BooleanField()
+
+
+class SeatingRoomCreateSerializer(serializers.Serializer):
+    room_code = serializers.CharField(max_length=50)
+    room_name = serializers.CharField(max_length=255)
+    building = serializers.CharField(required=False, allow_blank=True)
+    floor = serializers.IntegerField(default=1)
+    capacity = serializers.IntegerField(default=60)
+    rows = serializers.IntegerField(default=10)
+    columns = serializers.IntegerField(default=6)
+    has_projector = serializers.BooleanField(default=False)
+    has_ac = serializers.BooleanField(default=False)
+
+
+class SeatingRoomUpdateSerializer(serializers.Serializer):
+    room_name = serializers.CharField(required=False)
+    building = serializers.CharField(required=False, allow_blank=True)
+    floor = serializers.IntegerField(required=False)
+    capacity = serializers.IntegerField(required=False)
+    rows = serializers.IntegerField(required=False)
+    columns = serializers.IntegerField(required=False)
+    has_projector = serializers.BooleanField(required=False)
+    has_ac = serializers.BooleanField(required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class SeatingArrangementSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    exam_id = serializers.IntegerField(source='exam.id')
+    exam_name = serializers.CharField(source='exam.subject_name')
+    room_id = serializers.IntegerField(source='room.id')
+    room_code = serializers.CharField(source='room.room_code')
+    room_name = serializers.CharField(source='room.room_name')
+    student_id = serializers.IntegerField(source='student.id')
+    student_name = serializers.CharField(source='student.user.name')
+    roll_no = serializers.CharField(source='student.roll_no')
+    seat_row = serializers.IntegerField()
+    seat_column = serializers.IntegerField()
+    seat_number = serializers.CharField()
+    arrangement_type = serializers.CharField()
+    is_confirmed = serializers.BooleanField()
+
+
+class AutoSeatingSerializer(serializers.Serializer):
+    exam_id = serializers.IntegerField()
+    room_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    arrangement_strategy = serializers.ChoiceField(
+        choices=['sequential', 'department', 'alphabetical', 'random'],
+        default='sequential'
+    )
+    leave_empty_seats = serializers.BooleanField(default=False)
+    seats_between_students = serializers.IntegerField(default=0, min_value=0)
+
+
+class ManualSeatingItemSerializer(serializers.Serializer):
+    student_id = serializers.IntegerField()
+    room_id = serializers.IntegerField()
+    seat_row = serializers.IntegerField()
+    seat_column = serializers.IntegerField()
+    seat_number = serializers.CharField()
+
+
+class ManualSeatingSerializer(serializers.Serializer):
+    exam_id = serializers.IntegerField()
+    arrangements = ManualSeatingItemSerializer(many=True)
+
+
+class SeatingArrangementUpdateSerializer(serializers.Serializer):
+    room_id = serializers.IntegerField(required=False)
+    seat_row = serializers.IntegerField(required=False)
+    seat_column = serializers.IntegerField(required=False)
+    seat_number = serializers.CharField(required=False)
+    is_confirmed = serializers.BooleanField(required=False)

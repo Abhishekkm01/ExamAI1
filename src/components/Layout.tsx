@@ -3,7 +3,7 @@ import { useAuth, useTheme, useNotifications } from "../contexts/AppContext";
 import {
   Shield, LogOut, Moon, Sun, Menu, X, Bell, User as UserIcon, ChevronDown,
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList, TicketCheck,
-  BarChart3, FileText, MessageSquare, Wallet, AlertTriangle, Settings, School, Camera, Mail
+  BarChart3, FileText, MessageSquare, Wallet, AlertTriangle, Settings, School, Camera, Mail, Armchair
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../utils/cn";
@@ -17,6 +17,7 @@ const adminNav: NavItem[] = [
   { to: "/admin/exams", label: "Examinations", icon: BookOpen },
   { to: "/admin/marks", label: "Internal Marks", icon: ClipboardList },
   { to: "/admin/eligibility", label: "Eligibility", icon: TicketCheck },
+  { to: "/admin/seating", label: "Seating", icon: Armchair },
   { to: "/admin/halltickets", label: "Hall Tickets", icon: TicketCheck },
   { to: "/admin/backlogs", label: "Backlogs", icon: AlertTriangle },
   { to: "/admin/fees", label: "Fee Payments", icon: Wallet },

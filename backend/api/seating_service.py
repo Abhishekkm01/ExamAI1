@@ -1,6 +1,14 @@
-from .models import Exam, Student, SeatingRoom, SeatingArrangement
+from .models import Exam, Student, SeatingRoom, SeatingArrangement, HallTicket
 from django.db import transaction
 import random
+
+
+def build_qr_content(hall_ticket_no, roll_no, subject_code, seat_number, room_label):
+    return f"HT:{hall_ticket_no}|Roll:{roll_no}|Exam:{subject_code}|Seat:{seat_number}|Room:{room_label}"
+
+
+def room_display_name(room):
+    return f"{room.room_name} ({room.room_code})"
 
 
 class SeatingArrangementService:
@@ -341,3 +349,67 @@ class SeatingArrangementService:
             'columns': room.columns,
             'layout': layout
         }
+
+    @staticmethod
+    @transaction.atomic
+    def sync_hall_tickets(exam_id):
+        """Push seating arrangements into hall ticket records."""
+        try:
+            exam = Exam.objects.get(id=exam_id, is_deleted=False)
+        except Exam.DoesNotExist:
+            raise ValueError("Exam not found")
+
+        arrangements = SeatingArrangement.objects.filter(
+            exam=exam
+        ).select_related('student__user', 'room')
+
+        if not arrangements.exists():
+            raise ValueError("No seating arrangements found for this exam")
+
+        synced = 0
+        for arr in arrangements:
+            student = arr.student
+            hall_ticket_no = f"HT2026{student.roll_no}"
+            room_label = room_display_name(arr.room)
+            qr = build_qr_content(
+                hall_ticket_no, student.roll_no, exam.subject_code,
+                arr.seat_number, arr.room.room_code
+            )
+            HallTicket.objects.update_or_create(
+                student=student,
+                defaults={
+                    'exam': exam,
+                    'hall_ticket_no': hall_ticket_no,
+                    'seat_number': arr.seat_number,
+                    'room': room_label,
+                    'qr_code_content': qr,
+                    'is_active': True,
+                },
+            )
+            synced += 1
+
+        SeatingArrangement.objects.filter(exam=exam).update(is_confirmed=True)
+        return synced
+
+    @staticmethod
+    def sync_arrangement_to_hall_ticket(arrangement):
+        """Update a single hall ticket from one seating arrangement."""
+        student = arrangement.student
+        exam = arrangement.exam
+        hall_ticket_no = f"HT2026{student.roll_no}"
+        room_label = room_display_name(arrangement.room)
+        qr = build_qr_content(
+            hall_ticket_no, student.roll_no, exam.subject_code,
+            arrangement.seat_number, arrangement.room.room_code
+        )
+        HallTicket.objects.update_or_create(
+            student=student,
+            defaults={
+                'exam': exam,
+                'hall_ticket_no': hall_ticket_no,
+                'seat_number': arrangement.seat_number,
+                'room': room_label,
+                'qr_code_content': qr,
+                'is_active': True,
+            },
+        )

@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views_auth, views_admin, views_teacher, views_student, views_public
+from . import views_auth, views_admin, views_teacher, views_student, views_public, views_seating
 
 urlpatterns = [
     # Auth endpoints
@@ -26,6 +26,7 @@ urlpatterns = [
     path('admin/exams/create', views_admin.create_exam, name='admin_create_exam'),
     path('admin/eligibility/verify-all', views_admin.verify_all, name='admin_verify_all'),
     path('admin/halltickets/generate-all', views_admin.generate_halltickets, name='admin_generate_halltickets'),
+    path('admin/halltickets/<int:ht_id>/update', views_admin.update_hallticket, name='admin_update_hallticket'),
     path('admin/halltickets', views_admin.list_halltickets, name='admin_list_halltickets'),
     path('admin/backlogs', views_admin.backlogs, name='admin_backlogs'),
     path('admin/fees', views_admin.fees, name='admin_fees'),
@@ -34,6 +35,21 @@ urlpatterns = [
     path('admin/notifications', views_admin.list_notifications, name='admin_list_notifications'),
     path('admin/analytics', views_admin.analytics, name='admin_analytics'),
     path('admin/reports/export', views_admin.export_report, name='admin_export_report'),
+
+    # Seating arrangement endpoints
+    path('admin/seating/rooms', views_seating.list_rooms, name='seating_list_rooms'),
+    path('admin/seating/rooms/create', views_seating.create_room, name='seating_create_room'),
+    path('admin/seating/rooms/<int:room_id>', views_seating.get_room, name='seating_get_room'),
+    path('admin/seating/rooms/<int:room_id>/update', views_seating.update_room, name='seating_update_room'),
+    path('admin/seating/rooms/<int:room_id>/delete', views_seating.delete_room, name='seating_delete_room'),
+    path('admin/seating/rooms/<int:room_id>/layout', views_seating.get_room_layout, name='seating_room_layout'),
+    path('admin/seating/arrangements', views_seating.list_arrangements, name='seating_list_arrangements'),
+    path('admin/seating/arrangements/auto', views_seating.auto_arrange, name='seating_auto_arrange'),
+    path('admin/seating/arrangements/manual', views_seating.manual_arrange, name='seating_manual_arrange'),
+    path('admin/seating/arrangements/<int:arrangement_id>/update', views_seating.update_arrangement, name='seating_update_arrangement'),
+    path('admin/seating/arrangements/<int:arrangement_id>/delete', views_seating.delete_arrangement, name='seating_delete_arrangement'),
+    path('admin/seating/confirm', views_seating.confirm_arrangements, name='seating_confirm'),
+    path('admin/seating/sync-halltickets', views_seating.sync_halltickets, name='seating_sync_halltickets'),
     
     # Teacher endpoints
     path('teacher/dashboard', views_teacher.dashboard, name='teacher_dashboard'),

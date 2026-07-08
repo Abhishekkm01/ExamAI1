@@ -696,66 +696,162 @@ function XIcon() { return <span className="inline-block mr-1 text-rose-500">✗<
 
 // ==================== HALL TICKETS ====================
 export function AdminHallTickets() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
+  type HallTicketRow = {
+    id: number;
+    hall_ticket_no: string;
+    student_id: number;
+    student_name: string;
+    roll_no: string;
+    department: string;
+    photo: string;
+    seat_number: string;
+    room: string;
+    exam: string;
+    qr_code_content: string;
+  };
+
+  const [tickets, setTickets] = useState<HallTicketRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [editing, setEditing] = useState<{ seat_number: string; room: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([fetchStudents(), fetchAdminExams()]).then(([s, e]) => {
-      setStudents(s); setExams(e); setLoading(false);
-    });
-  }, []);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/admin/halltickets`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (res.ok) setTickets(await res.json());
+    } catch {}
+    setLoading(false);
+  };
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
+  useEffect(() => { load(); }, []);
 
-  const eligible = students.filter((s) => getStudentEligibility(s).eligible);
+  const generateAll = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API}/api/admin/halltickets/generate-all`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.detail || "Failed to generate");
+      setMessage(j.message);
+      await load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+    setBusy(false);
+  };
+
+  const saveTicket = async (id: number) => {
+    if (!editing) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${API}/api/admin/halltickets/${id}/update`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(editing),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.detail || "Failed to update");
+      setMessage("Hall ticket updated");
+      setSelected(null);
+      setEditing(null);
+      await load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+    setBusy(false);
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading hall tickets from MySQL…</div>;
+
   return (
     <div>
-      <PageHeader title="Hall Ticket Generation" subtitle="Generate professional PDF hall tickets with QR codes"
+      <PageHeader title="Hall Ticket Management" subtitle="View, edit seat & hall numbers, and generate tickets"
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary"><Download className="w-4 h-4" /> Bulk Download</Button>
-            <Button variant="primary"><QrCode className="w-4 h-4" /> Generate All</Button>
+            <Button variant="secondary" onClick={() => window.location.href = "/admin/seating"}>
+              <MapPin className="w-4 h-4" /> Seating Arrangement
+            </Button>
+            <Button variant="primary" onClick={generateAll} disabled={busy}>
+              <QrCode className="w-4 h-4" /> {busy ? "Working…" : "Generate / Sync All"}
+            </Button>
           </div>
         } />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {eligible.map((s) => {
-          const hallTicketNo = `HT2026${s.rollNo.replace(/\D/g, "")}`;
-          const isSelected = selected === s.id;
-          return (
-            <Card key={s.id} className={cn("p-5 hover:shadow-lg transition-shadow cursor-pointer", isSelected && "ring-2 ring-indigo-500")} onClick={() => setSelected(s.id)}>
-              <div className="flex items-center gap-3 mb-3">
-                <img src={s.photo} alt="" className="w-14 h-14 rounded-full bg-slate-200" />
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">{s.name}</p>
-                  <p className="text-xs text-slate-500">{s.rollNo}</p>
-                  <Badge variant="green">Eligible</Badge>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 mb-2">Hall Ticket: <span className="font-mono font-semibold text-slate-800 dark:text-white">{hallTicketNo}</span></p>
-              <div className="flex gap-2">
-                <Button variant="primary" className="flex-1" onClick={(e) => { e.stopPropagation(); downloadHT(s, hallTicketNo); }}>
-                  <Download className="w-3.5 h-3.5" /> PDF
-                </Button>
-                <Button variant="secondary" onClick={(e) => { e.stopPropagation(); window.print(); }}>
-                  <Printer className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="secondary" onClick={(e) => { e.stopPropagation(); alert(`Email sent to ${s.email}`); }}>
-                  <Mail className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+      {message && (
+        <div className="mb-4 p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-300">{message}</div>
+      )}
 
-      {selected && (() => {
-        const s = students.find(x => x.id === selected)!;
-        const hallTicketNo = `HT2026${s.rollNo.replace(/\D/g, "")}`;
-        return <HallTicketPreview student={s} hallTicketNo={hallTicketNo} onClose={() => setSelected(null)} />;
-      })()}
+      <Card className="overflow-hidden mb-6">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <tr className="text-left text-slate-600 dark:text-slate-300">
+                <th className="p-4 font-medium">Student</th>
+                <th className="p-4 font-medium">Hall Ticket</th>
+                <th className="p-4 font-medium">Exam Hall</th>
+                <th className="p-4 font-medium">Seat</th>
+                <th className="p-4 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {tickets.map((t) => (
+                <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <img src={t.photo} alt="" className="w-10 h-10 rounded-full bg-slate-200" />
+                      <div>
+                        <p className="font-medium">{t.student_name}</p>
+                        <p className="text-xs text-slate-500">{t.roll_no} • {t.department}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4 font-mono text-xs">{t.hall_ticket_no}</td>
+                  <td className="p-4">
+                    {selected === t.id ? (
+                      <TextInput value={editing?.room ?? t.room} onChange={(e) => setEditing({ ...(editing || { seat_number: t.seat_number, room: t.room }), room: e.target.value })} />
+                    ) : t.room}
+                  </td>
+                  <td className="p-4">
+                    {selected === t.id ? (
+                      <TextInput value={editing?.seat_number ?? t.seat_number} onChange={(e) => setEditing({ ...(editing || { seat_number: t.seat_number, room: t.room }), seat_number: e.target.value })} className="w-24" />
+                    ) : <span className="font-semibold text-indigo-600">{t.seat_number}</span>}
+                  </td>
+                  <td className="p-4 text-right">
+                    {selected === t.id ? (
+                      <div className="flex justify-end gap-1">
+                        <Button variant="primary" onClick={() => saveTicket(t.id)} disabled={busy}><Save className="w-3.5 h-3.5" /> Save</Button>
+                        <Button variant="secondary" onClick={() => { setSelected(null); setEditing(null); }}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-1">
+                        <Button variant="secondary" onClick={() => { setSelected(t.id); setEditing({ seat_number: t.seat_number, room: t.room }); }}>
+                          <Edit2 className="w-3.5 h-3.5" /> Edit
+                        </Button>
+                        <Button variant="secondary" onClick={() => {
+                          const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
+                          downloadHT(student, t.hall_ticket_no, t.room, t.seat_number, t.qr_code_content);
+                        }}>
+                          <Download className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {tickets.length === 0 && (
+                <tr><td colSpan={5} className="p-10 text-center text-slate-500">No hall tickets yet. Use Seating Arrangement then Sync, or Generate All.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -835,10 +931,10 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   );
 }
 
-function downloadHT(student: Student, hallTicketNo: string) {
-  const exam = { subjectCode: "CS301", subjectName: "Data Structures & Algorithms", date: "2026-11-10", time: "10:00 AM", duration: "3 hours", room: "Hall A-101" };
-  const seatNumber = `S${100 + parseInt(student.id.replace(/\D/g, ""))}`;
-  const qrValue = JSON.stringify({ htNo: hallTicketNo, name: student.name, roll: student.rollNo, seat: seatNumber, room: exam.room, verified: true });
+function downloadHT(student: Student, hallTicketNo: string, room = "Hall A-101", seatNumber?: string, qrContent?: string) {
+  const exam = { subjectCode: "CS301", subjectName: "Data Structures & Algorithms", date: "2026-11-10", time: "10:00 AM", duration: "3 hours", room };
+  const seat = seatNumber || `S${100 + parseInt(student.id.replace(/\D/g, ""))}`;
+  const qrValue = qrContent || JSON.stringify({ htNo: hallTicketNo, name: student.name, roll: student.rollNo, seat, room: exam.room, verified: true });
   const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`;
 
   const html = `<!DOCTYPE html><html><head><title>Hall Ticket ${hallTicketNo}</title>

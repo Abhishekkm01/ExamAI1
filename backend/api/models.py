@@ -178,6 +178,53 @@ class HallTicket(models.Model):
         ]
 
 
+class SeatingRoom(models.Model):
+    room_code = models.CharField(max_length=50, unique=True, db_index=True)
+    room_name = models.CharField(max_length=255)
+    building = models.CharField(max_length=100, blank=True, null=True)
+    floor = models.IntegerField(default=1)
+    capacity = models.IntegerField(default=60)
+    rows = models.IntegerField(default=10)
+    columns = models.IntegerField(default=6)
+    has_projector = models.BooleanField(default=False)
+    has_ac = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'seating_rooms'
+        indexes = [
+            models.Index(fields=['room_code']),
+            models.Index(fields=['is_active']),
+        ]
+
+
+class SeatingArrangement(models.Model):
+    ARRANGEMENT_TYPES = [('auto', 'Auto'), ('manual', 'Manual')]
+
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='seating_arrangements')
+    room = models.ForeignKey(SeatingRoom, on_delete=models.CASCADE, related_name='seating_arrangements')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='seating_assignments')
+    seat_row = models.IntegerField()
+    seat_column = models.IntegerField()
+    seat_number = models.CharField(max_length=20)
+    arrangement_type = models.CharField(max_length=20, choices=ARRANGEMENT_TYPES, default='auto')
+    is_confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'seating_arrangements'
+        unique_together = [('exam', 'student')]
+        indexes = [
+            models.Index(fields=['exam']),
+            models.Index(fields=['room']),
+            models.Index(fields=['student']),
+            models.Index(fields=['exam', 'room']),
+        ]
+
+
 class Notification(models.Model):
     title = models.CharField(max_length=255)
     message = models.TextField()

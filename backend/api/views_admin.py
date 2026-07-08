@@ -4,10 +4,12 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q, Sum, Avg
 from django.db import transaction
-from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum
+from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom
+from .seating_service import SeatingArrangementService, build_qr_content, room_display_name
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
-                          NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer)
+                          NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
+                          HallTicketUpdateSerializer)
 from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
@@ -356,31 +358,99 @@ def verify_all(request):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def generate_halltickets(request):
-    """Generate hall tickets for all eligible students"""
+    """Generate hall tickets for all eligible students (uses seating if available)."""
+    exam_id = request.data.get('exam_id')
+    if exam_id:
+        try:
+            count = SeatingArrangementService.sync_hall_tickets(exam_id)
+            return Response({'message': f'Synced {count} hall tickets from seating arrangements.'})
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     eligible = Student.objects.filter(is_deleted=False, is_eligible=True)
     count = 0
-    
+
     for s in eligible:
-        if hasattr(s, 'hall_ticket'):
-            continue
-        
         exam = Exam.objects.filter(department=s.department, is_deleted=False).first()
         if not exam:
-            exam = Exam.objects.first()
+            exam = Exam.objects.filter(is_deleted=False).first()
         if not exam:
             continue
-        
+
+        seating = SeatingArrangement.objects.filter(student=s, exam=exam).select_related('room').first()
+        if seating:
+            SeatingArrangementService.sync_arrangement_to_hall_ticket(seating)
+            count += 1
+            continue
+
+        if hasattr(s, 'hall_ticket') and s.hall_ticket.is_active:
+            continue
+
+        hall_ticket_no = f"HT2026{s.roll_no}"
+        seat_number = f"S{100 + s.id}"
+        room = exam.room
         HallTicket.objects.create(
-            hall_ticket_no=f"HT2026{s.roll_no}",
+            hall_ticket_no=hall_ticket_no,
             student=s,
             exam=exam,
-            seat_number=f"S{100 + s.id}",
-            room=exam.room,
-            qr_code_content=f"HT:HT2026{s.roll_no}|Roll:{s.roll_no}|Exam:{exam.subject_code}|Seat:S{100+s.id}"
+            seat_number=seat_number,
+            room=room,
+            qr_code_content=build_qr_content(hall_ticket_no, s.roll_no, exam.subject_code, seat_number, room),
         )
         count += 1
-    
+
     return Response({'message': f'Generated {count} hall tickets.'})
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_hallticket(request, ht_id):
+    """Admin: update seat number and hall/room on a hall ticket."""
+    try:
+        ht = HallTicket.objects.select_related('student', 'exam').get(id=ht_id, is_active=True)
+    except HallTicket.DoesNotExist:
+        return Response({'detail': 'Hall ticket not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = HallTicketUpdateSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    if 'seat_number' in data:
+        ht.seat_number = data['seat_number']
+    if 'room' in data:
+        ht.room = data['room']
+
+    ht.qr_code_content = build_qr_content(
+        ht.hall_ticket_no, ht.student.roll_no, ht.exam.subject_code,
+        ht.seat_number, ht.room
+    )
+    ht.save()
+
+    seating = SeatingArrangement.objects.filter(
+        student=ht.student, exam=ht.exam
+    ).select_related('room').first()
+    if seating and 'seat_number' in data:
+        seating.seat_number = data['seat_number']
+        seating.save()
+    if seating and 'room' in data:
+        room = SeatingRoom.objects.filter(
+            Q(room_name__icontains=data['room']) | Q(room_code__icontains=data['room']),
+            is_active=True,
+        ).first()
+        if room:
+            seating.room = room
+            seating.save()
+
+    return Response({
+        'id': ht.id,
+        'hall_ticket_no': ht.hall_ticket_no,
+        'seat_number': ht.seat_number,
+        'room': ht.room,
+        'qr_code_content': ht.qr_code_content,
+        'message': 'Hall ticket updated',
+    })
 
 
 @api_view(['GET'])
@@ -401,7 +471,10 @@ def list_halltickets(request):
             'photo': h.student.photo,
             'seat_number': h.seat_number,
             'room': h.room,
-            'exam': h.exam.subject_name
+            'exam': h.exam.subject_name,
+            'exam_id': h.exam_id,
+            'subject_code': h.exam.subject_code,
+            'qr_code_content': h.qr_code_content,
         })
     return Response(data)
 

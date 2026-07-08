@@ -11,6 +11,22 @@ from .seating_service import SeatingArrangementService
 from .permissions import IsAdmin
 
 
+def _room_dict(room):
+    return {
+        'id': room.id,
+        'room_code': room.room_code,
+        'room_name': room.room_name,
+        'building': room.building,
+        'floor': room.floor,
+        'capacity': room.capacity,
+        'rows': room.rows,
+        'columns': room.columns,
+        'has_projector': room.has_projector,
+        'has_ac': room.has_ac,
+        'is_active': room.is_active,
+    }
+
+
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
@@ -22,8 +38,7 @@ def list_rooms(request):
             return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
         
         rooms = SeatingRoom.objects.filter(is_active=True)
-        serializer = SeatingRoomSerializer(rooms, many=True)
-        return Response(serializer.data)
+        return Response([_room_dict(r) for r in rooms])
     except Exception as e:
         return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -41,8 +56,7 @@ def create_room(request):
         serializer = SeatingRoomCreateSerializer(data=request.data)
         if serializer.is_valid():
             room = SeatingRoom.objects.create(**serializer.validated_data)
-            response_serializer = SeatingRoomSerializer(room)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            return Response(_room_dict(room), status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
@@ -206,6 +220,7 @@ def update_arrangement(request, arrangement_id):
             else:
                 setattr(arrangement, field, value)
         arrangement.save()
+        SeatingArrangementService.sync_arrangement_to_hall_ticket(arrangement)
         response_serializer = SeatingArrangementSerializer(arrangement)
         return Response(response_serializer.data)
     
@@ -269,13 +284,39 @@ def confirm_arrangements(request):
     except Exam.DoesNotExist:
         return Response({'detail': 'Exam not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    # Confirm all arrangements for this exam
+    # Confirm all arrangements for this exam and sync hall tickets
     count = SeatingArrangement.objects.filter(exam=exam).update(is_confirmed=True)
-    
+    try:
+        synced = SeatingArrangementService.sync_hall_tickets(exam_id)
+    except ValueError:
+        synced = 0
+
     return Response({
         'message': f'Confirmed {count} seating arrangements',
+        'hall_tickets_synced': synced,
         'exam': exam.subject_name
     })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])  # Will be protected by middleware
+def sync_halltickets(request):
+    """Sync seating arrangements to hall tickets for an exam."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'admin':
+        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    exam_id = request.data.get('exam_id')
+    if not exam_id:
+        return Response({'detail': 'exam_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        synced = SeatingArrangementService.sync_hall_tickets(exam_id)
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({'message': f'Synced {synced} hall tickets from seating arrangements', 'synced': synced})
 
 
 @api_view(['GET'])
