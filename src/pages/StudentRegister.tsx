@@ -3,15 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AppContext";
 import { Shield, GraduationCap, ArrowRight, CheckCircle2, Mail, Lock, User, Hash, Phone } from "lucide-react";
 import { PhotoUpload, photoPreview, validatePhotoFile } from "../components/PhotoUpload";
+import { useDepartments } from "../hooks/useDepartments";
 
 const API = "http://localhost:8000";
 const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed=student";
 
-const DEPARTMENTS = ["Computer Science", "Electronics", "Mechanical", "Civil"];
-
 export default function StudentRegister() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { departments, loading: deptsLoading, defaultDepartment } = useDepartments();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -19,7 +19,7 @@ export default function StudentRegister() {
     confirmPassword: "",
     rollNo: "",
     mobile: "",
-    department: DEPARTMENTS[0],
+    department: "",
     semester: 5,
     section: "A",
   });
@@ -28,6 +28,12 @@ export default function StudentRegister() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (defaultDepartment && !form.department) {
+      setForm((f) => ({ ...f, department: defaultDepartment }));
+    }
+  }, [defaultDepartment, form.department]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -181,8 +187,12 @@ export default function StudentRegister() {
                     value={form.department}
                     onChange={(e) => update("department", e.target.value)}
                     className={inputClass}
+                    disabled={deptsLoading || departments.length === 0}
                   >
-                    {DEPARTMENTS.map((d) => (
+                    {!form.department && (
+                      <option value="">{deptsLoading ? "Loading departments…" : "Select department"}</option>
+                    )}
+                    {departments.map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>

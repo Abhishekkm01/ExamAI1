@@ -95,6 +95,7 @@ export const api = {
   verifyHallTicket(htNo: string) {
     return tryFetch(`/api/public/verify-hallticket/${encodeURIComponent(htNo)}`);
   },
+  publicMeta: () => tryFetch("/api/public/meta"),
 
   // -------- Admin --------
   adminDashboard: () => tryFetch("/api/admin/dashboard"),

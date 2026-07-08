@@ -78,6 +78,11 @@ export async function fetchAdminExams(): Promise<Exam[]> {
   }));
 }
 
+export async function fetchDepartments(): Promise<string[]> {
+  const data = await api.publicMeta();
+  return data?.departments || [];
+}
+
 export async function fetchNotifications(): Promise<Notification[]> {
   const data = await api.studentNotifications();
   return (data || []).map((n: any) => ({

@@ -13,6 +13,7 @@ import os
 
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from ai_modules.eligibility_model import eligibility_ai
 from .photo_utils import save_profile_photo
 from .face_service import try_enroll_student_face
 

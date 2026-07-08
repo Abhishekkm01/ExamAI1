@@ -8,6 +8,8 @@ import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Ma
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from "recharts";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../../utils/cn";
+import { useDepartments } from "../../hooks/useDepartments";
+import { DepartmentSelect } from "../../components/DepartmentSelect";
 
 const API = "http://localhost:8000";
 const token = () => localStorage.getItem("examshield_token") || "";
@@ -76,10 +78,11 @@ export function AdminStudents() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [viewing, setViewing] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
+  const { departments: dbDepartments } = useDepartments();
   const pageSize = 5;
 
   useEffect(() => { fetchStudents().then((s) => { setList(s); setLoading(false); }); }, []);
-  const depts = Array.from(new Set(list.map((s) => s.department)));
+  const depts = Array.from(new Set([...dbDepartments, ...list.map((s) => s.department)])).filter(Boolean);
 
   const filtered = useMemo(() => {
     return list.filter((s) =>
@@ -270,13 +273,20 @@ export function AdminStudents() {
 }
 
 function StudentModal({ student, onClose, onSave }: { student: Student | null; onClose: () => void; onSave: (s: Student, opts?: { password?: string }) => void }) {
+  const { departments, loading: deptsLoading } = useDepartments();
   const [form, setForm] = useState<Student>(student || {
-    id: "", rollNo: "", name: "", email: "", mobile: "", department: "Computer Science",
+    id: "", rollNo: "", name: "", email: "", mobile: "", department: "",
     semester: 5, section: "A", photo: "", attendance: 75, internalMarks: 30, assignmentMarks: 7,
     previousResult: 7.0, backlogs: 0, feePaid: false, feeAmount: 45000, feeDueDate: "2026-09-30", createdAt: new Date().toISOString().slice(0, 10),
   });
   const [password, setPassword] = useState("");
   const update = (k: keyof Student, v: any) => setForm({ ...form, [k]: v } as Student);
+
+  useEffect(() => {
+    if (!student?.id && departments.length && !form.department) {
+      setForm((f) => ({ ...f, department: departments[0] }));
+    }
+  }, [departments, student?.id, form.department]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
@@ -294,9 +304,12 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
           </Field>
           <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
           <Field label="Department">
-            <Select value={form.department} onChange={(e) => update("department", e.target.value)}>
-              <option>Computer Science</option><option>Electronics</option><option>Mechanical</option><option>Civil</option>
-            </Select>
+            <DepartmentSelect
+              value={form.department}
+              onChange={(v) => update("department", v)}
+              departments={departments}
+              loading={deptsLoading}
+            />
           </Field>
           <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => update("semester", +e.target.value)} /></Field>
           <Field label="Section"><TextInput value={form.section} onChange={(e) => update("section", e.target.value)} /></Field>
@@ -444,16 +457,24 @@ export function AdminTeachers() {
 
 function TeacherModal({ teacher, onClose, onSaved }: { teacher?: Teacher; onClose: () => void; onSaved: (t: Teacher) => void }) {
   const isEdit = !!teacher;
+  const { departments, loading: deptsLoading } = useDepartments();
   const [form, setForm] = useState({
     email: teacher?.email || "",
     password: "",
     name: teacher?.name || "",
     emp_id: teacher?.empId || "",
-    department: teacher?.department || "Computer Science",
+    department: teacher?.department || "",
     assigned_subjects: teacher?.subjects?.join(",") || "CS301,CS302",
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEdit && departments.length && !form.department) {
+      setForm((f) => ({ ...f, department: departments[0] }));
+    }
+  }, [departments, isEdit, form.department]);
+
   const save = async () => {
     setSaving(true); setErr(null);
     try {
@@ -504,9 +525,12 @@ function TeacherModal({ teacher, onClose, onSaved }: { teacher?: Teacher; onClos
           <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Employee ID"><TextInput value={form.emp_id} onChange={(e) => setForm({ ...form, emp_id: e.target.value })} placeholder="TCH005" /></Field>
           <Field label="Department">
-            <Select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
-              <option>Computer Science</option><option>Electronics</option><option>Mechanical</option><option>Civil</option>
-            </Select>
+            <DepartmentSelect
+              value={form.department}
+              onChange={(v) => setForm({ ...form, department: v })}
+              departments={departments}
+              loading={deptsLoading}
+            />
           </Field>
           <Field label="Assigned Subjects (comma-separated)"><TextInput value={form.assigned_subjects} onChange={(e) => setForm({ ...form, assigned_subjects: e.target.value })} /></Field>
           <Field label={isEdit ? "New Password (optional)" : "Password"}>
@@ -589,10 +613,11 @@ export function AdminExams() {
 
 function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => void; onSaved: (e: Exam) => void }) {
   const isEdit = !!exam;
+  const { departments, loading: deptsLoading } = useDepartments();
   const [form, setForm] = useState({
     subject_code: exam?.subjectCode || "",
     subject_name: exam?.subjectName || "",
-    department: exam?.department || "Computer Science",
+    department: exam?.department || "",
     semester: exam?.semester || 5,
     exam_date: exam?.date || "2026-11-10",
     exam_time: exam?.time || "10:00 AM",
@@ -602,6 +627,13 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEdit && departments.length && !form.department) {
+      setForm((f) => ({ ...f, department: departments[0] }));
+    }
+  }, [departments, isEdit, form.department]);
+
   const save = async () => {
     setSaving(true); setErr(null);
     try {
@@ -650,9 +682,12 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           <Field label="Subject Name"><TextInput value={form.subject_name} onChange={(e) => setForm({ ...form, subject_name: e.target.value })} placeholder="Data Structures" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department">
-              <Select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
-                <option>Computer Science</option><option>Electronics</option><option>Mechanical</option><option>Civil</option>
-              </Select>
+              <DepartmentSelect
+                value={form.department}
+                onChange={(v) => setForm({ ...form, department: v })}
+                departments={departments}
+                loading={deptsLoading}
+              />
             </Field>
             <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => setForm({ ...form, semester: +e.target.value })} /></Field>
           </div>

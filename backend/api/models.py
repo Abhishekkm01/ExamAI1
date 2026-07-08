@@ -266,6 +266,22 @@ class EligibilityPrediction(models.Model):
         ]
 
 
+class Department(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'departments'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class FeePayment(models.Model):
     METHOD_CHOICES = [
         ('online', 'Online'),

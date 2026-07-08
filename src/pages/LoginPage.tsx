@@ -17,13 +17,13 @@ function BackendStatus() {
           <ServerCrash className="w-3 h-3" /> Backend not reachable
         </span>
       )}
-      <details className="text-[10px] text-slate-500 cursor-pointer">
+      {/* <details className="text-[10px] text-slate-500 cursor-pointer">
         <summary>Debug info</summary>
         <div className="mt-1 p-2 rounded bg-slate-100 dark:bg-slate-800 font-mono text-left max-w-xs break-all">
           <div>Token: {localStorage.getItem("examshield_token") ? "✓ present" : "✗ missing"}</div>
           <div>User: {localStorage.getItem("examshield_user") ? "✓ stored" : "✗ none"}</div>
         </div>
-      </details>
+      </details> */}
     </div>
   );
 }
@@ -167,13 +167,13 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="my-6 flex items-center gap-3">
+            {/* <div className="my-6 flex items-center gap-3">
               <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
               <span className="text-xs text-slate-400">Quick demo access</span>
               <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
-            </div>
+            </div> */}
 
-            <div className="grid grid-cols-3 gap-2">
+            {/* <div className="grid grid-cols-3 gap-2">
               {demo.map((d) => (
                 <button key={d.label} onClick={() => quickLogin(d)}
                   className={cn(
@@ -183,7 +183,7 @@ export default function LoginPage() {
                   {d.label}
                 </button>
               ))}
-            </div>
+            </div> */}
 
             <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <Sparkles className="w-3 h-3" />

@@ -1,4 +1,12 @@
 from rest_framework import serializers
+from .department_service import is_valid_department, get_department_names
+
+
+def validate_department_name(value):
+    if not is_valid_department(value):
+        allowed = ', '.join(get_department_names(include_legacy=False))
+        raise serializers.ValidationError(f'Invalid department. Choose from: {allowed}')
+    return value
 from .models import User, Student, Teacher, Exam, Attendance, InternalMark, HallTicket, Notification, ChatbotLog, EligibilityPrediction
 
 
@@ -102,6 +110,9 @@ class SetupTeacherSerializer(serializers.Serializer):
     department = serializers.CharField()
     assigned_subjects = serializers.CharField(required=False, allow_blank=True)
 
+    def validate_department(self, value):
+        return validate_department_name(value)
+
 
 class RegisterStudentSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -112,6 +123,9 @@ class RegisterStudentSerializer(serializers.Serializer):
     semester = serializers.IntegerField(min_value=1, max_value=8)
     section = serializers.CharField(required=False, allow_blank=True, default="A")
     mobile = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_department(self, value):
+        return validate_department_name(value)
 
 
 class StudentProfileUpdateSerializer(serializers.Serializer):
@@ -147,6 +161,9 @@ class SetupStudentSerializer(serializers.Serializer):
     fee_amount = serializers.FloatField(default=45000)
     fee_due_date = serializers.CharField(required=False, allow_blank=True)
 
+    def validate_department(self, value):
+        return validate_department_name(value)
+
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.EmailField(required=False)  # Accept username as alias for email
@@ -173,6 +190,9 @@ class SetupExamSerializer(serializers.Serializer):
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
 
+    def validate_department(self, value):
+        return validate_department_name(value)
+
 
 class SendNotificationSerializer(serializers.Serializer):
     title = serializers.CharField()
@@ -198,6 +218,9 @@ class StudentCreateSerializer(serializers.Serializer):
     fee_paid = serializers.BooleanField(default=False)
     fee_amount = serializers.FloatField(default=45000)
     fee_due_date = serializers.CharField(required=False)
+
+    def validate_department(self, value):
+        return validate_department_name(value)
 
 
 class MarksUpdateSerializer(serializers.Serializer):
@@ -226,6 +249,11 @@ class StudentUpdateSerializer(serializers.Serializer):
     fee_due_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     password = serializers.CharField(required=False, min_length=6)
 
+    def validate_department(self, value):
+        if not value:
+            return value
+        return validate_department_name(value)
+
 
 class ExamCreateSerializer(serializers.Serializer):
     subject_code = serializers.CharField()
@@ -237,6 +265,9 @@ class ExamCreateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
+
+    def validate_department(self, value):
+        return validate_department_name(value)
 
 
 class ExamUpdateSerializer(serializers.Serializer):
@@ -250,6 +281,11 @@ class ExamUpdateSerializer(serializers.Serializer):
     room = serializers.CharField(required=False)
     total_marks = serializers.IntegerField(required=False)
 
+    def validate_department(self, value):
+        if not value:
+            return value
+        return validate_department_name(value)
+
 
 class TeacherUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
@@ -258,6 +294,11 @@ class TeacherUpdateSerializer(serializers.Serializer):
     department = serializers.CharField(required=False)
     assigned_subjects = serializers.CharField(required=False)
     password = serializers.CharField(required=False, min_length=6)
+
+    def validate_department(self, value):
+        if not value:
+            return value
+        return validate_department_name(value)
 
 
 class NotificationCreateSerializer(serializers.Serializer):

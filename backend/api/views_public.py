@@ -3,6 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Student, Exam, HallTicket
+from .department_service import get_department_names
 
 
 @api_view(['GET'])
@@ -60,8 +61,7 @@ def verify_hallticket(request, ht_no):
 @permission_classes([AllowAny])
 def meta(request):
     """Public endpoint: returns departments, subjects, and semesters for UI dropdowns"""
-    students = Student.objects.filter(is_deleted=False)
-    depts = sorted({s.department for s in students})
+    depts = get_department_names(include_legacy=True)
     
     exams = Exam.objects.filter(is_deleted=False)
     subjects = []
