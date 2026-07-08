@@ -5,11 +5,12 @@ from rest_framework import status
 from django.db.models import Avg, Q
 from .models import User, Student, Teacher, Attendance, InternalMark
 from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSerializer,
-                          TeacherProfileUpdateSerializer)
+                          TeacherProfileUpdateSerializer, MarksUpdateSerializer)
 from .permissions import IsTeacher, IsOwner
 from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
 from .attendance_service import parse_student_id, refresh_student_attendance_stats
+from .marks_service import update_student_marks
 import sys
 import os
 
@@ -161,67 +162,84 @@ def mark_attendance(request):
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def get_marks(request):
-    """Get student marks"""
+    """Get student marks for teacher's department"""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
     subject_code = request.query_params.get('subject_code', 'CS301')
-    
+
     try:
         t = Teacher.objects.get(user_id=user.id)
     except Teacher.DoesNotExist:
         dept = "Computer Science"
+        subjects = ["CS301", "CS302"]
     else:
         dept = t.department
-    
-    students = Student.objects.filter(department=dept, is_deleted=False)
+        subjects = [s.strip() for s in t.assigned_subjects.split(',') if s.strip()] or ["CS301", "CS302"]
+
+    students = Student.objects.filter(department=dept, is_deleted=False).select_related('user')
     data = []
     for s in students:
+        subject_mark = InternalMark.objects.filter(student=s, subject_code=subject_code).first()
         data.append({
             'id': s.id,
             'name': s.user.name,
             'roll_no': s.roll_no,
             'photo': s.photo,
-            'internal_marks': s.internal_marks,
-            'assignment_marks': s.assignment_marks
+            'department': s.department,
+            'internal_marks': subject_mark.internal_score if subject_mark else s.internal_marks,
+            'assignment_marks': subject_mark.assignment_score if subject_mark else s.assignment_marks,
         })
-    return Response(data)
+
+    return Response({
+        'students': data,
+        'department': dept,
+        'subjects': subjects,
+        'subject_code': subject_code,
+    })
 
 
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def update_marks(request):
-    """Update student marks"""
+    """Update student internal/assignment marks"""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
-    
-    student_id = request.data.get('student_id')
-    subject_code = request.data.get('subject_code', 'CS301')
-    internal_marks = request.data.get('internal_marks')
-    assignment_marks = request.data.get('assignment_marks')
-    
+
+    serializer = MarksUpdateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+
     try:
-        s = Student.objects.get(id=student_id)
+        t = Teacher.objects.get(user_id=user.id)
+        dept = t.department
+    except Teacher.DoesNotExist:
+        dept = "Computer Science"
+
+    try:
+        s = Student.objects.get(id=data['student_id'], is_deleted=False, department=dept)
     except Student.DoesNotExist:
-        return Response({'detail': 'Student not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    if internal_marks is not None:
-        s.internal_marks = float(internal_marks)
-    if assignment_marks is not None:
-        s.assignment_marks = float(assignment_marks)
-    s.save()
-    
-    InternalMark.objects.create(
-        student=s,
-        subject_code=subject_code,
-        internal_score=s.internal_marks,
-        assignment_score=s.assignment_marks
+        return Response({'detail': 'Student not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+
+    update_student_marks(
+        s,
+        data['subject_code'],
+        internal_marks=data['internal_marks'],
+        assignment_marks=data['assignment_marks'],
     )
-    
-    return Response({'message': 'Marks updated'})
+
+    return Response({
+        'message': 'Marks updated',
+        'student_id': s.id,
+        'internal_marks': s.internal_marks,
+        'assignment_marks': s.assignment_marks,
+        'is_eligible': s.is_eligible,
+    })
 
 
 @api_view(['GET'])

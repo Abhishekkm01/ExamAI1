@@ -527,14 +527,68 @@ function ExamModal({ onClose, onAdded }: { onClose: () => void; onAdded: (e: Exa
 // ==================== INTERNAL MARKS ====================
 export function AdminMarks() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStudents().then((s) => {
+      setStudents(s);
+      setMarks(Object.fromEntries(s.map((x) => [
+        x.id,
+        { internal: x.internalMarks, assignment: x.assignmentMarks },
+      ])));
+      setLoading(false);
+    });
+  }, []);
+
   const filtered = students.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
+
+  const saveMarks = async (student: Student) => {
+    const m = marks[student.id];
+    if (!m) return;
+    setSavingId(student.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const sid = parseInt(student.id.replace(/^s/, ""), 10);
+      const res = await fetch(`${API}/api/admin/students/${sid}/update`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          internal_marks: m.internal,
+          assignment_marks: m.assignment,
+          subject_code: "CS301",
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.detail || "Failed to save marks");
+      setMessage(`Marks updated for ${student.name}`);
+      setStudents((list) => list.map((s) => s.id === student.id ? {
+        ...s,
+        internalMarks: j.internal_marks ?? m.internal,
+        assignmentMarks: j.assignment_marks ?? m.assignment,
+      } : s));
+    } catch (e: any) {
+      setError(e.message || "Failed to save marks");
+    }
+    setSavingId(null);
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading marks from MySQL…</div>;
   return (
     <div>
       <PageHeader title="Internal Marks Management" subtitle="View and update internal marks for all students" />
+
+      {(message || error) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {error || message}
+        </div>
+      )}
+
       <Card className="p-5 mb-6">
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
@@ -550,32 +604,59 @@ export function AdminMarks() {
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
-                <th className="p-4 font-medium">Subject</th>
+                <th className="p-4 font-medium">Department</th>
                 <th className="p-4 font-medium">Internal /40</th>
                 <th className="p-4 font-medium">Assignment /10</th>
-                <th className="p-4 font-medium">Total</th>
+                <th className="p-4 font-medium">Total /50</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
-                      <div>
-                        <p className="font-medium text-slate-800 dark:text-white">{s.name}</p>
-                        <p className="text-xs text-slate-500">{s.rollNo}</p>
+              {filtered.map((s) => {
+                const m = marks[s.id] || { internal: s.internalMarks, assignment: s.assignmentMarks };
+                return (
+                  <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
+                        <div>
+                          <p className="font-medium text-slate-800 dark:text-white">{s.name}</p>
+                          <p className="text-xs text-slate-500">{s.rollNo}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="p-4"><p className="font-medium">{s.department} — All Subjects</p></td>
-                  <td className="p-4"><input type="number" defaultValue={s.internalMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4"><input type="number" defaultValue={s.assignmentMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4 font-semibold">{s.internalMarks + s.assignmentMarks}/50</td>
-                  <td className="p-4 text-right"><Button variant="secondary"><Save className="w-3.5 h-3.5" /> Save</Button></td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-4 text-slate-600 dark:text-slate-300">{s.department}</td>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        min={0}
+                        max={40}
+                        step={0.5}
+                        value={m.internal}
+                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, internal: +e.target.value } })}
+                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </td>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={0.5}
+                        value={m.assignment}
+                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, assignment: +e.target.value } })}
+                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </td>
+                    <td className="p-4 font-semibold">{m.internal + m.assignment}/50</td>
+                    <td className="p-4 text-right">
+                      <Button variant="secondary" disabled={savingId === s.id} onClick={() => saveMarks(s)}>
+                        <Save className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving…" : "Save"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1047,28 +1128,156 @@ export function AdminBacklogs() {
 }
 
 // ==================== FEES ====================
+type PendingFeePayment = {
+  id: number;
+  student_id: number;
+  student_name: string;
+  roll_no: string;
+  department: string;
+  photo?: string;
+  amount: number;
+  method: string;
+  transaction_id: string;
+  reference: string;
+  status: string;
+  paid_at: string | null;
+};
+
 export function AdminFees() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [pending, setPending] = useState<PendingFeePayment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tick, setTick] = useState(0);
-  const reload = () => fetchStudents().then((s) => { setStudents(s); setLoading(false); });
+  const [actionId, setActionId] = useState<number | null>(null);
+
+  const reload = async () => {
+    const [studentRows, feeData] = await Promise.all([
+      fetchStudents(),
+      fetch(`${API}/api/admin/fees`, { headers: { Authorization: `Bearer ${token()}` } })
+        .then((r) => (r.ok ? r.json() : { pending_verifications: [] }))
+        .catch(() => ({ pending_verifications: [] })),
+    ]);
+    setStudents(studentRows);
+    setPending(feeData.pending_verifications || []);
+    setLoading(false);
+  };
+
   useEffect(() => { reload(); }, []);
+
+  const approvePayment = async (paymentId: number) => {
+    setActionId(paymentId);
+    try {
+      const res = await fetch(`${API}/api/admin/fees/payments/${paymentId}/approve`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ admin_note: "Verified and approved" }),
+      });
+      if (!res.ok) throw new Error(await errorMessage(res, "Approval failed"));
+      await reload();
+    } catch (err: any) {
+      alert(err.message || "Approval failed");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const rejectPayment = async (paymentId: number) => {
+    const note = window.prompt("Reason for rejection (optional):") ?? "Rejected by admin";
+    setActionId(paymentId);
+    try {
+      const res = await fetch(`${API}/api/admin/fees/payments/${paymentId}/reject`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ admin_note: note }),
+      });
+      if (!res.ok) throw new Error(await errorMessage(res, "Rejection failed"));
+      await reload();
+    } catch (err: any) {
+      alert(err.message || "Rejection failed");
+    } finally {
+      setActionId(null);
+    }
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
   const paid = students.filter(s => s.feePaid);
   const unpaid = students.filter(s => !s.feePaid);
   const totalDue = unpaid.reduce((a, s) => a + s.feeAmount, 0);
   const totalCollected = paid.reduce((a, s) => a + s.feeAmount, 0);
+
+  const methodLabel = (method: string) => {
+    if (method === "online") return "Online";
+    if (method === "bank_transfer") return "Bank Transfer";
+    if (method === "college") return "College Office";
+    return method;
+  };
+
   return (
     <div>
-      <PageHeader title="Fee Payment Management" subtitle="Track student fee payments (live MySQL data)" />
+      <PageHeader title="Fee Payment Management" subtitle="Verify student payments and track fee collection" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card className="p-5"><p className="text-xs text-slate-500">Total Collected</p><p className="text-2xl font-bold text-emerald-600 mt-2">₹{totalCollected.toLocaleString()}</p></Card>
         <Card className="p-5"><p className="text-xs text-slate-500">Total Due</p><p className="text-2xl font-bold text-rose-600 mt-2">₹{totalDue.toLocaleString()}</p></Card>
-        <Card className="p-5"><p className="text-xs text-slate-500">Paid Students</p><p className="text-2xl font-bold text-slate-700 dark:text-slate-200 mt-2">{paid.length}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Awaiting Verification</p><p className="text-2xl font-bold text-indigo-600 mt-2">{pending.length}</p></Card>
         <Card className="p-5"><p className="text-xs text-slate-500">Pending Students</p><p className="text-2xl font-bold text-amber-600 mt-2">{unpaid.length}</p></Card>
       </div>
+
+      <Card className="overflow-hidden mb-6">
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white">
+          Pending Verifications
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
+              <tr className="text-left text-slate-600 dark:text-slate-300">
+                <th className="p-4 font-medium">Student</th>
+                <th className="p-4 font-medium">Method</th>
+                <th className="p-4 font-medium">Amount</th>
+                <th className="p-4 font-medium">Transaction</th>
+                <th className="p-4 font-medium">Submitted</th>
+                <th className="p-4 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {pending.map((p) => (
+                <tr key={p.id}>
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <img src={p.photo || "https://api.dicebear.com/7.x/avataaars/svg?seed=student"} className="w-8 h-8 rounded-full" alt="" />
+                      <div>
+                        <span className="font-medium block">{p.student_name}</span>
+                        <span className="text-xs text-slate-500">{p.roll_no} • {p.department}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4">{methodLabel(p.method)}</td>
+                  <td className="p-4 font-semibold">₹{p.amount.toLocaleString()}</td>
+                  <td className="p-4">
+                    <div>{p.transaction_id}</div>
+                    {p.reference && <div className="text-xs text-slate-500">{p.reference}</div>}
+                  </td>
+                  <td className="p-4">{p.paid_at ? new Date(p.paid_at).toLocaleString() : "—"}</td>
+                  <td className="p-4 text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="secondary" disabled={actionId === p.id} onClick={() => rejectPayment(p.id)}>
+                        <X className="w-3.5 h-3.5" /> Reject
+                      </Button>
+                      <Button variant="primary" disabled={actionId === p.id} onClick={() => approvePayment(p.id)}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {pending.length === 0 && (
+                <tr><td colSpan={6} className="p-10 text-center text-slate-500">No payments awaiting verification</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       <Card className="overflow-hidden">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white">Pending Payments</div>
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white">Unpaid Students</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
@@ -1093,10 +1302,13 @@ export function AdminFees() {
                       <Button variant="secondary"><Mail className="w-3.5 h-3.5" /> Remind</Button>
                       <Button variant="primary" onClick={async () => {
                         const sid = s.id.replace("s", "");
-                        const token = localStorage.getItem("examshield_token") || "";
-                        try { await fetch(`http://localhost:8000/api/admin/fees/${sid}/mark-paid`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } }); } catch {}
-                        // update local state immediately
-                        setStudents((prev) => prev.map((p) => p.id === s.id ? { ...p, feePaid: true } : p));
+                        try {
+                          const res = await fetch(`${API}/api/admin/fees/${sid}/mark-paid`, { method: "PUT", headers: { Authorization: `Bearer ${token()}` } });
+                          if (!res.ok) throw new Error(await errorMessage(res, "Mark paid failed"));
+                          await reload();
+                        } catch (err: any) {
+                          alert(err.message || "Mark paid failed");
+                        }
                       }}><CheckCircle2 className="w-3.5 h-3.5" /> Mark Paid</Button>
                     </div></td>
                   </tr>
@@ -1110,7 +1322,6 @@ export function AdminFees() {
     </div>
   );
 }
-
 // ==================== NOTIFICATIONS ====================
 export function AdminNotifications() {
   const { notifications, add, markAllRead } = useNotifications();

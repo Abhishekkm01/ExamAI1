@@ -31,6 +31,8 @@ urlpatterns = [
     path('admin/backlogs', views_admin.backlogs, name='admin_backlogs'),
     path('admin/fees', views_admin.fees, name='admin_fees'),
     path('admin/fees/<int:sid>/mark-paid', views_admin.mark_fee_paid, name='admin_mark_fee_paid'),
+    path('admin/fees/payments/<int:payment_id>/approve', views_admin.approve_fee_payment_view, name='admin_approve_fee_payment'),
+    path('admin/fees/payments/<int:payment_id>/reject', views_admin.reject_fee_payment_view, name='admin_reject_fee_payment'),
     path('admin/notifications/create', views_admin.send_notification, name='admin_send_notification'),
     path('admin/notifications', views_admin.list_notifications, name='admin_list_notifications'),
     path('admin/analytics', views_admin.analytics, name='admin_analytics'),
@@ -74,6 +76,8 @@ urlpatterns = [
     path('student/exams', views_student.exams, name='student_exams'),
     path('student/face-verify', views_student.face_verify, name='student_face_verify'),
     path('student/notifications', views_student.notifications, name='student_notifications'),
+    path('student/fees', views_student.get_fees, name='student_fees'),
+    path('student/fees/pay', views_student.pay_fee, name='student_pay_fee'),
     path('student/chatbot', views_student.chatbot, name='student_chatbot'),
     
     # Public endpoints

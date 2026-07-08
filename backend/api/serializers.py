@@ -200,6 +200,13 @@ class StudentCreateSerializer(serializers.Serializer):
     fee_due_date = serializers.CharField(required=False)
 
 
+class MarksUpdateSerializer(serializers.Serializer):
+    student_id = serializers.IntegerField()
+    subject_code = serializers.CharField(default='CS301')
+    internal_marks = serializers.FloatField(min_value=0, max_value=40)
+    assignment_marks = serializers.FloatField(min_value=0, max_value=10)
+
+
 class StudentUpdateSerializer(serializers.Serializer):
     mobile = serializers.CharField(required=False)
     section = serializers.CharField(required=False)
@@ -364,3 +371,12 @@ class SeatingArrangementUpdateSerializer(serializers.Serializer):
     seat_column = serializers.IntegerField(required=False)
     seat_number = serializers.CharField(required=False)
     is_confirmed = serializers.BooleanField(required=False)
+
+
+class PayFeeSerializer(serializers.Serializer):
+    method = serializers.ChoiceField(choices=['online', 'bank_transfer', 'college'])
+    reference = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class FeePaymentReviewSerializer(serializers.Serializer):
+    admin_note = serializers.CharField(required=False, allow_blank=True, max_length=255)

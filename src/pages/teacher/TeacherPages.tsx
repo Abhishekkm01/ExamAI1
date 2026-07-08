@@ -271,24 +271,127 @@ export function TeacherAttendance() {
 }
 
 export function TeacherMarks() {
+  const [subject, setSubject] = useState("CS301");
+  const [subjects, setSubjects] = useState<string[]>(["CS301", "CS302"]);
+  const [department, setDepartment] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
+  const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
-  const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMarks = async (sub = subject) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${API}/api/teacher/marks?subject_code=${encodeURIComponent(sub)}`,
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed to load marks (${res.status})`);
+      }
+      const data = await res.json();
+      const list = (data.students || []).map((s: any) => ({
+        id: `s${s.id}`,
+        rollNo: s.roll_no,
+        name: s.name,
+        email: "",
+        mobile: "",
+        department: s.department,
+        semester: 0,
+        section: "",
+        photo: s.photo,
+        attendance: 0,
+        internalMarks: s.internal_marks,
+        assignmentMarks: s.assignment_marks,
+        previousResult: 0,
+        backlogs: 0,
+        feePaid: true,
+        feeAmount: 0,
+        feeDueDate: "",
+        createdAt: "",
+      }));
+      setStudents(list);
+      setDepartment(data.department || "");
+      if (Array.isArray(data.subjects) && data.subjects.length) setSubjects(data.subjects);
+      setMarks(Object.fromEntries(list.map((s) => [
+        s.id,
+        { internal: s.internalMarks, assignment: s.assignmentMarks },
+      ])));
+    } catch (e: any) {
+      setError(e.message || "Failed to load marks");
+      setStudents([]);
+      setMarks({});
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadMarks(subject); }, [subject]);
+
+  const filtered = students.filter((s) =>
+    s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.rollNo.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const saveMarks = async (studentId: string) => {
+    const m = marks[studentId];
+    if (!m) return;
+    setSavingId(studentId);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API}/api/teacher/marks/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          student_id: parseInt(studentId.replace(/^s/, ""), 10),
+          subject_code: subject,
+          internal_marks: m.internal,
+          assignment_marks: m.assignment,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.detail || Object.values(j).flat().join(" ") || "Failed to save marks");
+      setMessage(`Marks saved for ${students.find((s) => s.id === studentId)?.name || "student"}`);
+      await loadMarks(subject);
+    } catch (e: any) {
+      setError(e.message || "Failed to save marks");
+    }
+    setSavingId(null);
+  };
+
+  if (loading && students.length === 0) return <div className="p-10 text-center text-slate-500">Loading marks…</div>;
 
   return (
     <div>
-      <PageHeader title="Internal Marks" subtitle="Enter and manage internal marks" />
+      <PageHeader
+        title="Internal Marks"
+        subtitle={department ? `Enter marks for ${department} students` : "Enter and manage internal marks"}
+      />
+
+      {(message || error) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {error || message}
+        </div>
+      )}
+
       <Card className="p-5 mb-6">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <TextInput placeholder="Search student..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <Select><option>CS301 - Data Structures</option><option>CS302 - DBMS</option></Select>
+          <Select value={subject} onChange={(e) => setSubject(e.target.value)} className="md:w-56">
+            {subjects.map((code) => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </Select>
         </div>
       </Card>
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -297,33 +400,55 @@ export function TeacherMarks() {
                 <th className="p-4 font-medium">Student</th>
                 <th className="p-4 font-medium">Internal /40</th>
                 <th className="p-4 font-medium">Assignment /10</th>
-                <th className="p-4 font-medium">Total</th>
+                <th className="p-4 font-medium">Total /50</th>
                 <th className="p-4 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((s) => (
-                <tr key={s.id}>
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <img src={s.photo} alt="" className="w-8 h-8 rounded-full" />
-                      <div><p className="font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.rollNo}</p></div>
-                    </div>
-                  </td>
-                  <td className="p-4"><input type="number" defaultValue={s.internalMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4"><input type="number" defaultValue={s.assignmentMarks} className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" /></td>
-                  <td className="p-4 font-semibold">{s.internalMarks + s.assignmentMarks}/50</td>
-                  <td className="p-4 text-right"><Button variant="primary" onClick={async () => {
-                    try {
-                      await fetch(`${API}/api/teacher/marks/update`, {
-                        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-                        body: JSON.stringify({ student_id: parseInt(s.id.replace("s", "")), subject_code: "CS301", internal_marks: s.internalMarks, assignment_marks: s.assignmentMarks }),
-                      });
-                      alert("Marks saved to MySQL ✓");
-                    } catch { alert("Backend not reachable"); }
-                  }}><CheckCircle2 className="w-3.5 h-3.5" /> Save</Button></td>
-                </tr>
-              ))}
+              {filtered.map((s) => {
+                const m = marks[s.id] || { internal: 0, assignment: 0 };
+                return (
+                  <tr key={s.id}>
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <img src={s.photo} alt="" className="w-8 h-8 rounded-full" />
+                        <div><p className="font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.rollNo}</p></div>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        min={0}
+                        max={40}
+                        step={0.5}
+                        value={m.internal}
+                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, internal: +e.target.value } })}
+                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </td>
+                    <td className="p-4">
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={0.5}
+                        value={m.assignment}
+                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, assignment: +e.target.value } })}
+                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </td>
+                    <td className="p-4 font-semibold">{m.internal + m.assignment}/50</td>
+                    <td className="p-4 text-right">
+                      <Button variant="primary" disabled={savingId === s.id} onClick={() => saveMarks(s.id)}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving…" : "Save"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="p-10 text-center text-slate-500">No students found</td></tr>
+              )}
             </tbody>
           </table>
         </div>

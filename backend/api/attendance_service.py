@@ -14,13 +14,8 @@ def parse_student_id(raw_id):
     return int(sid)
 
 
-def refresh_student_attendance_stats(student):
-    """Recalculate attendance % and eligibility from attendance records."""
-    total = Attendance.objects.filter(student=student).count()
-    if total:
-        present = Attendance.objects.filter(student=student, status='Present').count()
-        student.attendance_percentage = round((present / total) * 100, 1)
-
+def refresh_student_eligibility(student):
+    """Recalculate eligibility fields from current student stats."""
     ai = eligibility_ai.predict_eligibility(
         student.attendance_percentage,
         student.internal_marks,
@@ -47,3 +42,13 @@ def refresh_student_attendance_stats(student):
     ]) / 5) * 100)
     student.save()
     return student
+
+
+def refresh_student_attendance_stats(student):
+    """Recalculate attendance % and eligibility from attendance records."""
+    total = Attendance.objects.filter(student=student).count()
+    if total:
+        present = Attendance.objects.filter(student=student, status='Present').count()
+        student.attendance_percentage = round((present / total) * 100, 1)
+
+    return refresh_student_eligibility(student)

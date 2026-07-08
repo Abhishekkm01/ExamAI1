@@ -5,10 +5,11 @@ from rest_framework import status
 from django.db.models import Q
 from .models import User, Student, Exam, Notification, ChatbotLog, HallTicket, SeatingArrangement
 from .seating_service import build_qr_content, room_display_name
-from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, StudentProfileUpdateSerializer
+from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, StudentProfileUpdateSerializer, PayFeeSerializer
 from .permissions import IsStudent
 from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
+from .fee_service import get_fee_summary, process_fee_payment
 import sys
 import os
 import io
@@ -435,6 +436,59 @@ def notifications(request):
             'created_at': n.created_at.isoformat() if n.created_at else None
         })
     return Response(data)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def get_fees(request):
+    """Student fee status and payment history."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(get_fee_summary(s))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def pay_fee(request):
+    """Process a simulated fee payment (online, bank transfer, or college office)."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = PayFeeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    payment, error = process_fee_payment(s, data['method'], data.get('reference', ''))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+    s.refresh_from_db()
+    summary = get_fee_summary(s)
+    return Response({
+        'message': 'Payment submitted for admin verification',
+        'transaction_id': payment.transaction_id,
+        'fee_paid': s.fee_paid,
+        'payment_pending': True,
+        'is_eligible': s.is_eligible,
+        'eligibility_percentage': s.eligibility_percentage,
+        'payment': summary['pending_payment'],
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])

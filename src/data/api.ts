@@ -105,6 +105,16 @@ export const api = {
   adminExams: () => tryFetch("/api/admin/exams"),
   adminBacklogs: () => tryFetch("/api/admin/backlogs"),
   adminFees: () => tryFetch("/api/admin/fees"),
+  approveFeePayment: (paymentId: number, adminNote = "") =>
+    tryFetch(`/api/admin/fees/payments/${paymentId}/approve`, {
+      method: "PUT",
+      body: JSON.stringify({ admin_note: adminNote }),
+    }),
+  rejectFeePayment: (paymentId: number, adminNote = "") =>
+    tryFetch(`/api/admin/fees/payments/${paymentId}/reject`, {
+      method: "PUT",
+      body: JSON.stringify({ admin_note: adminNote }),
+    }),
   adminAnalytics: () => tryFetch("/api/admin/analytics"),
   verifyAllEligibility: () => tryFetch("/api/admin/eligibility/verify-all", { method: "POST" }),
   generateAllHallTickets: () => tryFetch("/api/admin/halltickets/generate-all", { method: "POST" }),
@@ -132,6 +142,12 @@ export const api = {
   studentEligibility: () => tryFetch("/api/student/eligibility"),
   studentExams: () => tryFetch("/api/student/exams"),
   studentNotifications: () => tryFetch("/api/student/notifications"),
+  studentFees: () => tryFetch("/api/student/fees"),
+  payStudentFee: (method: "online" | "bank_transfer" | "college", reference = "") =>
+    tryFetch("/api/student/fees/pay", {
+      method: "POST",
+      body: JSON.stringify({ method, reference }),
+    }),
   askChatbot: (query: string) =>
     tryFetch("/api/student/chatbot", { method: "POST", body: JSON.stringify({ user_query: query }) }),
 };

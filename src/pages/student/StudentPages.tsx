@@ -29,19 +29,64 @@ async function fetchMe(): Promise<Student | null> {
   } catch { return null; }
 }
 
+type FeePaymentRecord = {
+  id: number;
+  amount: number;
+  method: string;
+  transaction_id: string;
+  reference: string;
+  status: string;
+  paid_at: string | null;
+  verified_at?: string | null;
+  admin_note?: string;
+};
+
+type FeeInfo = {
+  fee_paid: boolean;
+  fee_amount: number;
+  fee_due_date: string | null;
+  is_eligible: boolean;
+  eligibility_percentage: number;
+  payment_pending: boolean;
+  pending_payment: FeePaymentRecord | null;
+  bank_details: { bank_name: string; account_name: string; account_number: string; ifsc: string; swift: string };
+  college_office: { location: string; hours: string; accepts: string };
+  payment_history: FeePaymentRecord[];
+  last_payment: FeePaymentRecord | null;
+};
+
+async function fetchFees(): Promise<FeeInfo | null> {
+  try {
+    const res = await fetch(`${API}/api/student/fees`, { headers: { Authorization: `Bearer ${token()}` } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function payStudentFee(method: "online" | "bank_transfer" | "college", reference = "") {
+  const res = await fetch(`${API}/api/student/fees/pay`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ method, reference }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "Payment failed");
+  return data;
+}
+
 // ============ STUDENT DASHBOARD ============
 export function StudentDashboard() {
   const { user } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
+  const [paymentPending, setPaymentPending] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
-      const me = await fetchMe();
-      const ex = await fetchExams();
-      setStudent(me); setExams(ex); setLoading(false);
+      const [me, ex, fees] = await Promise.all([fetchMe(), fetchExams(), fetchFees()]);
+      setStudent(me); setExams(ex); setPaymentPending(!!fees?.payment_pending); setLoading(false);
     })();
   }, []);
 
@@ -96,16 +141,16 @@ export function StudentDashboard() {
       </div>
 
       {/* Fee Payment Card */}
-      <Card className={cn("p-6 mb-6", student.feePaid ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800" : "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800")}>
+      <Card className={cn("p-6 mb-6", student.feePaid ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800" : paymentPending ? "bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800" : "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800")}>
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <h3 className="font-semibold text-lg flex items-center gap-2">
-              <Wallet className={cn("w-5 h-5", student.feePaid ? "text-emerald-600" : "text-amber-600")} />
+              <Wallet className={cn("w-5 h-5", student.feePaid ? "text-emerald-600" : paymentPending ? "text-indigo-600" : "text-amber-600")} />
               Fee Payment Status
             </h3>
             <div className="mt-3 space-y-2">
-              <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
-                {student.feePaid ? "✓ Fee Paid" : "⚠ Fee Pending"}
+              <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : paymentPending ? "text-indigo-700 dark:text-indigo-300" : "text-amber-700 dark:text-amber-300")}>
+                {student.feePaid ? "✓ Fee Paid" : paymentPending ? "⏳ Awaiting admin approval" : "⚠ Fee Pending"}
               </p>
               <p className="text-sm text-slate-600 dark:text-slate-400">
                 Amount: <span className="font-semibold">₹{student.feeAmount.toLocaleString()}</span>
@@ -121,9 +166,9 @@ export function StudentDashboard() {
             <Button 
               variant="primary" 
               className="whitespace-nowrap"
-              onClick={() => alert("Payment gateway would be integrated here. Amount: ₹" + student.feeAmount)}
+              onClick={() => navigate("/student/payments")}
             >
-              <Wallet className="w-4 h-4" /> Pay Now
+              <Wallet className="w-4 h-4" /> {paymentPending ? "View Status" : "Pay Now"}
             </Button>
           )}
           {student.feePaid && (
@@ -858,35 +903,103 @@ function StatMini({ label, value, ok }: { label: string; value: string | number;
 // ============ PAYMENTS ============
 export function StudentPayments() {
   const [student, setStudent] = useState<Student | null>(null);
+  const [feeInfo, setFeeInfo] = useState<FeeInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState("");
+  const [paySuccess, setPaySuccess] = useState("");
+  const [selectedMethod, setSelectedMethod] = useState<"online" | "bank_transfer" | "college" | null>(null);
+  const [bankReference, setBankReference] = useState("");
+
+  const loadFees = async () => {
+    const [me, fees] = await Promise.all([fetchMe(), fetchFees()]);
+    setStudent(me);
+    setFeeInfo(fees);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    (async () => {
-      const me = await fetchMe();
-      setStudent(me);
-      setLoading(false);
-    })();
+    loadFees();
   }, []);
 
+  const handlePay = async (method: "online" | "bank_transfer" | "college", reference = "") => {
+    setPayError("");
+    setPaySuccess("");
+    setPaying(true);
+    try {
+      const result = await payStudentFee(method, reference);
+      setPaySuccess(`Payment submitted for admin verification. Transaction ID: ${result.transaction_id}`);
+      setSelectedMethod(null);
+      setBankReference("");
+      await loadFees();
+    } catch (err: any) {
+      setPayError(err.message || "Payment failed");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   if (loading || !student) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+
+  const paymentHistory = feeInfo?.payment_history || [];
+  const paymentPending = feeInfo?.payment_pending || false;
+  const pendingPayment = feeInfo?.pending_payment;
+  const bankDetails = feeInfo?.bank_details;
+  const collegeOffice = feeInfo?.college_office;
+  const lastPaidAt = feeInfo?.last_payment?.verified_at || feeInfo?.last_payment?.paid_at
+    ? new Date(feeInfo.last_payment.verified_at || feeInfo.last_payment.paid_at!).toLocaleDateString()
+    : null;
+
+  const statusLabel = student.feePaid ? "Fee Paid" : paymentPending ? "Awaiting Admin Approval" : "Fee Pending";
+  const statusHint = student.feePaid
+    ? "✓ Your fees are up to date"
+    : paymentPending
+      ? "⏳ Admin is verifying your payment"
+      : "⚠ Action required";
+  const cardTone = student.feePaid
+    ? "bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border-2 border-emerald-200 dark:border-emerald-800"
+    : paymentPending
+      ? "bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-800/20 border-2 border-blue-200 dark:border-blue-800"
+      : "bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 border-2 border-amber-200 dark:border-amber-800";
+
+  const methodLabel = (method: string) => {
+    if (method === "online") return "Online Payment";
+    if (method === "bank_transfer") return "Bank Transfer";
+    if (method === "college") return "College Office";
+    return method;
+  };
+
+  const paymentStatusLabel = (status: string) => {
+    if (status === "pending") return "Pending Verification";
+    if (status === "approved") return "Approved";
+    if (status === "rejected") return "Rejected";
+    return status;
+  };
 
   return (
     <div>
       <PageHeader title="Fee Payments" subtitle="Manage your fee payments and payment history" />
 
+      {(payError || paySuccess) && (
+        <Card className={cn("p-4 mb-4", payError ? "border-rose-300 bg-rose-50 dark:bg-rose-950/30" : "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30")}>
+          <p className={cn("text-sm font-medium", payError ? "text-rose-700 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300")}>
+            {payError || paySuccess}
+          </p>
+        </Card>
+      )}
+
       {/* Main Payment Card */}
-      <Card className={cn("p-8 mb-6 rounded-2xl", student.feePaid ? "bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border-2 border-emerald-200 dark:border-emerald-800" : "bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 border-2 border-amber-200 dark:border-amber-800")}>
+      <Card className={cn("p-8 mb-6 rounded-2xl", cardTone)}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className={cn("p-3 rounded-full", student.feePaid ? "bg-emerald-500" : "bg-amber-500")}>
+              <div className={cn("p-3 rounded-full", student.feePaid ? "bg-emerald-500" : paymentPending ? "bg-indigo-500" : "bg-amber-500")}>
                 <Wallet className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold">{student.feePaid ? "Fee Paid" : "Fee Pending"}</h2>
-                <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
-                  {student.feePaid ? "✓ Your fees are up to date" : "⚠ Action required"}
+                <h2 className="text-2xl font-bold">{statusLabel}</h2>
+                <p className={cn("text-sm font-medium", student.feePaid ? "text-emerald-700 dark:text-emerald-300" : paymentPending ? "text-indigo-700 dark:text-indigo-300" : "text-amber-700 dark:text-amber-300")}>
+                  {statusHint}
                 </p>
               </div>
             </div>
@@ -905,31 +1018,82 @@ export function StudentPayments() {
           </div>
 
           <div className="flex flex-col justify-center">
-            {!student.feePaid && (
+            {paymentPending && pendingPayment && (
+              <div className="p-5 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 mb-4">
+                <h3 className="font-bold text-indigo-800 dark:text-indigo-200">Verification in progress</h3>
+                <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-2">
+                  Your {methodLabel(pendingPayment.method).toLowerCase()} of ₹{pendingPayment.amount.toLocaleString()} was submitted and is waiting for admin approval.
+                </p>
+                <p className="text-xs text-slate-500 mt-2">Txn: {pendingPayment.transaction_id}</p>
+              </div>
+            )}
+            {!student.feePaid && !paymentPending && (
               <div className="space-y-4">
                 <h3 className="font-bold text-lg">Payment Methods</h3>
                 <div className="space-y-2">
-                  <Button 
-                    variant="primary" 
+                  <Button
+                    variant={selectedMethod === "online" ? "primary" : "secondary"}
                     className="w-full py-3"
-                    onClick={() => alert(`Redirecting to payment gateway...\n\nAmount: ₹${student.feeAmount}\n\nIn production, this would integrate with Razorpay, PayPal, or Stripe.`)}
+                    disabled={paying}
+                    onClick={() => setSelectedMethod(selectedMethod === "online" ? null : "online")}
                   >
                     <Wallet className="w-5 h-5" /> Pay Online
                   </Button>
-                  <Button 
-                    variant="secondary" 
+                  {selectedMethod === "online" && (
+                    <div className="p-4 rounded-lg bg-white/70 dark:bg-slate-800/50 space-y-3">
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Simulated payment gateway for ₹{student.feeAmount.toLocaleString()}.
+                      </p>
+                      <Button variant="primary" className="w-full" disabled={paying} onClick={() => handlePay("online")}>
+                        {paying ? "Processing…" : "Confirm Online Payment"}
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button
+                    variant={selectedMethod === "bank_transfer" ? "primary" : "secondary"}
                     className="w-full"
-                    onClick={() => alert("Bank Transfer Details:\n\nBank: SBI\nAccount: 1234567890\nIFSC: SBIN0001234\nSwift: SBININBBXXX")}
+                    disabled={paying}
+                    onClick={() => setSelectedMethod(selectedMethod === "bank_transfer" ? null : "bank_transfer")}
                   >
                     Bank Transfer
                   </Button>
-                  <Button 
-                    variant="secondary" 
+                  {selectedMethod === "bank_transfer" && bankDetails && (
+                    <div className="p-4 rounded-lg bg-white/70 dark:bg-slate-800/50 space-y-3 text-sm">
+                      <p><span className="font-semibold">Bank:</span> {bankDetails.bank_name}</p>
+                      <p><span className="font-semibold">Account:</span> {bankDetails.account_number}</p>
+                      <p><span className="font-semibold">IFSC:</span> {bankDetails.ifsc}</p>
+                      <p><span className="font-semibold">Swift:</span> {bankDetails.swift}</p>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Transfer reference (optional)</label>
+                      <TextInput
+                        value={bankReference}
+                        onChange={(e) => setBankReference(e.target.value)}
+                        placeholder="UTR / transaction reference"
+                      />
+                      <Button variant="primary" className="w-full" disabled={paying} onClick={() => handlePay("bank_transfer", bankReference)}>
+                        {paying ? "Processing…" : "Confirm Bank Transfer"}
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button
+                    variant={selectedMethod === "college" ? "primary" : "secondary"}
                     className="w-full"
-                    onClick={() => alert("You can pay at the college office:\n\nCash Counter - Admin Block, 2nd Floor\n\nMon-Fri: 9 AM - 5 PM\nAccept: Cash, Cheque, DD")}
+                    disabled={paying}
+                    onClick={() => setSelectedMethod(selectedMethod === "college" ? null : "college")}
                   >
                     Pay at College
                   </Button>
+                  {selectedMethod === "college" && collegeOffice && (
+                    <div className="p-4 rounded-lg bg-white/70 dark:bg-slate-800/50 space-y-3 text-sm">
+                      <p><span className="font-semibold">Location:</span> {collegeOffice.location}</p>
+                      <p><span className="font-semibold">Hours:</span> {collegeOffice.hours}</p>
+                      <p><span className="font-semibold">Accepts:</span> {collegeOffice.accepts}</p>
+                      <Button variant="primary" className="w-full" disabled={paying} onClick={() => handlePay("college")}>
+                        {paying ? "Processing…" : "Confirm College Payment"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -938,11 +1102,37 @@ export function StudentPayments() {
                 <CheckCircle2 className="w-20 h-20 text-emerald-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-emerald-700 dark:text-emerald-300">Payment Completed</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">Your fee payment has been processed successfully. Thank you!</p>
+                {feeInfo?.last_payment?.transaction_id && (
+                  <p className="text-xs text-slate-500 mt-2">Txn: {feeInfo.last_payment.transaction_id}</p>
+                )}
               </div>
             )}
           </div>
         </div>
       </Card>
+
+      {paymentHistory.length > 0 && (
+        <Card className="p-6 mb-6">
+          <h3 className="font-bold text-lg mb-4">Payment History</h3>
+          <div className="space-y-3">
+            {paymentHistory.map((p) => (
+              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <div>
+                  <p className="font-semibold">{methodLabel(p.method)}</p>
+                  <p className="text-xs text-slate-500">{p.transaction_id}{p.reference ? ` • ${p.reference}` : ""}</p>
+                  <Badge variant={p.status === "approved" ? "green" : p.status === "rejected" ? "red" : "amber"}>
+                    {paymentStatusLabel(p.status)}
+                  </Badge>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold">₹{p.amount.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">{p.paid_at ? new Date(p.paid_at).toLocaleString() : "—"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Payment Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -964,8 +1154,8 @@ export function StudentPayments() {
             </div>
             <div>
               <p className="text-xs text-slate-500 font-medium">Status</p>
-              <p className={cn("text-lg font-bold mt-1", student.feePaid ? "text-emerald-600" : "text-amber-600")}>
-                {student.feePaid ? "Paid" : "Pending"}
+              <p className={cn("text-lg font-bold mt-1", student.feePaid ? "text-emerald-600" : paymentPending ? "text-indigo-600" : "text-amber-600")}>
+                {student.feePaid ? "Paid" : paymentPending ? "Pending Approval" : "Pending"}
               </p>
             </div>
           </div>
@@ -1014,7 +1204,8 @@ export function StudentPayments() {
         {student.feePaid && (
           <div className="mt-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800">
             <p className="text-sm text-emerald-700 dark:text-emerald-300">
-              ✓ <span className="font-semibold">Payment Verified</span> on {new Date().toLocaleDateString()}
+              ✓ <span className="font-semibold">Payment Verified</span>
+              {lastPaidAt ? ` on ${lastPaidAt}` : ""}
             </p>
           </div>
         )}

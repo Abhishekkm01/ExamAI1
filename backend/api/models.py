@@ -264,3 +264,37 @@ class EligibilityPrediction(models.Model):
         indexes = [
             models.Index(fields=['student']),
         ]
+
+
+class FeePayment(models.Model):
+    METHOD_CHOICES = [
+        ('online', 'Online'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('college', 'College Office'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending Verification'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='fee_payments')
+    amount = models.FloatField()
+    method = models.CharField(max_length=20, choices=METHOD_CHOICES)
+    transaction_id = models.CharField(max_length=100, unique=True)
+    reference = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    paid_at = models.DateTimeField(auto_now_add=True)
+    verified_at = models.DateTimeField(blank=True, null=True)
+    verified_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, blank=True, null=True, related_name='verified_fee_payments'
+    )
+    admin_note = models.CharField(max_length=255, blank=True, default='')
+
+    class Meta:
+        db_table = 'fee_payments'
+        indexes = [
+            models.Index(fields=['student']),
+            models.Index(fields=['transaction_id']),
+            models.Index(fields=['status']),
+        ]

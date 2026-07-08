@@ -4,15 +4,19 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q, Sum, Avg
 from django.db import transaction
-from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom
+from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
 from .seating_service import SeatingArrangementService, build_qr_content, room_display_name
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
                           NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
-                          HallTicketUpdateSerializer)
+                          HallTicketUpdateSerializer, FeePaymentReviewSerializer)
 from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
+from .fee_service import (
+    admin_mark_fee_paid, approve_fee_payment, list_pending_payments, reject_fee_payment,
+)
+from .attendance_service import refresh_student_eligibility
 import sys
 import os
 import io
@@ -25,6 +29,8 @@ from rest_framework.decorators import permission_classes as rf_permission_classe
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
+from .attendance_service import refresh_student_eligibility
+from .marks_service import update_student_marks
 
 
 @api_view(['GET'])
@@ -225,21 +231,28 @@ def update_student(request, sid):
     
     serializer = StudentUpdateSerializer(data=request.data, partial=True)
     if serializer.is_valid():
-        for field, value in serializer.validated_data.items():
+        data = serializer.validated_data
+        subject_code = request.data.get('subject_code', 'CS301')
+
+        for field, value in data.items():
             setattr(s, field, value)
-        
-        ai = eligibility_ai.predict_eligibility(
-            s.attendance_percentage,
-            s.internal_marks,
-            s.previous_result,
-            s.backlogs,
-        )
-        s.is_eligible = ai['is_eligible']
-        s.eligibility_percentage = ai['probability'] * 100.0
-        s.ai_risk_score = ai['risk_score']
-        s.save()
-        
-        return Response({'message': 'Updated'})
+
+        if 'internal_marks' in data or 'assignment_marks' in data:
+            update_student_marks(
+                s,
+                subject_code,
+                internal_marks=data.get('internal_marks', s.internal_marks),
+                assignment_marks=data.get('assignment_marks', s.assignment_marks),
+            )
+        else:
+            refresh_student_eligibility(s)
+
+        return Response({
+            'message': 'Updated',
+            'internal_marks': s.internal_marks,
+            'assignment_marks': s.assignment_marks,
+            'is_eligible': s.is_eligible,
+        })
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -519,13 +532,63 @@ def fees(request):
             'photo': s.photo
         })
     
+    pending = list_pending_payments()
+
     return Response({
         'total_collected': sum(s.fee_amount for s in paid),
         'total_due': sum(s.fee_amount for s in unpaid),
         'paid_count': len(paid),
         'unpaid_count': len(unpaid),
-        'unpaid_students': unpaid_data
+        'unpaid_students': unpaid_data,
+        'pending_verifications': pending,
+        'pending_count': len(pending),
     })
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def approve_fee_payment_view(request, payment_id):
+    """Approve a student-submitted fee payment."""
+    user = getattr(request, '_jwt_user', request.user)
+    try:
+        payment = FeePayment.objects.select_related('student').get(id=payment_id)
+    except FeePayment.DoesNotExist:
+        return Response({'detail': 'Payment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = FeePaymentReviewSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    note = serializer.validated_data.get('admin_note', '')
+    payment, error = approve_fee_payment(payment, user, note)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({'message': 'Payment approved', 'payment_id': payment.id})
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def reject_fee_payment_view(request, payment_id):
+    """Reject a student-submitted fee payment."""
+    user = getattr(request, '_jwt_user', request.user)
+    try:
+        payment = FeePayment.objects.select_related('student').get(id=payment_id)
+    except FeePayment.DoesNotExist:
+        return Response({'detail': 'Payment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = FeePaymentReviewSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    note = serializer.validated_data.get('admin_note', 'Rejected by admin')
+    payment, error = reject_fee_payment(payment, user, note)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({'message': 'Payment rejected', 'payment_id': payment.id})
 
 
 @api_view(['PUT'])
@@ -533,23 +596,16 @@ def fees(request):
 @rf_permission_classes([IsAdmin])
 def mark_fee_paid(request, sid):
     """Mark fee as paid for a student"""
+    user = getattr(request, '_jwt_user', request.user)
     try:
         s = Student.objects.get(id=sid)
     except Student.DoesNotExist:
         return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    s.fee_paid = True
-    ai = eligibility_ai.predict_eligibility(
-        s.attendance_percentage,
-        s.internal_marks,
-        s.previous_result,
-        s.backlogs,
-    )
-    s.is_eligible = ai['is_eligible']
-    s.eligibility_percentage = ai['probability'] * 100.0
-    s.ai_risk_score = ai['risk_score']
-    s.save()
-    
+
+    payment, error = admin_mark_fee_paid(s, user)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
     return Response({'message': 'Fee marked as paid'})
 
 
