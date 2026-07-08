@@ -6,7 +6,7 @@ import { Mail, Lock, Edit2, Save, X, AlertTriangle, CheckCircle2, Building2, Boo
 import { PhotoUpload, validatePhotoFile } from "../../components/PhotoUpload";
 import { cn } from "../../utils/cn";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 interface TeacherProfile {
@@ -24,7 +24,7 @@ interface TeacherProfile {
 
 async function fetchTeacherProfile(): Promise<TeacherProfile | null> {
   try {
-    const res = await fetch(`${API}/api/teacher/profile`, {
+    const res = await fetch(`${API_BASE}/api/teacher/profile`, {
       headers: { Authorization: `Bearer ${token()}` }
     });
     if (!res.ok) return null;
@@ -66,7 +66,7 @@ export function TeacherProfile() {
     try {
       const body = new FormData();
       body.append("photo", file);
-      const res = await fetch(`${API}/api/teacher/profile/photo`, {
+      const res = await fetch(`${API_BASE}/api/teacher/profile/photo`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}` },
         body,
@@ -89,7 +89,7 @@ export function TeacherProfile() {
     if (!form) return;
     setSaveError(null);
     setSaveSuccess(null);
-    const res = await fetch(`${API}/api/teacher/profile/update`, {
+    const res = await fetch(`${API_BASE}/api/teacher/profile/update`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
       body: JSON.stringify({ name: form.name }),
@@ -117,7 +117,7 @@ export function TeacherProfile() {
     }
     setPasswordSaving(true);
     try {
-      const res = await fetch(`${API}/api/teacher/profile/update`, {
+      const res = await fetch(`${API_BASE}/api/teacher/profile/update`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({

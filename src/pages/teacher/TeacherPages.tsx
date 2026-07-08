@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { fetchTeacherStudents, getStudentEligibility } from "../../data/apiData";
-import type { Student, Exam } from "../../data/mockData";
+import type { Student, Exam } from "../../data/types";
 import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { cn } from "../../utils/cn";
 import { FaceCapture } from "../../components/FaceCapture";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 export function TeacherDashboard() {
@@ -116,7 +116,7 @@ export function TeacherAttendance() {
     setError(null);
     try {
       const res = await fetch(
-        `${API}/api/teacher/attendance?subject_code=${encodeURIComponent(sub)}&date=${encodeURIComponent(d)}`,
+        `${API_BASE}/api/teacher/attendance?subject_code=${encodeURIComponent(sub)}&date=${encodeURIComponent(d)}`,
         { headers: { Authorization: `Bearer ${token()}` } }
       );
       if (!res.ok) {
@@ -175,7 +175,7 @@ export function TeacherAttendance() {
       for (const [id, val] of Object.entries(records)) {
         numericRecords[id.replace(/^s/, "")] = val;
       }
-      const res = await fetch(`${API}/api/teacher/attendance/mark`, {
+      const res = await fetch(`${API_BASE}/api/teacher/attendance/mark`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ subject_code: subject, date, records: numericRecords }),
@@ -288,7 +288,7 @@ export function TeacherMarks() {
     setError(null);
     try {
       const res = await fetch(
-        `${API}/api/teacher/marks?subject_code=${encodeURIComponent(sub)}`,
+        `${API_BASE}/api/teacher/marks?subject_code=${encodeURIComponent(sub)}`,
         { headers: { Authorization: `Bearer ${token()}` } }
       );
       if (!res.ok) {
@@ -345,7 +345,7 @@ export function TeacherMarks() {
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch(`${API}/api/teacher/marks/update`, {
+      const res = await fetch(`${API_BASE}/api/teacher/marks/update`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({
@@ -542,7 +542,7 @@ export function TeacherFaceVerify() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`${API}/api/teacher/face-verify`, {
+      const res = await fetch(`${API_BASE}/api/teacher/face-verify`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
         body: JSON.stringify({ image_base64: imageBase64 }),

@@ -2,63 +2,17 @@ import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
 import { downloadAdminReport, api } from "../../data/api";
-import type { Student, Teacher, Exam } from "../../data/mockData";
+import { apiDelete, apiPost, apiPut } from "../../data/http";
+import type { Student, Teacher, Exam } from "../../data/types";
 import { useNotifications } from "../../contexts/AppContext";
 import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell, Legend } from "recharts";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../../utils/cn";
 import { useDepartments } from "../../hooks/useDepartments";
-import { notifySystemSettingsUpdated } from "../../hooks/useSystemSettings";
+import { notifySystemSettingsUpdated, useSystemSettings } from "../../hooks/useSystemSettings";
 import { DepartmentSelect } from "../../components/DepartmentSelect";
-
-const API = "http://localhost:8000";
-const token = () => localStorage.getItem("examshield_token") || "";
-
-async function errorMessage(res: Response, fallback: string): Promise<string> {
-  // The backend returns JSON errors, but an unexpected 500 renders an HTML page.
-  // Parse defensively so the admin always sees a readable message.
-  try {
-    const j = await res.clone().json();
-    if (j && typeof j === "object") {
-      if (j.detail) return j.detail;
-      // DRF field validation errors: { field: ["message", ...], ... }
-      const parts = Object.entries(j).map(([k, v]) =>
-        `${k}: ${Array.isArray(v) ? v.join(", ") : v}`
-      );
-      if (parts.length) return parts.join(" | ");
-    }
-  } catch {}
-  return `${fallback} (HTTP ${res.status})`;
-}
-
-async function apiPost(path: string, form: any, fallback: string) {
-  const res = await fetch(`${API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(form),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, fallback));
-  return res.json();
-}
-
-async function apiPut(path: string, form: any, fallback: string) {
-  const res = await fetch(`${API}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(form),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, fallback));
-  return res.json();
-}
-
-async function apiDelete(path: string, fallback: string) {
-  const res = await fetch(`${API}${path}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token()}` },
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, fallback));
-}
+import { examHeaderSubtitle, downloadHallTicket, universityInitials, DEFAULT_HALL_TICKET_EXAM } from "../../utils/hallTicket";
 
 async function apiAddStudent(form: any) {
   return apiPost("/api/auth/setup-student", form, "Failed to add student");
@@ -100,12 +54,11 @@ export function AdminStudents() {
     if (!confirm("Delete this student?")) return;
     try {
       const sid = id.replace("s", "");
-      const res = await fetch(`http://localhost:8000/api/admin/students/${sid}/delete`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${localStorage.getItem("examshield_token") || ""}` }
-      });
-      if (!res.ok) { alert(await errorMessage(res, "Failed to delete student")); return; }
-    } catch { alert("Failed to delete student: backend not reachable"); return; }
+      await api.adminDeleteStudent(Number(sid));
+    } catch (e: any) {
+      alert(e?.message || "Failed to delete student");
+      return;
+    }
     setList((l) => l.filter((s) => s.id !== id));
   };
 
@@ -238,13 +191,12 @@ export function AdminStudents() {
                   fee_due_date: s.feeDueDate || "",
                 };
                 if (opts?.password) payload.password = opts.password;
-                const res = await fetch(`${API}/api/admin/students/${sid}/update`, {
-                  method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-                  body: JSON.stringify(payload),
-                });
-                if (!res.ok) { alert(await errorMessage(res, "Failed to update student")); return; }
-              } catch { alert("Failed to update student: backend not reachable"); return; }
-              setList((l) => l.map((x) => x.id === s.id ? s : x));
+                await api.adminUpdateStudent(Number(sid), payload);
+                setList((l) => l.map((x) => x.id === s.id ? s : x));
+              } catch (e: any) {
+                alert(e?.message || "Failed to update student");
+                return;
+              }
             } else {
               // Create — call setup-student API
               try {
@@ -255,7 +207,7 @@ export function AdminStudents() {
                   attendance_percentage: s.attendance, internal_marks: s.internalMarks,
                   assignment_marks: s.assignmentMarks, previous_result: s.previousResult,
                   backlogs: s.backlogs, fee_paid: s.feePaid, fee_amount: s.feeAmount, fee_due_date: s.feeDueDate,
-                });
+                }) as { student_id: number };
                 const newS: Student = { ...s, id: `s${result.student_id}` };
                 setList((l) => [newS, ...l]);
                 alert(`✓ Student added to MySQL (ID ${result.student_id})`);
@@ -499,7 +451,7 @@ function TeacherModal({ teacher, onClose, onSaved }: { teacher?: Teacher; onClos
           subjects: form.assigned_subjects.split(",").map((s) => s.trim()).filter(Boolean),
         });
       } else {
-        const res = await apiAddTeacher({ ...payload, password: form.password || "teacher123" });
+        const res = await apiAddTeacher({ ...payload, password: form.password || "teacher123" }) as { teacher_id: number };
         onSaved({
           id: `t${res.teacher_id}`,
           empId: form.emp_id,
@@ -653,7 +605,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           totalMarks: form.total_marks,
         });
       } else {
-        const res = await apiAddExam(form);
+        const res = await apiAddExam(form) as { exam_id: number };
         onSaved({
           id: `e${res.exam_id}`,
           subjectCode: form.subject_code,
@@ -742,22 +694,16 @@ export function AdminMarks() {
     setMessage(null);
     try {
       const sid = parseInt(student.id.replace(/^s/, ""), 10);
-      const res = await fetch(`${API}/api/admin/students/${sid}/update`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({
-          internal_marks: m.internal,
-          assignment_marks: m.assignment,
-          subject_code: "CS301",
-        }),
+      await api.adminUpdateStudent(sid, {
+        internal_marks: m.internal,
+        assignment_marks: m.assignment,
+        subject_code: "CS301",
       });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.detail || "Failed to save marks");
       setMessage(`Marks updated for ${student.name}`);
       setStudents((list) => list.map((s) => s.id === student.id ? {
         ...s,
-        internalMarks: j.internal_marks ?? m.internal,
-        assignmentMarks: j.assignment_marks ?? m.assignment,
+        internalMarks: m.internal,
+        assignmentMarks: m.assignment,
       } : s));
     } catch (e: any) {
       setError(e.message || "Failed to save marks");
@@ -984,12 +930,12 @@ export function AdminHallTickets() {
   const [editing, setEditing] = useState<{ seat_number: string; room: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const { settings: systemSettings } = useSystemSettings();
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/admin/halltickets`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (res.ok) setTickets(await res.json());
+      setTickets(await api.adminHallTickets());
     } catch {}
     setLoading(false);
   };
@@ -1000,13 +946,7 @@ export function AdminHallTickets() {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API}/api/admin/halltickets/generate-all`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.detail || "Failed to generate");
+      const j = await api.generateAllHallTickets();
       setMessage(j.message);
       await load();
     } catch (e: any) {
@@ -1019,13 +959,7 @@ export function AdminHallTickets() {
     if (!editing) return;
     setBusy(true);
     try {
-      const res = await fetch(`${API}/api/admin/halltickets/${id}/update`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: JSON.stringify(editing),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.detail || "Failed to update");
+      await api.adminUpdateHallTicket(id, editing);
       setMessage("Hall ticket updated");
       setSelected(null);
       setEditing(null);
@@ -1104,7 +1038,15 @@ export function AdminHallTickets() {
                         </Button>
                         <Button variant="secondary" onClick={() => {
                           const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
-                          downloadHT(student, t.hall_ticket_no, t.room, t.seat_number, t.qr_code_content);
+                          downloadHallTicket(
+                            student,
+                            t.hall_ticket_no,
+                            systemSettings.university_name,
+                            systemSettings.academic_year,
+                            t.room,
+                            t.seat_number,
+                            t.qr_code_content,
+                          );
                         }}>
                           <Download className="w-3.5 h-3.5" />
                         </Button>
@@ -1125,12 +1067,11 @@ export function AdminHallTickets() {
 }
 
 function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Student; hallTicketNo: string; onClose: () => void }) {
-  const exam = {
-    subjectCode: "CS301", subjectName: "Data Structures & Algorithms",
-    date: "2026-11-10", time: "10:00 AM", duration: "3 hours", room: "Hall A-101"
-  };
-  const seatNumber = `S${100 + parseInt(student.id.replace(/\D/g, ""))}`;
+  const { settings: systemSettings } = useSystemSettings();
+  const exam = { ...DEFAULT_HALL_TICKET_EXAM };
+  const seatNumber = `S${100 + parseInt(student.id.replace(/\D/g, ""), 10)}`;
   const qrValue = JSON.stringify({ htNo: hallTicketNo, name: student.name, roll: student.rollNo, seat: seatNumber, room: exam.room, verified: true });
+  const logo = universityInitials(systemSettings.university_name);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
@@ -1138,7 +1079,7 @@ function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Studen
         <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
           <h3 className="font-bold">Hall Ticket Preview</h3>
           <div className="flex gap-2">
-            <Button variant="primary" onClick={() => downloadHT(student, hallTicketNo)}><Download className="w-4 h-4" /> Download PDF</Button>
+            <Button variant="primary" onClick={() => downloadHallTicket(student, hallTicketNo, systemSettings.university_name, systemSettings.academic_year)}><Download className="w-4 h-4" /> Download PDF</Button>
             <Button variant="secondary" onClick={() => window.print()}><Printer className="w-4 h-4" /> Print</Button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 px-2">✕</button>
           </div>
@@ -1147,10 +1088,10 @@ function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Studen
           <div className="bg-white border-2 border-indigo-600 rounded-xl overflow-hidden">
             <div className="bg-brand-gradient text-white p-4 flex items-center justify-between">
               <div>
-                <p className="font-bold text-lg">National Institute of Technology</p>
-                <p className="text-xs opacity-90">End Semester Examination • Nov 2026</p>
+                <p className="font-bold text-lg">{systemSettings.university_name}</p>
+                <p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p>
               </div>
-              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">NIT</div>
+              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">{logo}</div>
             </div>
             <div className="p-6">
               <div className="text-center mb-4 pb-4 border-b border-slate-200">
@@ -1197,70 +1138,6 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
       <span className={cn(bold ? "font-bold text-indigo-700" : "font-medium text-slate-900")}>{value}</span>
     </div>
   );
-}
-
-function downloadHT(student: Student, hallTicketNo: string, room = "Hall A-101", seatNumber?: string, qrContent?: string) {
-  const exam = { subjectCode: "CS301", subjectName: "Data Structures & Algorithms", date: "2026-11-10", time: "10:00 AM", duration: "3 hours", room };
-  const seat = seatNumber || `S${100 + parseInt(student.id.replace(/\D/g, ""))}`;
-  const qrValue = qrContent || JSON.stringify({ htNo: hallTicketNo, name: student.name, roll: student.rollNo, seat, room: exam.room, verified: true });
-  const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`;
-
-  const html = `<!DOCTYPE html><html><head><title>Hall Ticket ${hallTicketNo}</title>
-<style>
-body{font-family:system-ui,-apple-system,sans-serif;padding:40px;background:#fff;color:#0f172a}
-.card{border:3px solid #2563eb;border-radius:12px;overflow:hidden;max-width:800px;margin:0 auto}
-.header{background:linear-gradient(135deg,#2563eb,#7c3aed,#db2777);color:#fff;padding:20px;display:flex;justify-content:space-between;align-items:center}
-.header h1{font-size:22px;margin:0}
-.header p{margin:4px 0 0;opacity:.9;font-size:13px}
-.logo{width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:bold}
-.body{padding:30px}
-.title{text-align:center;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:20px}
-.title small{text-transform:uppercase;letter-spacing:2px;color:#64748b}
-.title h2{font-family:monospace;font-size:24px;color:#2563eb;margin:6px 0 0}
-.grid{display:grid;grid-template-columns:2fr 1fr;gap:30px}
-.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
-.info-row .l{color:#64748b}
-.info-row .v{font-weight:600}
-.info-row.bold .v{color:#2563eb;font-weight:700}
-.photo{width:140px;height:140px;border-radius:8px;border:2px solid #c7d2fe;background:#f1f5f9}
-.qr-box{margin-top:16px;padding:12px;border:2px solid #c7d2fe;border-radius:8px;background:#eff6ff;text-align:center}
-.qr-box img{width:140px;height:140px}
-.qr-box p{margin:6px 0 0;font-size:10px;color:#475569;font-weight:600}
-.footer{margin-top:20px;padding-top:16px;border-top:2px solid #e2e8f0;display:flex;justify-content:space-between;font-size:12px;color:#475569}
-@media print{@page{margin:15mm}body{padding:0}}
-</style></head><body>
-<div class="card">
-  <div class="header">
-    <div><h1>National Institute of Technology</h1><p>End Semester Examination • Nov 2026</p></div>
-    <div class="logo">NIT</div>
-  </div>
-  <div class="body">
-    <div class="title"><small>Official Hall Ticket</small><h2>${hallTicketNo}</h2></div>
-    <div class="grid">
-      <div>
-        <div class="info-row"><span class="l">Candidate Name</span><span class="v">${student.name}</span></div>
-        <div class="info-row"><span class="l">Roll Number</span><span class="v">${student.rollNo}</span></div>
-        <div class="info-row"><span class="l">Department</span><span class="v">${student.department}</span></div>
-        <div class="info-row"><span class="l">Semester</span><span class="v">Semester ${student.semester}</span></div>
-        <div class="info-row"><span class="l">Subject</span><span class="v">${exam.subjectName}</span></div>
-        <div class="info-row"><span class="l">Subject Code</span><span class="v">${exam.subjectCode}</span></div>
-        <div class="info-row"><span class="l">Date & Time</span><span class="v">${exam.date} at ${exam.time}</span></div>
-        <div class="info-row"><span class="l">Duration</span><span class="v">${exam.duration}</span></div>
-        <div class="info-row bold"><span class="l">Exam Hall</span><span class="v">${exam.room}</span></div>
-        <div class="info-row bold"><span class="l">Seat Number</span><span class="v">${seatNumber}</span></div>
-      </div>
-      <div style="text-align:center">
-        <img class="photo" src="${student.photo}" alt="photo"/>
-        <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p></div>
-      </div>
-    </div>
-    <div class="footer"><span>Issued: ${new Date().toLocaleDateString()}</span><span style="font-weight:700">Controller of Examinations</span></div>
-  </div>
-</div>
-<script>window.onload=()=>{setTimeout(()=>window.print(),400)}</script>
-</body></html>`;
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
 }
 
 // ==================== BACKLOGS ====================
@@ -1339,9 +1216,7 @@ export function AdminFees() {
   const reload = async () => {
     const [studentRows, feeData] = await Promise.all([
       fetchStudents(),
-      fetch(`${API}/api/admin/fees`, { headers: { Authorization: `Bearer ${token()}` } })
-        .then((r) => (r.ok ? r.json() : { pending_verifications: [] }))
-        .catch(() => ({ pending_verifications: [] })),
+      api.adminFees().catch(() => ({ pending_verifications: [] })),
     ]);
     setStudents(studentRows);
     setPending(feeData.pending_verifications || []);
@@ -1353,12 +1228,7 @@ export function AdminFees() {
   const approvePayment = async (paymentId: number) => {
     setActionId(paymentId);
     try {
-      const res = await fetch(`${API}/api/admin/fees/payments/${paymentId}/approve`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ admin_note: "Verified and approved" }),
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, "Approval failed"));
+      await api.approveFeePayment(paymentId, "Verified and approved");
       await reload();
     } catch (err: any) {
       alert(err.message || "Approval failed");
@@ -1371,12 +1241,7 @@ export function AdminFees() {
     const note = window.prompt("Reason for rejection (optional):") ?? "Rejected by admin";
     setActionId(paymentId);
     try {
-      const res = await fetch(`${API}/api/admin/fees/payments/${paymentId}/reject`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ admin_note: note }),
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, "Rejection failed"));
+      await api.rejectFeePayment(paymentId, note);
       await reload();
     } catch (err: any) {
       alert(err.message || "Rejection failed");
@@ -1490,8 +1355,7 @@ export function AdminFees() {
                       <Button variant="primary" onClick={async () => {
                         const sid = s.id.replace("s", "");
                         try {
-                          const res = await fetch(`${API}/api/admin/fees/${sid}/mark-paid`, { method: "PUT", headers: { Authorization: `Bearer ${token()}` } });
-                          if (!res.ok) throw new Error(await errorMessage(res, "Mark paid failed"));
+                          await api.adminMarkFeePaid(Number(sid));
                           await reload();
                         } catch (err: any) {
                           alert(err.message || "Mark paid failed");
@@ -1519,11 +1383,7 @@ export function AdminNotifications() {
   const send = async () => {
     if (!title || !message) return;
     try {
-      await fetch("http://localhost:8000/api/admin/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("examshield_token") || ""}` },
-        body: JSON.stringify({ title, message, audience }),
-      });
+      await api.sendNotification({ title, message, audience });
     } catch {}
     add({ title, message, audience });
     setTitle(""); setMessage("");

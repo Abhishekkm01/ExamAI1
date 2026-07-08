@@ -11,6 +11,7 @@ from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
 from .face_service import try_enroll_student_face, is_face_enrolled, enroll_face_from_base64, verify_student_face
 from .fee_service import get_fee_summary, process_fee_payment
+from .settings_service import get_system_settings
 import sys
 import os
 import io
@@ -340,12 +341,13 @@ def download_hallticket(request):
         return Response({'detail': 'No exam found'}, status=status.HTTP_404_NOT_FOUND)
 
     exam_data = payload['exam']
+    cfg = get_system_settings()
     out = io.BytesIO()
     p = canvas.Canvas(out, pagesize=letter)
     p.setFont("Helvetica-Bold", 20)
-    p.drawString(100, 740, "National Institute of Technology")
+    p.drawString(100, 740, cfg.university_name)
     p.setFont("Helvetica", 14)
-    p.drawString(100, 715, "Official Hall Ticket - End Semester Nov 2026")
+    p.drawString(100, 715, f"Official Hall Ticket - Academic Year {cfg.academic_year}")
     p.setFont("Helvetica", 12)
     p.drawString(100, 670, f"Hall Ticket No: {payload['hall_ticket_no']}")
     p.drawString(100, 645, f"Student: {user.name}")

@@ -6,7 +6,7 @@ import { Mail, Lock, Edit2, Save, X, AlertTriangle, CheckCircle2 } from "lucide-
 import { PhotoUpload, validatePhotoFile } from "../../components/PhotoUpload";
 import { cn } from "../../utils/cn";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 interface AdminProfile {
@@ -21,7 +21,7 @@ interface AdminProfile {
 
 async function fetchAdminProfile(): Promise<AdminProfile | null> {
   try {
-    const res = await fetch(`${API}/api/admin/profile`, {
+    const res = await fetch(`${API_BASE}/api/admin/profile`, {
       headers: { Authorization: `Bearer ${token()}` }
     });
     if (!res.ok) return null;
@@ -63,7 +63,7 @@ export function AdminProfileSettings() {
     try {
       const body = new FormData();
       body.append("photo", file);
-      const res = await fetch(`${API}/api/admin/profile/photo`, {
+      const res = await fetch(`${API_BASE}/api/admin/profile/photo`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}` },
         body,
@@ -86,7 +86,7 @@ export function AdminProfileSettings() {
     if (!form) return;
     setSaveError(null);
     setSaveSuccess(null);
-    const res = await fetch(`${API}/api/admin/profile/update`, {
+    const res = await fetch(`${API_BASE}/api/admin/profile/update`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
       body: JSON.stringify({ name: form.name }),
@@ -114,7 +114,7 @@ export function AdminProfileSettings() {
     }
     setPasswordSaving(true);
     try {
-      const res = await fetch(`${API}/api/admin/profile/update`, {
+      const res = await fetch(`${API_BASE}/api/admin/profile/update`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({

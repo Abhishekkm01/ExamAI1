@@ -2,87 +2,55 @@ import { useState } from "react";
 import { Card, Button, Badge, TextInput } from "../../components/Layout";
 import { QrCode, Scan, CheckCircle2, XCircle, Camera, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { students, exams } from "../../data/mockData";
 import { cn } from "../../utils/cn";
+import { api } from "../../data/api";
+
+function mapVerification(data: any) {
+  return {
+    valid: data.valid,
+    student: data.student,
+    hallTicketNo: data.hall_ticket_no,
+    exam: data.exam,
+    subjectCode: data.subject_code,
+    date: data.date,
+    time: data.time,
+    room: data.room,
+    seatNumber: data.seat_number,
+  };
+}
 
 export function QRVerify() {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState("");
   const navigate = useNavigate();
 
-  const scan = async () => {
-    setScanning(true);
+  const verify = async (ticketNo: string) => {
+    const code = ticketNo.trim().toUpperCase();
+    if (!code) return;
+    setError(null);
     setResult(null);
     try {
-      // Try a real backend verification with a random hall ticket from MySQL
-      const student = students[Math.floor(Math.random() * students.length)];
-      const hallTicketNo = `HT2026${student.rollNo.replace(/\D/g, "")}`;
-      const res = await fetch(`http://localhost:8000/api/public/verify-hallticket/${hallTicketNo}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResult({
-          valid: data.valid,
-          student: data.student,
-          hallTicketNo: data.hall_ticket_no,
-          exam: data.exam,
-          subjectCode: data.subject_code,
-          date: data.date,
-          time: data.time,
-          room: data.room,
-          seatNumber: data.seat_number,
-        });
-      } else {
-        throw new Error("not found");
-      }
-    } catch {
-      // Fallback to mock-style random result
-      const student = students[Math.floor(Math.random() * students.length)];
-      const exam = exams.find((e) => e.department === student.department) || exams[0];
-      setResult({
-        valid: Math.random() > 0.15,
-        student: { name: student.name, rollNo: student.rollNo, department: student.department, photo: student.photo },
-        hallTicketNo: `HT2026${student.rollNo.replace(/\D/g, "")}`,
-        exam: exam.subjectName,
-        subjectCode: exam.subjectCode,
-        date: exam.date,
-        time: exam.time,
-        room: exam.room,
-        seatNumber: `S${Math.floor(100 + Math.random() * 900)}`,
-      });
+      const data = await api.verifyHallTicket(code);
+      setResult(mapVerification(data));
+    } catch (e: any) {
+      setError(e?.message || "Could not verify hall ticket");
+      setResult({ valid: false });
     }
+  };
+
+  const scan = async () => {
+    if (!manual.trim()) {
+      setError("Enter a hall ticket number below, then tap Scan.");
+      return;
+    }
+    setScanning(true);
+    await verify(manual);
     setScanning(false);
   };
 
-  const lookup = async () => {
-    if (!manual.trim()) return;
-    try {
-      const res = await fetch(`http://localhost:8000/api/public/verify-hallticket/${encodeURIComponent(manual.toUpperCase())}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResult({
-          valid: data.valid,
-          student: data.student,
-          hallTicketNo: data.hall_ticket_no,
-          exam: data.exam, subjectCode: data.subject_code,
-          date: data.date, time: data.time, room: data.room, seatNumber: data.seat_number,
-        });
-        return;
-      }
-      throw new Error("not found");
-    } catch {
-      // Mock fallback
-      const student = students[Math.floor(Math.random() * students.length)];
-      const exam = exams.find((e) => e.department === student.department) || exams[0];
-      setResult({
-        valid: true,
-        student: { name: student.name, rollNo: student.rollNo, department: student.department, photo: student.photo },
-        hallTicketNo: manual.toUpperCase(),
-        exam: exam.subjectName, subjectCode: exam.subjectCode,
-        date: exam.date, time: exam.time, room: exam.room, seatNumber: `S${Math.floor(100 + Math.random() * 900)}`,
-      });
-    }
-  };
+  const lookup = async () => verify(manual);
 
   return (
     <div>
@@ -113,20 +81,21 @@ export function QRVerify() {
                   </div>
                   <div className="absolute left-0 right-0 h-0.5 bg-indigo-400 animate-pulse" style={{ top: "50%" }} />
                 </div>
-                <p className="text-white mt-4 animate-pulse">Scanning QR Code...</p>
+                <p className="text-white mt-4 animate-pulse">Verifying hall ticket...</p>
               </div>
             ) : (
               <div className="text-center">
                 <QrCode className="w-16 h-16 text-slate-500 mx-auto" />
-                <p className="text-slate-400 mt-4">Position QR code in frame</p>
+                <p className="text-slate-400 mt-4">Enter hall ticket number below</p>
               </div>
             )}
             <div className="absolute top-3 left-3 px-2 py-1 rounded-md bg-rose-500 text-white text-xs font-semibold flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> LIVE
             </div>
           </div>
+          {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
           <Button variant="primary" className="w-full mt-4" onClick={scan} disabled={scanning}>
-            <Camera className="w-4 h-4" /> {scanning ? "Scanning..." : "Scan QR Code"}
+            <Camera className="w-4 h-4" /> {scanning ? "Verifying..." : "Verify Ticket"}
           </Button>
 
           <div className="my-6 flex items-center gap-3">
@@ -145,7 +114,7 @@ export function QRVerify() {
           <h3 className="font-bold mb-4">Verification Result</h3>
           {!result ? (
             <div className="h-full min-h-[400px] flex items-center justify-center text-slate-400 text-sm">
-              Scan a QR code to see verification result
+              Enter a hall ticket number to verify
             </div>
           ) : result.valid ? (
             <div className="p-6 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800">
@@ -160,7 +129,7 @@ export function QRVerify() {
                 <img src={result.student.photo} alt="" className="w-16 h-16 rounded-full bg-slate-200 border-2 border-emerald-300" />
                 <div>
                   <p className="font-bold text-lg">{result.student.name}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">{result.student.rollNo}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{result.student.roll_no || result.student.rollNo}</p>
                   <Badge variant="green">Verified</Badge>
                 </div>
               </div>
@@ -182,7 +151,7 @@ export function QRVerify() {
             <div className="p-6 rounded-xl bg-rose-50 dark:bg-rose-900/20 border-2 border-rose-200 dark:border-rose-800 text-center">
               <XCircle className="w-20 h-20 text-rose-600 mx-auto" />
               <p className="text-2xl font-bold text-rose-700 dark:text-rose-300 mt-3">INVALID HALL TICKET</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">This QR code does not match any registered hall ticket.</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">This ticket does not match any registered hall ticket in MySQL.</p>
               <p className="text-xs text-slate-500 mt-4">Please contact the examination cell if this is an error.</p>
               <div className="mt-4 p-3 rounded-lg bg-rose-100 dark:bg-rose-900/40 text-sm text-rose-800 dark:text-rose-300 font-medium">
                 ✗ Do NOT admit this candidate

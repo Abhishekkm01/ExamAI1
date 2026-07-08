@@ -12,7 +12,7 @@ import { QRVerify } from "./pages/shared/QRVerify";
 import AdminSeating from "./pages/admin/AdminSeating";
 import { FirstTimeSetup } from "./pages/Setup";
 import StudentRegister from "./pages/StudentRegister";
-import type { Role } from "./data/mockData";
+import type { Role } from "./data/types";
 
 function ProtectedRoute({ role, children }: { role: Role; children: React.ReactNode }) {
   const { user } = useAuth();

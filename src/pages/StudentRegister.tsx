@@ -5,7 +5,7 @@ import { Shield, GraduationCap, ArrowRight, CheckCircle2, Mail, Lock, User, Hash
 import { PhotoUpload, photoPreview, validatePhotoFile } from "../components/PhotoUpload";
 import { useDepartments } from "../hooks/useDepartments";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../data/api";
 const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/avataaars/svg?seed=student";
 
 export default function StudentRegister() {
@@ -84,7 +84,7 @@ export default function StudentRegister() {
       if (form.mobile) body.append("mobile", form.mobile);
       if (photoFile) body.append("photo", photoFile);
 
-      const res = await fetch(`${API}/api/auth/register-student`, {
+      const res = await fetch(`${API_BASE}/api/auth/register-student`, {
         method: "POST",
         body,
       });

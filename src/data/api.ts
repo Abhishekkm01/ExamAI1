@@ -103,6 +103,16 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return tryFetch(`/api/admin/students?${q}`);
   },
+  adminUpdateStudent: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/students/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  adminDeleteStudent: (id: number) =>
+    tryFetch(`/api/admin/students/${id}/delete`, { method: "DELETE" }),
+  setupStudent: (data: Record<string, unknown>) =>
+    tryFetch("/api/auth/setup-student", { method: "POST", body: JSON.stringify(data) }),
+  setupTeacher: (data: Record<string, unknown>) =>
+    tryFetch("/api/auth/setup-teacher", { method: "POST", body: JSON.stringify(data) }),
+  setupExam: (data: Record<string, unknown>) =>
+    tryFetch("/api/auth/setup-exam", { method: "POST", body: JSON.stringify(data) }),
   adminTeachers: () => tryFetch("/api/admin/teachers"),
   updateTeacher: (id: number, data: Record<string, unknown>) =>
     tryFetch(`/api/admin/teachers/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
@@ -131,8 +141,13 @@ export const api = {
     tryFetch("/api/admin/settings/update", { method: "PUT", body: JSON.stringify(data) }),
   verifyAllEligibility: () => tryFetch("/api/admin/eligibility/verify-all", { method: "POST" }),
   generateAllHallTickets: () => tryFetch("/api/admin/halltickets/generate-all", { method: "POST" }),
+  adminHallTickets: () => tryFetch("/api/admin/halltickets"),
+  adminUpdateHallTicket: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/halltickets/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  adminMarkFeePaid: (studentId: number) =>
+    tryFetch(`/api/admin/fees/${studentId}/mark-paid`, { method: "PUT" }),
   sendNotification: (data: { title: string; message: string; audience: string }) =>
-    tryFetch("/api/admin/notifications", { method: "POST", body: JSON.stringify(data) }),
+    tryFetch("/api/admin/notifications/create", { method: "POST", body: JSON.stringify(data) }),
 
   // -------- Teacher --------
   teacherDashboard: () => tryFetch("/api/teacher/dashboard"),

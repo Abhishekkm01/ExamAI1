@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
 
 from .models import Attendance, Student
-from .settings_service import get_system_settings
+from .settings_service import get_system_settings, passes_eligibility
 
 
 def parse_student_id(raw_id):
@@ -28,13 +28,7 @@ def refresh_student_eligibility(student):
     )
 
     internal_pct = (student.internal_marks / 40) * 100
-    passed = (
-        student.attendance_percentage >= cfg.attendance_threshold
-        and internal_pct >= cfg.internal_marks_threshold
-        and student.backlogs == 0
-        and student.fee_paid
-        and student.previous_result >= cfg.min_sgpa
-    )
+    passed = passes_eligibility(student, cfg)
 
     student.is_eligible = passed
     student.ai_risk_score = ai['risk_score']

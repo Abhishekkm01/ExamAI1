@@ -33,3 +33,17 @@ def refresh_all_eligibility():
         refresh_student_eligibility(student)
         count += 1
     return count
+
+
+def passes_eligibility(student, cfg=None):
+    """Return True when a student meets configured eligibility criteria."""
+    if cfg is None:
+        cfg = get_system_settings()
+    internal_pct = (student.internal_marks / 40) * 100
+    return (
+        student.attendance_percentage >= cfg.attendance_threshold
+        and internal_pct >= cfg.internal_marks_threshold
+        and student.backlogs == 0
+        and student.fee_paid
+        and student.previous_result >= cfg.min_sgpa
+    )

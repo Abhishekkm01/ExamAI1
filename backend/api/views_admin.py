@@ -30,7 +30,8 @@ from rest_framework.decorators import permission_classes as rf_permission_classe
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
-from .settings_service import get_system_settings, settings_to_dict, refresh_all_eligibility
+from .settings_service import get_system_settings, settings_to_dict, refresh_all_eligibility, passes_eligibility
+from .marks_service import update_student_marks
 
 
 @api_view(['GET'])
@@ -501,16 +502,7 @@ def verify_all(request):
             min_sgpa=cfg.min_sgpa,
         )
 
-        internal_pct = (s.internal_marks / 40.0) * 100
-        passed = (
-            s.attendance_percentage >= cfg.attendance_threshold
-            and internal_pct >= cfg.internal_marks_threshold
-            and s.backlogs == 0
-            and s.fee_paid
-            and s.previous_result >= cfg.min_sgpa
-        )
-
-        s.is_eligible = passed
+        s.is_eligible = passes_eligibility(s, cfg)
         s.eligibility_percentage = round(ai['probability'] * 100.0, 1)
         s.ai_risk_score = ai['risk_score']
         s.save()
@@ -923,8 +915,9 @@ def _pdf_response(report_type, title, headers, rows):
     p.setFont('Helvetica-Bold', 14)
     p.drawString(50, y, _pdf_text(f'ExamShield AI - {title}'))
     y -= 18
+    cfg = get_system_settings()
     p.setFont('Helvetica', 10)
-    p.drawString(50, y, 'National Institute of Technology')
+    p.drawString(50, y, _pdf_text(cfg.university_name))
     y -= 14
     p.drawString(50, y, _pdf_text(f'Generated: {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")}'))
     y -= 22

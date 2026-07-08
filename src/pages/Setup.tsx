@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AppContext";
 import { useNavigate } from "react-router-dom";
 import { Shield, UserPlus, BookOpen, GraduationCap, CheckCircle2, ArrowRight, ServerCrash } from "lucide-react";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../data/api";
 
 export function FirstTimeSetup() {
   const navigate = useNavigate();
@@ -19,7 +19,7 @@ export function FirstTimeSetup() {
   const createAdmin = async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/api/auth/bootstrap-admin`, {
+      const res = await fetch(`${API_BASE}/api/auth/bootstrap-admin`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: adminEmail, password: adminPassword, name: adminName }),
       });
@@ -120,7 +120,7 @@ export function FirstTimeSetup() {
         )}
 
         <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-6">
-          Make sure you've run <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">backend/examshield_schema.sql</code> on your MySQL server first.
+          Make sure you've run <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">setup-db.bat</code> (or <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">python manage.py setup_database</code>) on your MySQL server first.
         </p>
       </div>
     </div>

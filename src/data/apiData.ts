@@ -2,7 +2,7 @@
 // If the backend is offline, the UI shows an empty state with a clear message.
 
 import { api, isBackendOnline } from "./api";
-import type { Student, Teacher, Exam, Notification } from "./mockData";
+import type { Student, Teacher, Exam } from "./types";
 
 export function getStudentEligibilityLocal(s: Student) {
   const checks = {
@@ -81,14 +81,6 @@ export async function fetchAdminExams(): Promise<Exam[]> {
 export async function fetchDepartments(): Promise<string[]> {
   const data = await api.publicMeta();
   return data?.departments || [];
-}
-
-export async function fetchNotifications(): Promise<Notification[]> {
-  const data = await api.studentNotifications();
-  return (data || []).map((n: any) => ({
-    id: `n${n.id}`, title: n.title, message: n.message,
-    audience: n.audience, createdAt: n.created_at || "", read: n.is_read || false,
-  }));
 }
 
 export async function fetchAttendanceTrends(): Promise<

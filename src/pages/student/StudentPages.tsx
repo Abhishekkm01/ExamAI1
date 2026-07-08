@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { fetchStudents, fetchExams, getStudentEligibility } from "../../data/apiData";
-import type { Student, Exam } from "../../data/mockData";
+import type { Student, Exam } from "../../data/types";
 import { useAuth, useNotifications } from "../../contexts/AppContext";
 import { useNavigate } from "react-router-dom";
 import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit, Lock, Wallet } from "lucide-react";
@@ -10,13 +10,15 @@ import { FaceCapture } from "../../components/FaceCapture";
 import { QRCodeSVG } from "qrcode.react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LineChart, Line } from "recharts";
 import { cn } from "../../utils/cn";
+import { API_BASE } from "../../data/api";
+import { useSystemSettings } from "../../hooks/useSystemSettings";
+import { buildSimpleHallTicketHtml, examHeaderSubtitle, universityInitials } from "../../utils/hallTicket";
 
-const API = "http://localhost:8000";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 async function fetchMe(): Promise<Student | null> {
   try {
-    const res = await fetch(`${API}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
+    const res = await fetch(`${API_BASE}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
     if (!res.ok) return null;
     const p = await res.json();
     // Map the API response to Student type
@@ -58,14 +60,14 @@ type FeeInfo = {
 
 async function fetchFees(): Promise<FeeInfo | null> {
   try {
-    const res = await fetch(`${API}/api/student/fees`, { headers: { Authorization: `Bearer ${token()}` } });
+    const res = await fetch(`${API_BASE}/api/student/fees`, { headers: { Authorization: `Bearer ${token()}` } });
     if (!res.ok) return null;
     return await res.json();
   } catch { return null; }
 }
 
 async function payStudentFee(method: "online" | "bank_transfer" | "college", reference = "") {
-  const res = await fetch(`${API}/api/student/fees/pay`, {
+  const res = await fetch(`${API_BASE}/api/student/fees/pay`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
     body: JSON.stringify({ method, reference }),
@@ -263,7 +265,7 @@ export function StudentProfile() {
     try {
       const body = new FormData();
       body.append("photo", file);
-      const res = await fetch(`${API}/api/student/profile/photo`, {
+      const res = await fetch(`${API_BASE}/api/student/profile/photo`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}` },
         body,
@@ -286,7 +288,7 @@ export function StudentProfile() {
     if (!form) return;
     setSaveError(null);
     setSaveSuccess(null);
-    const res = await fetch(`${API}/api/student/profile/update`, {
+    const res = await fetch(`${API_BASE}/api/student/profile/update`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
       body: JSON.stringify({ name: form.name, mobile: form.mobile, section: form.section }),
@@ -314,7 +316,7 @@ export function StudentProfile() {
     }
     setPasswordSaving(true);
     try {
-      const res = await fetch(`${API}/api/student/profile/update`, {
+      const res = await fetch(`${API_BASE}/api/student/profile/update`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({
@@ -441,7 +443,7 @@ export function StudentEligibility() {
       if (!me) { setLoading(false); return; }
       setStudent(me);
       try {
-        const res = await fetch(`${API}/api/student/eligibility`, { headers: { Authorization: `Bearer ${token()}` } });
+        const res = await fetch(`${API_BASE}/api/student/eligibility`, { headers: { Authorization: `Bearer ${token()}` } });
         if (res.ok) setEligibility(await res.json());
         else setEligibility({ is_eligible: me && getStudentEligibility(me).eligible });
       } catch {
@@ -521,12 +523,13 @@ export function StudentHallTicket() {
   const [ht, setHt] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState<Student | null>(null);
+  const { settings: systemSettings } = useSystemSettings();
   useEffect(() => {
     (async () => {
       const me = await fetchMe();
       setStudent(me);
       try {
-        const res = await fetch(`${API}/api/student/hallticket`, { headers: { Authorization: `Bearer ${token()}` } });
+        const res = await fetch(`${API_BASE}/api/student/hallticket`, { headers: { Authorization: `Bearer ${token()}` } });
         if (res.ok) setHt(await res.json());
       } catch {}
       setLoading(false);
@@ -548,21 +551,22 @@ export function StudentHallTicket() {
   }
 
   const download = () => {
-    const html = `<!DOCTYPE html><html><head><title>Hall Ticket</title>
-<style>body{font-family:sans-serif;padding:30px}.card{border:3px solid #2563eb;border-radius:12px;max-width:700px;margin:0 auto;overflow:hidden}.h{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;padding:20px}.b{padding:25px}.r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.r .l{color:#64748b}.r .v{font-weight:600}</style></head><body>
-<div class="card"><div class="h"><h2>National Institute of Technology</h2><p>End Semester Examination • Nov 2026</p></div>
-<div class="b">
-<div class="r"><span class="l">Hall Ticket No</span><span class="v">${ht.hall_ticket_no}</span></div>
-<div class="r"><span class="l">Student</span><span class="v">${ht.student.name}</span></div>
-<div class="r"><span class="l">Roll No</span><span class="v">${ht.student.roll_no}</span></div>
-<div class="r"><span class="l">Department</span><span class="v">${ht.student.department}</span></div>
-<div class="r"><span class="l">Subject</span><span class="v">${ht.exam.subject_name} (${ht.exam.subject_code})</span></div>
-<div class="r"><span class="l">Date / Time</span><span class="v">${ht.exam.date} at ${ht.exam.time}</span></div>
-<div class="r"><span class="l">Duration</span><span class="v">${ht.exam.duration}</span></div>
-<div class="r"><span class="l">Exam Hall</span><span class="v">${ht.exam.room}</span></div>
-<div class="r"><span class="l">Seat Number</span><span class="v">${ht.seat_number}</span></div>
-<p style="text-align:center;margin-top:20px;color:#475569">QR Code: ${ht.qr_code_content}</p>
-</div></div><script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`;
+    const html = buildSimpleHallTicketHtml(
+      systemSettings.university_name,
+      systemSettings.academic_year,
+      ht.hall_ticket_no,
+      ht.student.name,
+      ht.student.roll_no,
+      ht.student.department,
+      ht.exam.subject_name,
+      ht.exam.subject_code,
+      ht.exam.date,
+      ht.exam.time,
+      ht.exam.duration,
+      ht.exam.room,
+      ht.seat_number,
+      ht.qr_code_content,
+    );
     const w = window.open("", "_blank");
     if (w) { w.document.write(html); w.document.close(); }
   };
@@ -581,8 +585,8 @@ export function StudentHallTicket() {
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border-2 border-indigo-600 overflow-hidden shadow-xl">
           <div className="bg-brand-gradient text-white p-5 flex items-center justify-between">
-            <div><p className="font-bold text-xl">National Institute of Technology</p><p className="text-xs opacity-90">End Semester Examination • Nov 2026</p></div>
-            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">NIT</div>
+            <div><p className="font-bold text-xl">{systemSettings.university_name}</p><p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p></div>
+            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">{universityInitials(systemSettings.university_name)}</div>
           </div>
           <div className="p-8">
             <div className="text-center mb-6 pb-4 border-b-2 border-slate-200">
@@ -640,7 +644,7 @@ export function StudentExams() {
       const me = await fetchMe();
       setStudent(me);
       try {
-        const res = await fetch(`${API}/api/student/exams`, { headers: { Authorization: `Bearer ${token()}` } });
+        const res = await fetch(`${API_BASE}/api/student/exams`, { headers: { Authorization: `Bearer ${token()}` } });
         if (res.ok) {
           const data = await res.json();
           setList(data.map((e: any) => ({ id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name, department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time, duration: e.duration, room: e.room, totalMarks: e.total_marks })));
@@ -689,7 +693,7 @@ export function StudentFaceVerify() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
+        const res = await fetch(`${API_BASE}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
         if (res.ok) {
           const p = await res.json();
           setFaceEnrolled(!!p.face_enrolled);
@@ -705,7 +709,7 @@ export function StudentFaceVerify() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`${API}/api/student/face-enroll`, {
+      const res = await fetch(`${API_BASE}/api/student/face-enroll`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
         body: JSON.stringify({ image_base64: imageBase64 }),
@@ -727,7 +731,7 @@ export function StudentFaceVerify() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`${API}/api/student/face-verify`, {
+      const res = await fetch(`${API_BASE}/api/student/face-verify`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
         body: JSON.stringify({ image_base64: imageBase64 }),
@@ -910,7 +914,7 @@ export function StudentChatbot() {
     setMessages((m) => [...m, { role: "user", text: q }]);
     setInput(""); setThinking(true);
     try {
-      const res = await fetch(`${API}/api/student/chatbot`, {
+      const res = await fetch(`${API_BASE}/api/student/chatbot`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ user_query: q }),
       });

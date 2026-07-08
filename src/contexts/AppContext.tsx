@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { User, Notification as Notif } from "../data/mockData";
-import { notifications as seedNotifs } from "../data/mockData";
+import type { User, Notification as Notif } from "../data/types";
+
+const seedNotifs: Notif[] = [
+  { id: "n1", title: "Welcome to ExamShield AI", message: "Your examination management system is ready.", audience: "all", createdAt: "2026-10-28 09:00", read: false },
+];
 import { api, isBackendOnline } from "../data/api";
 
 const ROLE_MAP: Record<string, User["role"]> = { admin: "admin", teacher: "teacher", student: "student" };

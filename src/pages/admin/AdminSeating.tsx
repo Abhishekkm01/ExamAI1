@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { fetchAdminExams } from "../../data/apiData";
-import type { Exam } from "../../data/mockData";
+import type { Exam } from "../../data/types";
 import { Armchair, RefreshCw, Save, MapPin, Users, CheckCircle2, TicketCheck } from "lucide-react";
 import { cn } from "../../utils/cn";
 
-const API = "http://localhost:8000";
+import { API_BASE } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
 
 type Room = {
@@ -36,7 +36,7 @@ type Arrangement = {
 };
 
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
     headers: {
       Authorization: `Bearer ${token()}`,

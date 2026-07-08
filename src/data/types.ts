@@ -1,0 +1,63 @@
+export type Role = "admin" | "teacher" | "student";
+
+export interface User {
+  id: string;
+  email: string;
+  password?: string;
+  role: Role;
+  name: string;
+  avatar?: string;
+}
+
+export interface Student {
+  id: string;
+  rollNo: string;
+  name: string;
+  email: string;
+  mobile: string;
+  department: string;
+  semester: number;
+  section: string;
+  photo: string;
+  attendance: number;
+  internalMarks: number;
+  assignmentMarks: number;
+  previousResult: number;
+  backlogs: number;
+  feePaid: boolean;
+  feeAmount: number;
+  feeDueDate: string;
+  createdAt: string;
+}
+
+export interface Teacher {
+  id: string;
+  empId: string;
+  name: string;
+  email: string;
+  department: string;
+  subjects: string[];
+  photo: string;
+}
+
+export interface Exam {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  department: string;
+  semester: number;
+  date: string;
+  time: string;
+  duration: string;
+  room: string;
+  totalMarks: number;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  audience: "all" | "students" | "teachers" | "admin";
+  createdAt: string;
+  read: boolean;
+}

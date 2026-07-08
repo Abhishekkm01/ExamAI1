@@ -1,7 +1,7 @@
 import { Card, StatCard, PageHeader, Badge, Button } from "../../components/Layout";
 import { useEffect, useState } from "react";
 import { fetchStudents, fetchAdminExams, fetchTeachers, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
-import type { Student, Exam, Teacher } from "../../data/mockData";
+import type { Student, Exam, Teacher } from "../../data/types";
 import { GraduationCap, TicketCheck, Users, Calendar, BrainCircuit, Database } from "lucide-react";
 import { useSystemSettings } from "../../hooks/useSystemSettings";
 import {
