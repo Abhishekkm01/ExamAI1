@@ -49,6 +49,10 @@ if errorlevel 1 (
 )
 
 echo [4/4] Starting Django backend on http://localhost:8000 ...
+REM Stop any stale backend still bound to port 8000 (prevents 404 on new routes)
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"') do (
+  taskkill /PID %%a /F >nul 2>&1
+)
 start "ExamShield-Backend" /B cmd /c "python manage.py runserver 0.0.0.0:8000 > ..\backend.log 2>&1"
 
 REM --- Frontend ---

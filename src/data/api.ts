@@ -1,6 +1,7 @@
 // Lightweight API client for the FastAPI backend.
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
+export { API_BASE };
 
 let backendOnline = false;
 export const isBackendOnline = () => backendOnline;
@@ -102,7 +103,15 @@ export const api = {
     return tryFetch(`/api/admin/students?${q}`);
   },
   adminTeachers: () => tryFetch("/api/admin/teachers"),
+  updateTeacher: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/teachers/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteTeacher: (id: number) =>
+    tryFetch(`/api/admin/teachers/${id}/delete`, { method: "DELETE" }),
   adminExams: () => tryFetch("/api/admin/exams"),
+  updateExam: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/exams/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteExam: (id: number) =>
+    tryFetch(`/api/admin/exams/${id}/delete`, { method: "DELETE" }),
   adminBacklogs: () => tryFetch("/api/admin/backlogs"),
   adminFees: () => tryFetch("/api/admin/fees"),
   approveFeePayment: (paymentId: number, adminNote = "") =>
@@ -166,3 +175,41 @@ export const api = {
   askChatbot: (query: string) =>
     tryFetch("/api/student/chatbot", { method: "POST", body: JSON.stringify({ user_query: query }) }),
 };
+
+export async function downloadAdminReport(reportType: string, format: "pdf" | "excel"): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    throw new Error("Not logged in. Please sign in again as admin.");
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/admin/reports/export?report_type=${encodeURIComponent(reportType)}&export_format=${format}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  } catch {
+    backendOnline = false;
+    throw new Error(`Cannot reach backend at ${API_BASE}. Run start.bat or: python manage.py runserver 0.0.0.0:8000`);
+  }
+
+  if (!res.ok) {
+    let detail = `Failed to generate report (HTTP ${res.status})`;
+    try {
+      const j = await res.json();
+      if (j?.detail) detail = j.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+
+  backendOnline = true;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${reportType}.${format === "excel" ? "xlsx" : "pdf"}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

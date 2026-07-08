@@ -30,7 +30,7 @@ function mapApiStudent(s: any): Student {
     department: s.department, semester: s.semester, section: s.section, photo: s.photo,
     attendance: s.attendance, internalMarks: s.internal_marks, assignmentMarks: s.assignment_marks,
     previousResult: s.previous_result, backlogs: s.backlogs, feePaid: s.fee_paid,
-    feeAmount: s.fee_amount, feeDueDate: s.fee_due_date, createdAt: "2023-08-12",
+    feeAmount: s.fee_amount, feeDueDate: s.fee_due_date || "", createdAt: "2023-08-12",
   };
 }
 

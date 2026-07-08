@@ -14,6 +14,10 @@ class JWTAuthenticationMiddleware:
         
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header[7:]
+        else:
+            token = request.GET.get('token') or request.POST.get('token')
+
+        if token:
             payload = decode_access_token(token)
             print(f"[JWT] Token payload: {payload}")
             

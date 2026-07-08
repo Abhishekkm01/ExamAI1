@@ -9,7 +9,8 @@ from .seating_service import SeatingArrangementService, build_qr_content, room_d
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
                           NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
-                          HallTicketUpdateSerializer, FeePaymentReviewSerializer)
+                          HallTicketUpdateSerializer, FeePaymentReviewSerializer,
+                          TeacherUpdateSerializer, ExamUpdateSerializer)
 from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
@@ -230,31 +231,61 @@ def update_student(request, sid):
         return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
     
     serializer = StudentUpdateSerializer(data=request.data, partial=True)
-    if serializer.is_valid():
-        data = serializer.validated_data
-        subject_code = request.data.get('subject_code', 'CS301')
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        for field, value in data.items():
-            setattr(s, field, value)
+    data = serializer.validated_data
+    user = s.user
+    subject_code = request.data.get('subject_code', 'CS301')
 
-        if 'internal_marks' in data or 'assignment_marks' in data:
-            update_student_marks(
-                s,
-                subject_code,
-                internal_marks=data.get('internal_marks', s.internal_marks),
-                assignment_marks=data.get('assignment_marks', s.assignment_marks),
-            )
-        else:
-            refresh_student_eligibility(s)
+    if 'email' in data and User.objects.filter(
+        email=data['email'], is_deleted=False
+    ).exclude(id=user.id).exists():
+        return Response({'detail': 'Email already in use'}, status=status.HTTP_400_BAD_REQUEST)
+    if 'roll_no' in data and Student.objects.filter(
+        roll_no=data['roll_no'], is_deleted=False
+    ).exclude(id=s.id).exists():
+        return Response({'detail': 'Roll number already in use'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({
-            'message': 'Updated',
-            'internal_marks': s.internal_marks,
-            'assignment_marks': s.assignment_marks,
-            'is_eligible': s.is_eligible,
-        })
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    user_fields = {}
+    if 'name' in data:
+        user_fields['name'] = data.pop('name')
+    if 'email' in data:
+        user_fields['email'] = data.pop('email')
+    if 'password' in data:
+        user_fields['hashed_password'] = get_password_hash(data.pop('password'))
+    if user_fields:
+        for field, value in user_fields.items():
+            setattr(user, field, value)
+        user.save()
+
+    for field, value in data.items():
+        if field in ('mobile', 'photo', 'fee_due_date') and value in (None, ''):
+            value = None
+        setattr(s, field, value)
+
+    if 'internal_marks' in data or 'assignment_marks' in data:
+        update_student_marks(
+            s,
+            subject_code,
+            internal_marks=data.get('internal_marks', s.internal_marks),
+            assignment_marks=data.get('assignment_marks', s.assignment_marks),
+        )
+    else:
+        refresh_student_eligibility(s)
+
+    return Response({
+        'message': 'Updated',
+        'id': s.id,
+        'name': user.name,
+        'email': user.email,
+        'roll_no': s.roll_no,
+        'department': s.department,
+        'semester': s.semester,
+        'internal_marks': s.internal_marks,
+        'assignment_marks': s.assignment_marks,
+        'is_eligible': s.is_eligible,
+    })
 
 
 @api_view(['DELETE'])
@@ -295,6 +326,72 @@ def list_teachers(request):
     return Response(data)
 
 
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_teacher(request, tid):
+    """Update a teacher"""
+    try:
+        t = Teacher.objects.select_related('user').get(id=tid, is_deleted=False)
+    except Teacher.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = TeacherUpdateSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    user = t.user
+
+    if 'email' in data and User.objects.filter(email=data['email'], is_deleted=False).exclude(id=user.id).exists():
+        return Response({'detail': 'Email already in use'}, status=status.HTTP_400_BAD_REQUEST)
+    if 'emp_id' in data and Teacher.objects.filter(emp_id=data['emp_id'], is_deleted=False).exclude(id=t.id).exists():
+        return Response({'detail': 'Employee ID already in use'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if 'name' in data:
+        user.name = data['name']
+    if 'email' in data:
+        user.email = data['email']
+    if 'password' in data:
+        user.hashed_password = get_password_hash(data['password'])
+    if 'department' in data:
+        t.department = data['department']
+    if 'emp_id' in data:
+        t.emp_id = data['emp_id']
+    if 'assigned_subjects' in data:
+        t.assigned_subjects = data['assigned_subjects']
+
+    user.save()
+    t.save()
+
+    return Response({
+        'message': 'Teacher updated',
+        'id': t.id,
+        'name': user.name,
+        'email': user.email,
+        'emp_id': t.emp_id,
+        'department': t.department,
+        'assigned_subjects': t.assigned_subjects.split(',') if t.assigned_subjects else [],
+    })
+
+
+@api_view(['DELETE'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def delete_teacher(request, tid):
+    """Soft delete a teacher"""
+    try:
+        t = Teacher.objects.select_related('user').get(id=tid, is_deleted=False)
+    except Teacher.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    t.is_deleted = True
+    t.user.is_deleted = True
+    t.save()
+    t.user.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 @api_view(['GET'])
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
@@ -330,6 +427,60 @@ def create_exam(request):
                        status=status.HTTP_201_CREATED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_exam(request, eid):
+    """Update an exam"""
+    try:
+        exam = Exam.objects.get(id=eid, is_deleted=False)
+    except Exam.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = ExamUpdateSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    if 'subject_code' in data and Exam.objects.filter(
+        subject_code=data['subject_code'], is_deleted=False
+    ).exclude(id=exam.id).exists():
+        return Response({'detail': 'Subject code already in use'}, status=status.HTTP_400_BAD_REQUEST)
+
+    for field, value in data.items():
+        setattr(exam, field, value)
+    exam.save()
+
+    return Response({
+        'message': 'Exam updated',
+        'id': exam.id,
+        'subject_code': exam.subject_code,
+        'subject_name': exam.subject_name,
+        'department': exam.department,
+        'semester': exam.semester,
+        'exam_date': exam.exam_date,
+        'exam_time': exam.exam_time,
+        'duration': exam.duration,
+        'room': exam.room,
+        'total_marks': exam.total_marks,
+    })
+
+
+@api_view(['DELETE'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def delete_exam(request, eid):
+    """Soft delete an exam"""
+    try:
+        exam = Exam.objects.get(id=eid, is_deleted=False)
+    except Exam.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    exam.is_deleted = True
+    exam.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['POST'])
@@ -651,64 +802,167 @@ def analytics(request):
     })
 
 
+def _build_report_data(report_type):
+    """Return (title, headers, rows) for a report type."""
+    students = Student.objects.filter(is_deleted=False).select_related('user').order_by('roll_no')
+    report_type = (report_type or 'attendance').lower()
+
+    if report_type == 'attendance':
+        rows = [
+            [s.roll_no, s.user.name, s.department, s.semester, s.section, s.attendance_percentage]
+            for s in students
+        ]
+        return 'Attendance Report', ['Roll No', 'Name', 'Department', 'Semester', 'Section', 'Attendance %'], rows
+
+    if report_type == 'marks':
+        rows = [
+            [s.roll_no, s.user.name, s.department, s.internal_marks, s.assignment_marks,
+             s.internal_marks + s.assignment_marks]
+            for s in students
+        ]
+        return 'Internal Marks Report', ['Roll No', 'Name', 'Department', 'Internal /40', 'Assignment /10', 'Total /50'], rows
+
+    if report_type == 'eligibility':
+        rows = [
+            [s.roll_no, s.user.name, s.department, round(s.eligibility_percentage, 1),
+             'Eligible' if s.is_eligible else 'Not Eligible', round(s.ai_risk_score, 2),
+             s.attendance_percentage, s.internal_marks, 'Yes' if s.fee_paid else 'No', s.backlogs]
+            for s in students
+        ]
+        return 'Eligibility Report', [
+            'Roll No', 'Name', 'Department', 'Eligibility %', 'Status', 'Risk Score',
+            'Attendance %', 'Internal /40', 'Fee Paid', 'Backlogs',
+        ], rows
+
+    if report_type == 'examination':
+        exams = Exam.objects.filter(is_deleted=False).order_by('exam_date', 'subject_code')
+        rows = [
+            [e.subject_code, e.subject_name, e.department, e.semester, e.exam_date,
+             e.exam_time, e.duration, e.room, e.total_marks]
+            for e in exams
+        ]
+        return 'Examination Report', [
+            'Subject Code', 'Subject Name', 'Department', 'Semester', 'Date', 'Time', 'Duration', 'Room', 'Total Marks',
+        ], rows
+
+    if report_type == 'backlog':
+        backlog_students = students.filter(backlogs__gt=0)
+        rows = [
+            [s.roll_no, s.user.name, s.department, s.semester, s.backlogs,
+             s.attendance_percentage, s.internal_marks, 'Eligible' if s.is_eligible else 'Not Eligible']
+            for s in backlog_students
+        ]
+        return 'Backlog Report', [
+            'Roll No', 'Name', 'Department', 'Semester', 'Backlogs', 'Attendance %', 'Internal /40', 'Eligibility',
+        ], rows
+
+    if report_type == 'fee':
+        rows = [
+            [s.roll_no, s.user.name, s.department, s.fee_amount,
+             'Paid' if s.fee_paid else 'Pending', s.fee_due_date or '-']
+            for s in students
+        ]
+        paid_count = sum(1 for s in students if s.fee_paid)
+        unpaid_count = students.count() - paid_count
+        total_collected = sum(s.fee_amount for s in students if s.fee_paid)
+        total_due = sum(s.fee_amount for s in students if not s.fee_paid)
+        rows.extend([
+            [],
+            ['Summary', 'Paid Students', paid_count, '', '', ''],
+            ['Summary', 'Pending Students', unpaid_count, '', '', ''],
+            ['Summary', 'Total Collected (Rs.)', total_collected, '', '', ''],
+            ['Summary', 'Total Due (Rs.)', total_due, '', '', ''],
+        ])
+        return 'Fee Report', ['Roll No', 'Name', 'Department', 'Amount (Rs.)', 'Status', 'Due Date'], rows
+
+    return None, None, None
+
+
+def _excel_response(report_type, title, headers, rows):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = title[:31]
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    from django.http import HttpResponse
+    response = HttpResponse(
+        out.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{report_type}.xlsx"'
+    return response
+
+
+def _pdf_text(value):
+    """ReportLab Helvetica only supports latin-1."""
+    return str(value).encode('latin-1', 'replace').decode('latin-1')
+
+
+def _pdf_response(report_type, title, headers, rows):
+    out = io.BytesIO()
+    p = canvas.Canvas(out, pagesize=letter)
+    width, height = letter
+    y = height - 50
+
+    def new_page():
+        nonlocal y
+        p.showPage()
+        y = height - 50
+
+    p.setFont('Helvetica-Bold', 14)
+    p.drawString(50, y, _pdf_text(f'ExamShield AI - {title}'))
+    y -= 18
+    p.setFont('Helvetica', 10)
+    p.drawString(50, y, 'National Institute of Technology')
+    y -= 14
+    p.drawString(50, y, _pdf_text(f'Generated: {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")}'))
+    y -= 22
+    p.setFont('Helvetica-Bold', 9)
+    p.drawString(50, y, _pdf_text(' | '.join(str(h) for h in headers)))
+    y -= 16
+    p.setFont('Helvetica', 9)
+
+    for row in rows:
+        line = _pdf_text(' | '.join(str(cell) for cell in row))
+        if y < 50:
+            new_page()
+            p.setFont('Helvetica-Bold', 9)
+            p.drawString(50, y, _pdf_text(' | '.join(str(h) for h in headers)))
+            y -= 16
+            p.setFont('Helvetica', 9)
+        p.drawString(50, y, line[:110])
+        y -= 14
+
+    p.save()
+    out.seek(0)
+    from django.http import HttpResponse
+    response = HttpResponse(out.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{report_type}.pdf"'
+    return response
+
+
 @api_view(['GET'])
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def export_report(request):
     """Export report in Excel or PDF format"""
     report_type = request.query_params.get('report_type', 'attendance')
-    format_type = request.query_params.get('format', 'excel')
-    
-    students = Student.objects.filter(is_deleted=False).select_related('user')
-    
+    # DRF reserves ?format= for content negotiation — never use that query name here.
+    format_type = request.query_params.get('export_format', 'excel')
+
+    title, headers, rows = _build_report_data(report_type)
+    if title is None:
+        return Response({'detail': f'Unknown report type: {report_type}'}, status=status.HTTP_400_BAD_REQUEST)
+
     if format_type == 'excel':
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = report_type.title()
-        
-        if report_type == 'attendance':
-            ws.append(['Roll No', 'Name', 'Department', 'Attendance %'])
-            for s in students:
-                ws.append([s.roll_no, s.user.name, s.department, s.attendance_percentage])
-        elif report_type == 'marks':
-            ws.append(['Roll No', 'Name', 'Department', 'Internal', 'Assignment'])
-            for s in students:
-                ws.append([s.roll_no, s.user.name, s.department, s.internal_marks, s.assignment_marks])
-        elif report_type == 'eligibility':
-            ws.append(['Roll No', 'Name', 'Department', 'Eligibility %', 'Status', 'Risk Score'])
-            for s in students:
-                ws.append([s.roll_no, s.user.name, s.department, s.eligibility_percentage, 
-                          'Eligible' if s.is_eligible else 'Not Eligible', s.ai_risk_score])
-        
-        out = io.BytesIO()
-        wb.save(out)
-        out.seek(0)
-        
-        from django.http import HttpResponse
-        response = HttpResponse(
-            out.read(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename={report_type}.xlsx'
-        return response
-    
-    # PDF export
-    out = io.BytesIO()
-    p = canvas.Canvas(out, pagesize=letter)
-    p.drawString(100, 750, f"ExamShield AI - {report_type.title()} Report")
-    p.drawString(100, 730, "National Institute of Technology")
-    y = 700
-    for s in students[:25]:
-        p.drawString(100, y, f"{s.roll_no} | {s.user.name} | {s.department} | Att: {s.attendance_percentage}% | Eligible: {s.is_eligible}")
-        y -= 18
-    p.showPage()
-    p.save()
-    out.seek(0)
-    
-    from django.http import HttpResponse
-    response = HttpResponse(out.read(), content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename={report_type}.pdf'
-    return response
+        return _excel_response(report_type, title, headers, rows)
+    if format_type == 'pdf':
+        return _pdf_response(report_type, title, headers, rows)
+    return Response({'detail': 'Format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])

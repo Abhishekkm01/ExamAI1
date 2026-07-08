@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility } from "../../data/apiData";
+import { downloadAdminReport } from "../../data/api";
 import type { Student, Teacher, Exam } from "../../data/mockData";
 import { useNotifications } from "../../contexts/AppContext";
 import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database } from "lucide-react";
@@ -36,6 +37,24 @@ async function apiPost(path: string, form: any, fallback: string) {
   });
   if (!res.ok) throw new Error(await errorMessage(res, fallback));
   return res.json();
+}
+
+async function apiPut(path: string, form: any, fallback: string) {
+  const res = await fetch(`${API}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+    body: JSON.stringify(form),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, fallback));
+  return res.json();
+}
+
+async function apiDelete(path: string, fallback: string) {
+  const res = await fetch(`${API}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token()}` },
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, fallback));
 }
 
 async function apiAddStudent(form: any) {
@@ -197,14 +216,28 @@ export function AdminStudents() {
               // Edit — call PUT
               try {
                 const sid = parseInt(s.id.replace("s", ""));
+                const payload: Record<string, unknown> = {
+                  name: s.name,
+                  email: s.email,
+                  roll_no: s.rollNo,
+                  mobile: s.mobile || "",
+                  department: s.department,
+                  semester: s.semester,
+                  section: s.section,
+                  photo: s.photo || "",
+                  attendance_percentage: s.attendance,
+                  internal_marks: s.internalMarks,
+                  assignment_marks: s.assignmentMarks,
+                  previous_result: s.previousResult,
+                  backlogs: s.backlogs,
+                  fee_paid: s.feePaid,
+                  fee_amount: s.feeAmount,
+                  fee_due_date: s.feeDueDate || "",
+                };
+                if (opts?.password) payload.password = opts.password;
                 const res = await fetch(`${API}/api/admin/students/${sid}/update`, {
                   method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-                  body: JSON.stringify({
-                    mobile: s.mobile, department: s.department, semester: s.semester, section: s.section,
-                    attendance_percentage: s.attendance, internal_marks: s.internalMarks,
-                    assignment_marks: s.assignmentMarks, previous_result: s.previousResult,
-                    backlogs: s.backlogs, fee_paid: s.feePaid,
-                  }),
+                  body: JSON.stringify(payload),
                 });
                 if (!res.ok) { alert(await errorMessage(res, "Failed to update student")); return; }
               } catch { alert("Failed to update student: backend not reachable"); return; }
@@ -256,9 +289,9 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
           <Field label="Roll No"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
           <Field label="Name"><TextInput value={form.name} onChange={(e) => update("name", e.target.value)} /></Field>
           <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => update("email", e.target.value)} /></Field>
-          {!student?.id && (
-            <Field label="Password"><TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Student login password (min 6 chars)" /></Field>
-          )}
+          <Field label={student?.id ? "New Password (optional)" : "Password"}>
+            <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={student?.id ? "Leave blank to keep current" : "Student login password (min 6 chars)"} />
+          </Field>
           <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
           <Field label="Department">
             <Select value={form.department} onChange={(e) => update("department", e.target.value)}>
@@ -287,7 +320,7 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
               alert("Password must be at least 6 characters");
               return;
             }
-            onSave(form, student?.id ? undefined : { password: password || undefined });
+            onSave(form, password ? { password } : undefined);
           }}><Save className="w-4 h-4" /> Save Student</Button>
         </div>
       </div>
@@ -354,7 +387,22 @@ export function AdminTeachers() {
   const [list, setList] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  useEffect(() => { fetchTeachers().then((t) => { setList(t); setLoading(false); }); }, []);
+  const [editing, setEditing] = useState<Teacher | null>(null);
+
+  const reload = () => fetchTeachers().then((t) => { setList(t); setLoading(false); });
+  useEffect(() => { reload(); }, []);
+
+  const onDelete = async (teacher: Teacher) => {
+    if (!confirm(`Delete teacher ${teacher.name}?`)) return;
+    try {
+      const tid = teacher.id.replace(/^t/, "");
+      await apiDelete(`/api/admin/teachers/${tid}/delete`, "Failed to delete teacher");
+      setList((l) => l.filter((t) => t.id !== teacher.id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete teacher");
+    }
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading teachers from MySQL…</div>;
   return (
     <div>
@@ -365,10 +413,18 @@ export function AdminTeachers() {
           {list.map((t) => (
             <div key={t.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
-                <img src={t.photo} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
-                <div>
+                <img src={t.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${t.empId}`} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
+                <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-800 dark:text-white">{t.name}</p>
                   <p className="text-xs text-slate-500">{t.empId} • {t.department}</p>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditing(t)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
+                    <Edit2 className="w-4 h-4 text-slate-500" />
+                  </button>
+                  <button onClick={() => onDelete(t)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Delete">
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </button>
                 </div>
               </div>
               <p className="text-xs text-slate-500 mb-3">{t.email}</p>
@@ -380,20 +436,59 @@ export function AdminTeachers() {
           {list.length === 0 && <div className="col-span-3 p-10 text-center text-slate-500">No teachers in MySQL — click "Add Teacher" to create one</div>}
         </div>
       </Card>
-      {adding && <TeacherModal onClose={() => setAdding(false)} onAdded={(t) => { setList((l) => [t, ...l]); setAdding(false); }} />}
+      {adding && <TeacherModal onClose={() => setAdding(false)} onSaved={(t) => { setList((l) => [t, ...l]); setAdding(false); }} />}
+      {editing && <TeacherModal teacher={editing} onClose={() => setEditing(null)} onSaved={(t) => { setList((l) => l.map((x) => x.id === t.id ? t : x)); setEditing(null); }} />}
     </div>
   );
 }
 
-function TeacherModal({ onClose, onAdded }: { onClose: () => void; onAdded: (t: Teacher) => void }) {
-  const [form, setForm] = useState({ email: "", password: "teacher123", name: "", emp_id: "", department: "Computer Science", assigned_subjects: "CS301,CS302" });
+function TeacherModal({ teacher, onClose, onSaved }: { teacher?: Teacher; onClose: () => void; onSaved: (t: Teacher) => void }) {
+  const isEdit = !!teacher;
+  const [form, setForm] = useState({
+    email: teacher?.email || "",
+    password: "",
+    name: teacher?.name || "",
+    emp_id: teacher?.empId || "",
+    department: teacher?.department || "Computer Science",
+    assigned_subjects: teacher?.subjects?.join(",") || "CS301,CS302",
+  });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     setSaving(true); setErr(null);
     try {
-      const res = await apiAddTeacher(form);
-      onAdded({ id: `t${res.teacher_id}`, empId: form.emp_id, name: form.name, email: form.email, department: form.department, subjects: form.assigned_subjects.split(","), photo: "" });
+      const payload: Record<string, string> = {
+        name: form.name,
+        email: form.email,
+        emp_id: form.emp_id,
+        department: form.department,
+        assigned_subjects: form.assigned_subjects,
+      };
+      if (form.password) payload.password = form.password;
+
+      if (isEdit && teacher) {
+        const tid = teacher.id.replace(/^t/, "");
+        await apiPut(`/api/admin/teachers/${tid}/update`, payload, "Failed to update teacher");
+        onSaved({
+          ...teacher,
+          name: form.name,
+          email: form.email,
+          empId: form.emp_id,
+          department: form.department,
+          subjects: form.assigned_subjects.split(",").map((s) => s.trim()).filter(Boolean),
+        });
+      } else {
+        const res = await apiAddTeacher({ ...payload, password: form.password || "teacher123" });
+        onSaved({
+          id: `t${res.teacher_id}`,
+          empId: form.emp_id,
+          name: form.name,
+          email: form.email,
+          department: form.department,
+          subjects: form.assigned_subjects.split(",").map((s) => s.trim()).filter(Boolean),
+          photo: "",
+        });
+      }
     } catch (e: any) { setErr(e.message); }
     setSaving(false);
   };
@@ -401,7 +496,7 @@ function TeacherModal({ onClose, onAdded }: { onClose: () => void; onAdded: (t: 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold">Add Teacher</h3>
+          <h3 className="text-lg font-bold">{isEdit ? "Edit Teacher" : "Add Teacher"}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-3">
@@ -414,11 +509,14 @@ function TeacherModal({ onClose, onAdded }: { onClose: () => void; onAdded: (t: 
             </Select>
           </Field>
           <Field label="Assigned Subjects (comma-separated)"><TextInput value={form.assigned_subjects} onChange={(e) => setForm({ ...form, assigned_subjects: e.target.value })} /></Field>
+          <Field label={isEdit ? "New Password (optional)" : "Password"}>
+            <TextInput type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={isEdit ? "Leave blank to keep current" : "teacher123"} />
+          </Field>
           {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
         </div>
         <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Add to MySQL"}</Button>
+          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : isEdit ? "Save Changes" : "Add to MySQL"}</Button>
         </div>
       </div>
     </div>
@@ -430,7 +528,21 @@ export function AdminExams() {
   const [list, setList] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Exam | null>(null);
+
   useEffect(() => { fetchAdminExams().then((e) => { setList(e); setLoading(false); }); }, []);
+
+  const onDelete = async (exam: Exam) => {
+    if (!confirm(`Delete exam ${exam.subjectCode} — ${exam.subjectName}?`)) return;
+    try {
+      const eid = exam.id.replace(/^e/, "");
+      await apiDelete(`/api/admin/exams/${eid}/delete`, "Failed to delete exam");
+      setList((l) => l.filter((e) => e.id !== exam.id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete exam");
+    }
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading exams from MySQL…</div>;
   return (
     <div>
@@ -445,9 +557,19 @@ export function AdminExams() {
                 <h3 className="font-bold text-slate-900 dark:text-white mt-2">{e.subjectName}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">{e.department} • Sem {e.semester}</p>
               </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{e.date.split("-")[2]}</p>
-                <p className="text-xs text-slate-500 uppercase">{new Date(e.date).toLocaleString("en", { month: "short" })}</p>
+              <div className="flex items-start gap-2">
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{e.date.split("-")[2]}</p>
+                  <p className="text-xs text-slate-500 uppercase">{new Date(e.date).toLocaleString("en", { month: "short" })}</p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button onClick={() => setEditing(e)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
+                    <Edit2 className="w-4 h-4 text-slate-500" />
+                  </button>
+                  <button onClick={() => onDelete(e)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Delete">
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </button>
+                </div>
               </div>
             </div>
             <div className="space-y-1.5 text-sm text-slate-600 dark:text-slate-300 mb-4">
@@ -459,31 +581,60 @@ export function AdminExams() {
         ))}
         {list.length === 0 && <div className="col-span-3 p-10 text-center text-slate-500">No exams scheduled — click "Schedule Exam"</div>}
       </div>
-      {adding && <ExamModal onClose={() => setAdding(false)} onAdded={(e) => { setList((l) => [e, ...l]); setAdding(false); }} />}
+      {adding && <ExamModal onClose={() => setAdding(false)} onSaved={(e) => { setList((l) => [e, ...l]); setAdding(false); }} />}
+      {editing && <ExamModal exam={editing} onClose={() => setEditing(null)} onSaved={(e) => { setList((l) => l.map((x) => x.id === e.id ? e : x)); setEditing(null); }} />}
     </div>
   );
 }
 
-function ExamModal({ onClose, onAdded }: { onClose: () => void; onAdded: (e: Exam) => void }) {
-  const [form, setForm] = useState({ subject_code: "", subject_name: "", department: "Computer Science", semester: 5, exam_date: "2026-11-10", exam_time: "10:00 AM", duration: "3 hours", room: "", total_marks: 100 });
+function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => void; onSaved: (e: Exam) => void }) {
+  const isEdit = !!exam;
+  const [form, setForm] = useState({
+    subject_code: exam?.subjectCode || "",
+    subject_name: exam?.subjectName || "",
+    department: exam?.department || "Computer Science",
+    semester: exam?.semester || 5,
+    exam_date: exam?.date || "2026-11-10",
+    exam_time: exam?.time || "10:00 AM",
+    duration: exam?.duration || "3 hours",
+    room: exam?.room || "",
+    total_marks: exam?.totalMarks || 100,
+  });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     setSaving(true); setErr(null);
     try {
-      const res = await apiAddExam(form);
-      onAdded({
-        id: `e${res.exam_id}`,
-        subjectCode: form.subject_code,
-        subjectName: form.subject_name,
-        department: form.department,
-        semester: form.semester,
-        date: form.exam_date,
-        time: form.exam_time,
-        duration: form.duration,
-        room: form.room,
-        totalMarks: form.total_marks,
-      });
+      if (isEdit && exam) {
+        const eid = exam.id.replace(/^e/, "");
+        await apiPut(`/api/admin/exams/${eid}/update`, form, "Failed to update exam");
+        onSaved({
+          ...exam,
+          subjectCode: form.subject_code,
+          subjectName: form.subject_name,
+          department: form.department,
+          semester: form.semester,
+          date: form.exam_date,
+          time: form.exam_time,
+          duration: form.duration,
+          room: form.room,
+          totalMarks: form.total_marks,
+        });
+      } else {
+        const res = await apiAddExam(form);
+        onSaved({
+          id: `e${res.exam_id}`,
+          subjectCode: form.subject_code,
+          subjectName: form.subject_name,
+          department: form.department,
+          semester: form.semester,
+          date: form.exam_date,
+          time: form.exam_time,
+          duration: form.duration,
+          room: form.room,
+          totalMarks: form.total_marks,
+        });
+      }
     } catch (e: any) { setErr(e.message); }
     setSaving(false);
   };
@@ -491,7 +642,7 @@ function ExamModal({ onClose, onAdded }: { onClose: () => void; onAdded: (e: Exa
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold">Schedule Exam</h3>
+          <h3 className="text-lg font-bold">{isEdit ? "Edit Exam" : "Schedule Exam"}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-3">
@@ -513,11 +664,12 @@ function ExamModal({ onClose, onAdded }: { onClose: () => void; onAdded: (e: Exa
             <Field label="Duration"><TextInput value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} /></Field>
             <Field label="Room"><TextInput value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Hall A-101" /></Field>
           </div>
+          <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
           {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
         </div>
         <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Schedule Exam"}</Button>
+          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : isEdit ? "Save Changes" : "Schedule Exam"}</Button>
         </div>
       </div>
     </div>
@@ -1465,14 +1617,28 @@ export function AdminAnalytics() {
 
 // ==================== REPORTS ====================
 export function AdminReports() {
+  const [downloading, setDownloading] = useState<string | null>(null);
   const reports = [
-    { name: "Attendance Report", desc: "Daily attendance records for all students", icon: ClipboardList },
-    { name: "Internal Marks Report", desc: "Detailed internal marks analysis", icon: FileText },
-    { name: "Eligibility Report", desc: "Comprehensive eligibility status", icon: TicketCheck },
-    { name: "Examination Report", desc: "Exam schedule and results summary", icon: Calendar },
-    { name: "Backlog Report", desc: "Students with pending backlogs", icon: AlertTriangle },
-    { name: "Fee Report", desc: "Fee collection and pending dues", icon: Wallet },
+    { name: "Attendance Report", type: "attendance", desc: "Daily attendance records for all students", icon: ClipboardList },
+    { name: "Internal Marks Report", type: "marks", desc: "Detailed internal marks analysis", icon: FileText },
+    { name: "Eligibility Report", type: "eligibility", desc: "Comprehensive eligibility status", icon: TicketCheck },
+    { name: "Examination Report", type: "examination", desc: "Exam schedule and results summary", icon: Calendar },
+    { name: "Backlog Report", type: "backlog", desc: "Students with pending backlogs", icon: AlertTriangle },
+    { name: "Fee Report", type: "fee", desc: "Fee collection and pending dues", icon: Wallet },
   ];
+
+  const downloadReport = async (reportType: string, format: "pdf" | "excel") => {
+    const key = `${reportType}-${format}`;
+    setDownloading(key);
+    try {
+      await downloadAdminReport(reportType, format);
+    } catch (e: any) {
+      alert(e?.message || "Failed to generate report");
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader title="Reports" subtitle="Generate and export comprehensive reports (PDF / Excel from MySQL data)" />
@@ -1485,8 +1651,12 @@ export function AdminReports() {
             <h3 className="font-bold text-slate-900 dark:text-white">{r.name}</h3>
             <p className="text-sm text-slate-500 mt-1 mb-4">{r.desc}</p>
             <div className="flex gap-2">
-              <a href={`http://localhost:8000/api/admin/reports/export?report_type=${r.name.toLowerCase().split(" ")[0]}&format=pdf&token=${localStorage.getItem("examshield_token") || ""}`} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white"><Download className="w-3.5 h-3.5" /> PDF</a>
-              <a href={`http://localhost:8000/api/admin/reports/export?report_type=${r.name.toLowerCase().split(" ")[0]}&format=excel&token=${localStorage.getItem("examshield_token") || ""}`} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100"><FileText className="w-3.5 h-3.5" /> Excel</a>
+              <Button variant="primary" className="flex-1" disabled={!!downloading} onClick={() => downloadReport(r.type, "pdf")}>
+                <Download className="w-3.5 h-3.5" /> {downloading === `${r.type}-pdf` ? "Generating…" : "PDF"}
+              </Button>
+              <Button variant="secondary" className="flex-1" disabled={!!downloading} onClick={() => downloadReport(r.type, "excel")}>
+                <FileText className="w-3.5 h-3.5" /> {downloading === `${r.type}-excel` ? "Generating…" : "Excel"}
+              </Button>
             </div>
           </Card>
         ))}

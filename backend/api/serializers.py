@@ -208,8 +208,14 @@ class MarksUpdateSerializer(serializers.Serializer):
 
 
 class StudentUpdateSerializer(serializers.Serializer):
-    mobile = serializers.CharField(required=False)
+    name = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
+    roll_no = serializers.CharField(required=False)
+    mobile = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    department = serializers.CharField(required=False)
+    semester = serializers.IntegerField(required=False)
     section = serializers.CharField(required=False)
+    photo = serializers.URLField(required=False, allow_blank=True, allow_null=True)
     attendance_percentage = serializers.FloatField(required=False)
     internal_marks = serializers.FloatField(required=False)
     assignment_marks = serializers.FloatField(required=False)
@@ -217,7 +223,8 @@ class StudentUpdateSerializer(serializers.Serializer):
     backlogs = serializers.IntegerField(required=False)
     fee_paid = serializers.BooleanField(required=False)
     fee_amount = serializers.FloatField(required=False)
-    fee_due_date = serializers.CharField(required=False)
+    fee_due_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    password = serializers.CharField(required=False, min_length=6)
 
 
 class ExamCreateSerializer(serializers.Serializer):
@@ -230,6 +237,27 @@ class ExamCreateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
+
+
+class ExamUpdateSerializer(serializers.Serializer):
+    subject_code = serializers.CharField(required=False)
+    subject_name = serializers.CharField(required=False)
+    department = serializers.CharField(required=False)
+    semester = serializers.IntegerField(required=False)
+    exam_date = serializers.CharField(required=False)
+    exam_time = serializers.CharField(required=False)
+    duration = serializers.CharField(required=False)
+    room = serializers.CharField(required=False)
+    total_marks = serializers.IntegerField(required=False)
+
+
+class TeacherUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
+    emp_id = serializers.CharField(required=False)
+    department = serializers.CharField(required=False)
+    assigned_subjects = serializers.CharField(required=False)
+    password = serializers.CharField(required=False, min_length=6)
 
 
 class NotificationCreateSerializer(serializers.Serializer):
