@@ -37,20 +37,16 @@ if python test_mysql.py >/dev/null 2>&1; then
     echo "      Created .env from .env.example - please edit it with your MySQL password"
   fi
 
-  echo
-  echo "      Optional: seed sample data into MySQL? (y/n)"
-  echo "      (1 admin, 4 teachers, 10 students, 6 exams, 4 notifications)"
-  read -r -p "      > " SEED_CHOICE
-  if [[ "$SEED_CHOICE" =~ ^[Yy]$ ]]; then
-    echo "      Seeding dummy data..."
-    python seed_dummy_data.py
-  fi
+  echo "      Creating / updating database tables..."
+  python manage.py setup_database --skip-demo
 else
   echo "      WARNING: MySQL is not reachable. Falling back to SQLite."
   if [ ! -f ".env" ]; then
     echo "DATABASE_URL=sqlite:///./examshield.db" > .env
     echo "SECRET_KEY=local-dev-secret-key-change-me" >> .env
   fi
+  echo "      Creating / updating database tables..."
+  python manage.py setup_database --skip-demo
 fi
 
 echo "[4/4] Starting Django backend on http://localhost:8000 ..."

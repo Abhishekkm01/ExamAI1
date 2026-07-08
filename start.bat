@@ -46,6 +46,8 @@ if errorlevel 1 (
     copy .env.example .env >nul
     echo       Created .env from .env.example - please edit it with your MySQL password
   )
+  echo [3.5/4] Creating / updating database tables...
+  python manage.py setup_database --skip-demo
 )
 
 echo [4/4] Starting Django backend on http://localhost:8000 ...

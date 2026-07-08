@@ -1,12 +1,13 @@
 from rest_framework import serializers
-from .department_service import is_valid_department, get_department_names
+from .department_service import is_valid_department, get_department_names, canonical_department
 
 
 def validate_department_name(value):
-    if not is_valid_department(value):
-        allowed = ', '.join(get_department_names(include_legacy=False))
+    canonical = canonical_department(value)
+    if not canonical:
+        allowed = ', '.join(get_department_names())
         raise serializers.ValidationError(f'Invalid department. Choose from: {allowed}')
-    return value
+    return canonical
 from .models import User, Student, Teacher, Exam, Attendance, InternalMark, HallTicket, Notification, ChatbotLog, EligibilityPrediction
 
 

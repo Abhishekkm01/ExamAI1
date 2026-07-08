@@ -78,11 +78,10 @@ export function AdminStudents() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [viewing, setViewing] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
-  const { departments: dbDepartments } = useDepartments();
+  const { departments: depts, loading: deptsLoading } = useDepartments();
   const pageSize = 5;
 
   useEffect(() => { fetchStudents().then((s) => { setList(s); setLoading(false); }); }, []);
-  const depts = Array.from(new Set([...dbDepartments, ...list.map((s) => s.department)])).filter(Boolean);
 
   const filtered = useMemo(() => {
     return list.filter((s) =>

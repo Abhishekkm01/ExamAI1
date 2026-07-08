@@ -61,7 +61,7 @@ def verify_hallticket(request, ht_no):
 @permission_classes([AllowAny])
 def meta(request):
     """Public endpoint: returns departments, subjects, and semesters for UI dropdowns"""
-    depts = get_department_names(include_legacy=True)
+    depts = get_department_names()
     
     exams = Exam.objects.filter(is_deleted=False)
     subjects = []
