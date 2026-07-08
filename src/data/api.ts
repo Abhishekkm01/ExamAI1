@@ -126,6 +126,9 @@ export const api = {
       body: JSON.stringify({ admin_note: adminNote }),
     }),
   adminAnalytics: () => tryFetch("/api/admin/analytics"),
+  adminGetSettings: () => tryFetch("/api/admin/settings"),
+  adminUpdateSettings: (data: Record<string, unknown>) =>
+    tryFetch("/api/admin/settings/update", { method: "PUT", body: JSON.stringify(data) }),
   verifyAllEligibility: () => tryFetch("/api/admin/eligibility/verify-all", { method: "POST" }),
   generateAllHallTickets: () => tryFetch("/api/admin/halltickets/generate-all", { method: "POST" }),
   sendNotification: (data: { title: string; message: string; audience: string }) =>

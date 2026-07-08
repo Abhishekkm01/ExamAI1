@@ -314,3 +314,30 @@ class FeePayment(models.Model):
             models.Index(fields=['transaction_id']),
             models.Index(fields=['status']),
         ]
+
+
+class SystemSettings(models.Model):
+    """Singleton row (pk=1) for university and AI eligibility configuration."""
+
+    ML_MODEL_CHOICES = [
+        ('rf', 'Random Forest Classifier'),
+        ('dt', 'Decision Tree'),
+    ]
+
+    university_name = models.CharField(max_length=255, default='National Institute of Technology')
+    academic_year = models.CharField(max_length=20, default='2026-27')
+    current_semester = models.PositiveSmallIntegerField(default=5)
+    contact_email = models.EmailField(default='admin@nit.edu')
+    attendance_threshold = models.PositiveSmallIntegerField(default=75)
+    internal_marks_threshold = models.PositiveSmallIntegerField(default=40)
+    min_sgpa = models.FloatField(default=5.0)
+    ml_model = models.CharField(max_length=10, choices=ML_MODEL_CHOICES, default='rf')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'system_settings'
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

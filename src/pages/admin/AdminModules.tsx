@@ -1,14 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
-import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility } from "../../data/apiData";
-import { downloadAdminReport } from "../../data/api";
+import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
+import { downloadAdminReport, api } from "../../data/api";
 import type { Student, Teacher, Exam } from "../../data/mockData";
 import { useNotifications } from "../../contexts/AppContext";
 import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell, Legend } from "recharts";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../../utils/cn";
 import { useDepartments } from "../../hooks/useDepartments";
+import { notifySystemSettingsUpdated } from "../../hooks/useSystemSettings";
 import { DepartmentSelect } from "../../components/DepartmentSelect";
 
 const API = "http://localhost:8000";
@@ -133,7 +134,7 @@ export function AdminStudents() {
             <option value="all">All Departments</option>
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
-          <Button variant="secondary"><Upload className="w-4 h-4" /> Bulk Upload</Button>
+          {/* <Button variant="secondary"><Upload className="w-4 h-4" /> Bulk Upload</Button> */}
         </div>
       </Card>
 
@@ -781,7 +782,7 @@ export function AdminMarks() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <TextInput placeholder="Search students..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
           </div>
-          <Button variant="primary"><Upload className="w-4 h-4" /> Upload Marks CSV</Button>
+          {/* <Button variant="primary"><Upload className="w-4 h-4" /> Upload Marks CSV</Button> */}
         </div>
       </Card>
       <Card className="overflow-hidden">
@@ -1582,9 +1583,15 @@ export function AdminNotifications() {
 // ==================== ANALYTICS ====================
 export function AdminAnalytics() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [trendData, setTrendData] = useState<{ day: string; attendance: number; absent: number; total: number }[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
+  useEffect(() => {
+    Promise.all([fetchStudents(), fetchAttendanceTrends()])
+      .then(([s, trends]) => { setStudents(s); setTrendData(trends); setLoading(false); });
+  }, []);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
+
+  const hasTrendData = trendData.some((d) => d.total > 0);
 
   const deptData = Object.entries(
     students.reduce<Record<string, number>>((acc, s) => { acc[s.department] = (acc[s.department] || 0) + 1; return acc; }, {})
@@ -1628,19 +1635,20 @@ export function AdminAnalytics() {
         </Card>
       </div>
       <Card className="p-5">
-        <h3 className="font-semibold mb-4">Attendance Trends (7 days)</h3>
+        <h3 className="font-semibold mb-1">Attendance Trends (7 days)</h3>
+        <p className="text-xs text-slate-500 mb-4">
+          {hasTrendData ? "Daily present vs absent % from teacher attendance marks" : "No attendance marked in the last 7 days — use Teacher → Attendance"}
+        </p>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={[
-              { day: "Mon", attendance: 84 }, { day: "Tue", attendance: 78 },
-              { day: "Wed", attendance: 86 }, { day: "Thu", attendance: 81 },
-              { day: "Fri", attendance: 73 }, { day: "Sat", attendance: 88 }, { day: "Sun", attendance: 0 },
-            ]}>
+            <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.3)" />
               <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
-              <YAxis stroke="#94a3b8" fontSize={12} />
+              <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 100]} />
               <Tooltip contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }} />
-              <Line type="monotone" dataKey="attendance" stroke="#2563eb" strokeWidth={3} dot={{ r: 5 }} />
+              <Legend />
+              <Line type="monotone" dataKey="attendance" name="Present %" stroke="#10b981" strokeWidth={3} dot={{ r: 5 }} />
+              <Line type="monotone" dataKey="absent" name="Absent %" stroke="#ef4444" strokeWidth={3} dot={{ r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -1700,7 +1708,107 @@ export function AdminReports() {
 }
 
 // ==================== SETTINGS ====================
+type SystemSettings = {
+  university_name: string;
+  academic_year: string;
+  current_semester: number;
+  contact_email: string;
+  attendance_threshold: number;
+  internal_marks_threshold: number;
+  min_sgpa: number;
+  ml_model: "rf" | "dt";
+  updated_at?: string | null;
+};
+
 export function AdminSettings() {
+  const { add } = useNotifications();
+  const [loading, setLoading] = useState(true);
+  const [savingUni, setSavingUni] = useState(false);
+  const [savingAi, setSavingAi] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uniForm, setUniForm] = useState({
+    university_name: "",
+    academic_year: "",
+    current_semester: 5,
+    contact_email: "",
+  });
+  const [aiForm, setAiForm] = useState({
+    attendance_threshold: 75,
+    internal_marks_threshold: 40,
+    min_sgpa: 5.0,
+    ml_model: "rf" as "rf" | "dt",
+  });
+
+  const loadSettings = () => {
+    setLoading(true);
+    setError(null);
+    api.adminGetSettings()
+      .then((data: SystemSettings) => {
+        setUniForm({
+          university_name: data.university_name,
+          academic_year: data.academic_year,
+          current_semester: data.current_semester,
+          contact_email: data.contact_email,
+        });
+        setAiForm({
+          attendance_threshold: data.attendance_threshold,
+          internal_marks_threshold: data.internal_marks_threshold,
+          min_sgpa: data.min_sgpa,
+          ml_model: data.ml_model,
+        });
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        setError(err.message || "Failed to load settings");
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { loadSettings(); }, []);
+
+  const saveUniversity = async () => {
+    setSavingUni(true);
+    try {
+      await api.adminUpdateSettings(uniForm);
+      notifySystemSettingsUpdated();
+      add({ title: "University settings saved", message: "Settings updated successfully.", audience: "admin" });
+    } catch (e: any) {
+      add({ title: "Save failed", message: e?.message || "Could not save university settings", audience: "admin" });
+    } finally {
+      setSavingUni(false);
+    }
+  };
+
+  const saveAi = async () => {
+    setSavingAi(true);
+    try {
+      const result = await api.adminUpdateSettings(aiForm);
+      notifySystemSettingsUpdated();
+      const msg = result?.recalculated_students
+        ? `AI thresholds applied. Recalculated eligibility for ${result.recalculated_students} students.`
+        : "AI configuration saved.";
+      add({ title: "AI settings applied", message: msg, audience: "admin" });
+    } catch (e: any) {
+      add({ title: "Apply failed", message: e?.message || "Could not save AI settings", audience: "admin" });
+    } finally {
+      setSavingAi(false);
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading settings…</div>;
+  if (error) {
+    return (
+      <div>
+        <PageHeader title="System Settings" subtitle="Configure ExamShield AI" />
+        <Card className="p-8 max-w-lg mx-auto text-center">
+          <Database className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+          <p className="text-rose-600 mb-4">{error}</p>
+          <Button onClick={loadSettings}>Retry</Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader title="System Settings" subtitle="Configure ExamShield AI" />
@@ -1711,12 +1819,24 @@ export function AdminSettings() {
             <h3 className="font-bold">University Information</h3>
           </div>
           <div className="space-y-3">
-            <Field label="University Name"><TextInput defaultValue="National Institute of Technology" /></Field>
-            <Field label="Academic Year"><TextInput defaultValue="2026-27" /></Field>
-            <Field label="Current Semester"><Select defaultValue="5"><option>5</option><option>6</option></Select></Field>
-            <Field label="Contact Email"><TextInput defaultValue="admin@nit.edu" /></Field>
+            <Field label="University Name">
+              <TextInput value={uniForm.university_name} onChange={(e) => setUniForm({ ...uniForm, university_name: e.target.value })} />
+            </Field>
+            <Field label="Academic Year">
+              <TextInput value={uniForm.academic_year} onChange={(e) => setUniForm({ ...uniForm, academic_year: e.target.value })} />
+            </Field>
+            <Field label="Current Semester">
+              <Select value={String(uniForm.current_semester)} onChange={(e) => setUniForm({ ...uniForm, current_semester: Number(e.target.value) })}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}</option>)}
+              </Select>
+            </Field>
+            <Field label="Contact Email">
+              <TextInput type="email" value={uniForm.contact_email} onChange={(e) => setUniForm({ ...uniForm, contact_email: e.target.value })} />
+            </Field>
           </div>
-          <Button variant="primary" className="mt-4"><Save className="w-4 h-4" /> Save Settings</Button>
+          <Button variant="primary" className="mt-4" onClick={saveUniversity} disabled={savingUni}>
+            <Save className="w-4 h-4" /> {savingUni ? "Saving…" : "Save Settings"}
+          </Button>
         </Card>
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -1724,14 +1844,29 @@ export function AdminSettings() {
             <h3 className="font-bold">AI Configuration</h3>
           </div>
           <div className="space-y-3">
-            <Field label="Eligibility Threshold (Attendance %)"><TextInput type="number" defaultValue="75" /></Field>
-            <Field label="Internal Marks Threshold (%)"><TextInput type="number" defaultValue="40" /></Field>
-            <Field label="Min SGPA"><TextInput type="number" step="0.1" defaultValue="5.0" /></Field>
+            <Field label="Eligibility Threshold (Attendance %)">
+              <TextInput type="number" min={0} max={100} value={aiForm.attendance_threshold}
+                onChange={(e) => setAiForm({ ...aiForm, attendance_threshold: Number(e.target.value) })} />
+            </Field>
+            <Field label="Internal Marks Threshold (%)">
+              <TextInput type="number" min={0} max={100} value={aiForm.internal_marks_threshold}
+                onChange={(e) => setAiForm({ ...aiForm, internal_marks_threshold: Number(e.target.value) })} />
+            </Field>
+            <Field label="Min SGPA">
+              <TextInput type="number" step="0.1" min={0} max={10} value={aiForm.min_sgpa}
+                onChange={(e) => setAiForm({ ...aiForm, min_sgpa: Number(e.target.value) })} />
+            </Field>
             <Field label="ML Model">
-              <Select defaultValue="rf"><option value="rf">Random Forest Classifier</option><option value="dt">Decision Tree</option></Select>
+              <Select value={aiForm.ml_model} onChange={(e) => setAiForm({ ...aiForm, ml_model: e.target.value as "rf" | "dt" })}>
+                <option value="rf">Random Forest Classifier</option>
+                <option value="dt">Decision Tree</option>
+              </Select>
             </Field>
           </div>
-          <Button variant="primary" className="mt-4"><Save className="w-4 h-4" /> Apply</Button>
+          <p className="text-xs text-slate-500 mt-3">Changing AI thresholds recalculates eligibility for all students.</p>
+          <Button variant="primary" className="mt-4" onClick={saveAi} disabled={savingAi}>
+            <Save className="w-4 h-4" /> {savingAi ? "Applying…" : "Apply"}
+          </Button>
         </Card>
       </div>
     </div>

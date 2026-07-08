@@ -10,14 +10,14 @@ from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
                           NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
                           HallTicketUpdateSerializer, FeePaymentReviewSerializer,
-                          TeacherUpdateSerializer, ExamUpdateSerializer)
+                          TeacherUpdateSerializer, ExamUpdateSerializer, SystemSettingsUpdateSerializer)
 from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
 from .fee_service import (
     admin_mark_fee_paid, approve_fee_payment, list_pending_payments, reject_fee_payment,
 )
-from .attendance_service import refresh_student_eligibility
+from .attendance_service import refresh_student_eligibility, get_attendance_trends
 import sys
 import os
 import io
@@ -30,8 +30,7 @@ from rest_framework.decorators import permission_classes as rf_permission_classe
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
-from .attendance_service import refresh_student_eligibility
-from .marks_service import update_student_marks
+from .settings_service import get_system_settings, settings_to_dict, refresh_all_eligibility
 
 
 @api_view(['GET'])
@@ -68,7 +67,8 @@ def dashboard(request):
         'hall_tickets_generated': hall_tickets_count,
         'avg_attendance': avg_att,
         'upcoming_exams': upcoming_count,
-        'recent_students': recent_data
+        'recent_students': recent_data,
+        'attendance_trends': get_attendance_trends(7),
     })
 
 
@@ -488,27 +488,33 @@ def delete_exam(request, eid):
 @rf_permission_classes([IsAdmin])
 def verify_all(request):
     """Verify eligibility for all students"""
+    cfg = get_system_settings()
     students = Student.objects.filter(is_deleted=False)
-    
+
     for s in students:
         ai = eligibility_ai.predict_eligibility(
             s.attendance_percentage,
             s.internal_marks,
             s.previous_result,
             s.backlogs,
+            attendance_threshold=cfg.attendance_threshold,
+            min_sgpa=cfg.min_sgpa,
         )
-        
-        passed = (s.attendance_percentage >= 75.0) and \
-                 ((s.internal_marks / 40.0) >= 0.4) and \
-                 (s.backlogs == 0) and \
-                 s.fee_paid and \
-                 (s.previous_result >= 5.0)
-        
+
+        internal_pct = (s.internal_marks / 40.0) * 100
+        passed = (
+            s.attendance_percentage >= cfg.attendance_threshold
+            and internal_pct >= cfg.internal_marks_threshold
+            and s.backlogs == 0
+            and s.fee_paid
+            and s.previous_result >= cfg.min_sgpa
+        )
+
         s.is_eligible = passed
         s.eligibility_percentage = round(ai['probability'] * 100.0, 1)
         s.ai_risk_score = ai['risk_score']
         s.save()
-        
+
         EligibilityPrediction.objects.create(
             student=s,
             predicted_probability=ai['probability'],
@@ -798,7 +804,8 @@ def analytics(request):
     
     return Response({
         'department_distribution': dept_data,
-        'attendance_data': attendance_data
+        'attendance_data': attendance_data,
+        'attendance_trends': get_attendance_trends(7),
     })
 
 
@@ -963,6 +970,45 @@ def export_report(request):
     if format_type == 'pdf':
         return _pdf_response(report_type, title, headers, rows)
     return Response({'detail': 'Format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def get_settings(request):
+    """Get system-wide university and AI configuration."""
+    return Response(settings_to_dict())
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_settings(request):
+    """Update system settings. Recalculates eligibility when AI thresholds change."""
+    serializer = SystemSettingsUpdateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    if not data:
+        return Response({'detail': 'No settings provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+    obj = get_system_settings()
+    ai_fields = {'attendance_threshold', 'internal_marks_threshold', 'min_sgpa', 'ml_model'}
+    ai_changed = any(field in data for field in ai_fields)
+
+    for field, value in data.items():
+        setattr(obj, field, value)
+    obj.save()
+
+    recalculated = 0
+    if ai_changed:
+        recalculated = refresh_all_eligibility()
+
+    payload = settings_to_dict(obj)
+    if recalculated:
+        payload['recalculated_students'] = recalculated
+    return Response(payload)
 
 
 @api_view(['GET'])

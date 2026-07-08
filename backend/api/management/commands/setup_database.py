@@ -12,6 +12,7 @@ from django.db import connection
 
 from api.auth_utils import get_password_hash
 from api.department_service import ensure_default_departments, normalize_legacy_department_data
+from api.settings_service import ensure_default_settings
 from api.models import RoleEnum, Student, Teacher, User
 
 
@@ -140,6 +141,9 @@ class Command(BaseCommand):
             'Departments seeded (MCA, MBA, CIVIL, ELECTRONICS, COMPUTER SCIENCE).'
             + (f' Normalized {normalized} old record(s).' if normalized else '')
         ))
+
+        ensure_default_settings()
+        self.stdout.write(self.style.SUCCESS('System settings initialized.'))
 
         tables = sorted(connection.introspection.table_names())
         self.stdout.write(f'Tables in database: {len(tables)}')

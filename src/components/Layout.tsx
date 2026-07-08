@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../utils/cn";
+import { useSystemSettings } from "../hooks/useSystemSettings";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean };
 
@@ -58,6 +59,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const { settings: systemSettings } = useSystemSettings();
 
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
@@ -150,7 +152,7 @@ export default function Layout() {
           <div className="flex items-center gap-2">
             <School className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             <span className="text-sm font-medium hidden sm:inline text-slate-600 dark:text-slate-300">
-              National Institute of Technology • Academic Year 2026-27
+              {systemSettings.university_name} • Academic Year {systemSettings.academic_year}
             </span>
           </div>
 

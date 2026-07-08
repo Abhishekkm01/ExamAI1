@@ -40,16 +40,24 @@ class EligibilityModel:
         except Exception:
             pass
 
-    def predict_eligibility(self, attendance: float, internal_marks: float, previous_sgpa: float, backlogs: int):
+    def predict_eligibility(
+        self,
+        attendance: float,
+        internal_marks: float,
+        previous_sgpa: float,
+        backlogs: int,
+        attendance_threshold: float = 75.0,
+        min_sgpa: float = 5.0,
+    ):
         if not self.model:
             self.train_initial_model()
         X_input = pd.DataFrame({"attendance": [attendance], "internals": [internal_marks], "previous_sgpa": [previous_sgpa], "backlogs": [backlogs]})
         prob = self.model.predict_proba(X_input)[0]
         success_probability = float(prob[1])
         risk_score = float(prob[0] * 100.0)
-        if attendance < 75.0:
-            risk_score = min(100.0, risk_score + ((75.0 - attendance) * 2.0))
-        is_eligible = success_probability >= 0.5 and attendance >= 75.0
+        if attendance < attendance_threshold:
+            risk_score = min(100.0, risk_score + ((attendance_threshold - attendance) * 2.0))
+        is_eligible = success_probability >= 0.5 and attendance >= attendance_threshold and previous_sgpa >= min_sgpa
         return {"is_eligible": bool(is_eligible), "probability": round(success_probability, 4), "risk_score": round(risk_score, 1)}
 
 

@@ -450,3 +450,14 @@ class PayFeeSerializer(serializers.Serializer):
 
 class FeePaymentReviewSerializer(serializers.Serializer):
     admin_note = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class SystemSettingsUpdateSerializer(serializers.Serializer):
+    university_name = serializers.CharField(max_length=255, required=False)
+    academic_year = serializers.CharField(max_length=20, required=False)
+    current_semester = serializers.IntegerField(min_value=1, max_value=8, required=False)
+    contact_email = serializers.EmailField(required=False)
+    attendance_threshold = serializers.IntegerField(min_value=0, max_value=100, required=False)
+    internal_marks_threshold = serializers.IntegerField(min_value=0, max_value=100, required=False)
+    min_sgpa = serializers.FloatField(min_value=0, max_value=10, required=False)
+    ml_model = serializers.ChoiceField(choices=['rf', 'dt'], required=False)

@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Student, Exam, HallTicket
 from .department_service import get_department_names
+from .settings_service import get_system_settings
 
 
 @api_view(['GET'])
@@ -73,7 +74,16 @@ def meta(request):
             'sem': e.semester
         })
     
+    cfg = get_system_settings()
     return Response({
         'departments': depts,
-        'subjects': subjects
+        'subjects': subjects,
+        'university_name': cfg.university_name,
+        'academic_year': cfg.academic_year,
+        'current_semester': cfg.current_semester,
+        'eligibility_thresholds': {
+            'attendance': cfg.attendance_threshold,
+            'internal_marks': cfg.internal_marks_threshold,
+            'min_sgpa': cfg.min_sgpa,
+        },
     })

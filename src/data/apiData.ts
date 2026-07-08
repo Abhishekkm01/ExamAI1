@@ -91,4 +91,11 @@ export async function fetchNotifications(): Promise<Notification[]> {
   }));
 }
 
+export async function fetchAttendanceTrends(): Promise<
+  { day: string; date: string; attendance: number; absent: number; total: number }[]
+> {
+  const data = await api.adminAnalytics();
+  return data?.attendance_trends || [];
+}
+
 export { getStudentEligibilityLocal as getStudentEligibility, isBackendOnline };

@@ -40,6 +40,8 @@ urlpatterns = [
     path('admin/notifications/create', views_admin.send_notification, name='admin_send_notification'),
     path('admin/notifications', views_admin.list_notifications, name='admin_list_notifications'),
     path('admin/analytics', views_admin.analytics, name='admin_analytics'),
+    path('admin/settings', views_admin.get_settings, name='admin_get_settings'),
+    path('admin/settings/update', views_admin.update_settings, name='admin_update_settings'),
     path('admin/reports/export', views_admin.export_report, name='admin_export_report'),
 
     # Seating arrangement endpoints

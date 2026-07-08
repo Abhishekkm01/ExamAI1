@@ -1,8 +1,9 @@
 import { Card, StatCard, PageHeader, Badge, Button } from "../../components/Layout";
 import { useEffect, useState } from "react";
-import { fetchStudents, fetchAdminExams, fetchTeachers, getStudentEligibility } from "../../data/apiData";
+import { fetchStudents, fetchAdminExams, fetchTeachers, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
 import type { Student, Exam, Teacher } from "../../data/mockData";
 import { GraduationCap, TicketCheck, Users, Calendar, BrainCircuit, Database } from "lucide-react";
+import { useSystemSettings } from "../../hooks/useSystemSettings";
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Legend, RadialBarChart, RadialBar
@@ -15,13 +16,15 @@ export default function AdminDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [trendData, setTrendData] = useState<{ day: string; attendance: number; absent: number; total: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { settings: systemSettings } = useSystemSettings();
 
   const loadData = () => {
     setLoading(true); setError(null);
-    Promise.all([fetchStudents(), fetchAdminExams(), fetchTeachers()])
-      .then(([s, e, t]) => { setStudents(s); setExams(e); setTeachers(t); setLoading(false); })
+    Promise.all([fetchStudents(), fetchAdminExams(), fetchTeachers(), fetchAttendanceTrends()])
+      .then(([s, e, t, trends]) => { setStudents(s); setExams(e); setTeachers(t); setTrendData(trends); setLoading(false); })
       .catch((err) => { setError(err?.message || "Failed to load data"); setLoading(false); });
   };
   useEffect(() => { loadData(); }, []);
@@ -62,11 +65,7 @@ export default function AdminDashboard() {
     students.reduce<Record<string, number>>((acc, s) => { acc[s.department] = (acc[s.department] || 0) + 1; return acc; }, {})
   ).map(([name, value]) => ({ name, value }));
   const COLORS = ["#2563eb", "#7c3aed", "#db2777", "#059669", "#f59e0b"];
-  const trendData = [
-    { day: "Mon", attendance: 84, absent: 16 }, { day: "Tue", attendance: 78, absent: 22 },
-    { day: "Wed", attendance: 86, absent: 14 }, { day: "Thu", attendance: 81, absent: 19 },
-    { day: "Fri", attendance: 73, absent: 27 }, { day: "Sat", attendance: 88, absent: 12 }, { day: "Sun", attendance: 0, absent: 0 },
-  ];
+  const hasTrendData = trendData.some((d) => d.total > 0);
   const elgData = [
     { name: "Eligible", value: eligible, fill: "#10b981" },
     { name: "Not Eligible", value: Math.max(0, totalStudents - eligible), fill: "#ef4444" },
@@ -78,7 +77,7 @@ export default function AdminDashboard() {
       <PageHeader
         title="Admin Dashboard"
         subtitle={`Overview of your university's examination ecosystem (Live MySQL data)`}
-        actions={<div className="flex items-center gap-2"><Badge variant="indigo">Academic Year 2026-27</Badge><Badge variant="green">Semester V</Badge></div>}
+        actions={<div className="flex items-center gap-2"><Badge variant="indigo">Academic Year {systemSettings.academic_year}</Badge><Badge variant="green">Semester {systemSettings.current_semester}</Badge></div>}
       />
 
       <div className="relative mb-6 rounded-2xl overflow-hidden bg-brand-gradient p-6 lg:p-8 text-white shadow-xl shadow-indigo-500/20">
@@ -120,7 +119,9 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold text-slate-900 dark:text-white">Attendance Trends</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Last 7 days • Present vs Absent %</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Last 7 days • Present vs Absent % {hasTrendData ? "from MySQL attendance records" : "— no marks yet"}
+              </p>
             </div>
             <Badge variant="sky">Live</Badge>
           </div>
@@ -129,11 +130,11 @@ export default function AdminDashboard() {
               <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.3)" />
                 <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 100]} />
                 <Tooltip contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }} />
                 <Legend />
-                <Line type="monotone" dataKey="attendance" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="attendance" name="Present %" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="absent" name="Absent %" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
