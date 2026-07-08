@@ -9,6 +9,7 @@ from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSeriali
 from .permissions import IsTeacher, IsOwner
 from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
+from .attendance_service import parse_student_id, refresh_student_attendance_stats
 import sys
 import os
 
@@ -73,27 +74,45 @@ def get_roll(request):
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
     subject_code = request.query_params.get('subject_code', 'CS301')
-    
+    date = request.query_params.get('date')
+
     try:
         t = Teacher.objects.get(user_id=user.id)
     except Teacher.DoesNotExist:
         dept = "Computer Science"
+        subjects = ["CS301", "CS302"]
     else:
         dept = t.department
-    
-    students = Student.objects.filter(department=dept, is_deleted=False)
+        subjects = [s.strip() for s in t.assigned_subjects.split(',') if s.strip()] or ["CS301", "CS302"]
+
+    students = Student.objects.filter(department=dept, is_deleted=False).select_related('user')
     data = []
     for s in students:
+        today_record = None
+        if date:
+            today_record = Attendance.objects.filter(
+                student=s, subject_code=subject_code, record_date=date
+            ).first()
+
         data.append({
             'id': s.id,
             'name': s.user.name,
             'roll_no': s.roll_no,
             'photo': s.photo,
-            'attendance_percentage': s.attendance_percentage
+            'department': s.department,
+            'attendance_percentage': s.attendance_percentage,
+            'today_status': today_record.status if today_record else None,
         })
-    return Response(data)
+
+    return Response({
+        'students': data,
+        'department': dept,
+        'subjects': subjects,
+        'subject_code': subject_code,
+        'date': date,
+    })
 
 
 @api_view(['POST'])
@@ -104,31 +123,38 @@ def mark_attendance(request):
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
     records = request.data.get('records', {})
+    if not records:
+        return Response({'detail': 'No attendance records provided'}, status=status.HTTP_400_BAD_REQUEST)
+
     subject_code = request.data.get('subject_code', 'CS301')
-    date = request.data.get('date', '2026-11-01')
-    
+    date = request.data.get('date')
+    if not date:
+        from datetime import date as dt_date
+        date = dt_date.today().isoformat()
+
+    updated = 0
     for sid, present in records.items():
         try:
-            s = Student.objects.get(id=int(sid))
-        except Student.DoesNotExist:
+            s = Student.objects.get(id=parse_student_id(sid), is_deleted=False)
+        except (Student.DoesNotExist, ValueError, TypeError):
             continue
-        
-        Attendance.objects.create(
+
+        Attendance.objects.update_or_create(
             student=s,
             subject_code=subject_code,
             record_date=date,
-            status='Present' if present else 'Absent'
+            defaults={'status': 'Present' if present else 'Absent'},
         )
-        
-        if present and s.attendance_percentage < 100:
-            s.attendance_percentage = min(100.0, s.attendance_percentage + 0.5)
-        elif not present and s.attendance_percentage > 0:
-            s.attendance_percentage = max(0.0, s.attendance_percentage - 0.5)
-        s.save()
-    
-    return Response({'message': 'Attendance saved'})
+        refresh_student_attendance_stats(s)
+        updated += 1
+
+    return Response({
+        'message': f'Attendance saved for {updated} student(s)',
+        'date': date,
+        'subject_code': subject_code,
+    })
 
 
 @api_view(['GET'])

@@ -116,12 +116,15 @@ export const api = {
   teacherStudents: () => tryFetch("/api/teacher/students"),
   teacherMarks: (subject = "CS301") =>
     tryFetch(`/api/teacher/marks?subject_code=${subject}`),
-  teacherAttendance: (subject = "CS301") =>
-    tryFetch(`/api/teacher/attendance?subject_code=${subject}`),
+  teacherAttendance: (subject = "CS301", date?: string) => {
+    const q = new URLSearchParams({ subject_code: subject });
+    if (date) q.set("date", date);
+    return tryFetch(`/api/teacher/attendance?${q.toString()}`);
+  },
   markAttendance: (data: any) =>
-    tryFetch("/api/teacher/attendance", { method: "POST", body: JSON.stringify(data) }),
+    tryFetch("/api/teacher/attendance/mark", { method: "POST", body: JSON.stringify(data) }),
   updateMarks: (data: any) =>
-    tryFetch("/api/teacher/marks", { method: "POST", body: JSON.stringify(data) }),
+    tryFetch("/api/teacher/marks/update", { method: "POST", body: JSON.stringify(data) }),
 
   // -------- Student --------
   studentDashboard: () => tryFetch("/api/student/dashboard"),

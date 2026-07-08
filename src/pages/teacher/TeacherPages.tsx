@@ -101,38 +101,106 @@ export function TeacherDashboard() {
 export function TeacherAttendance() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [subject, setSubject] = useState("CS301");
-  const [students, setStudents] = useState<Student[]>([]);
+  const [subjects, setSubjects] = useState<string[]>(["CS301", "CS302"]);
+  const [department, setDepartment] = useState("");
+  const [students, setStudents] = useState<Array<Student & { todayStatus?: string | null }>>([]);
   const [records, setRecords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchTeacherStudents().then((s) => {
-      const cs = s.filter(x => x.department === "Computer Science");
-      setStudents(cs);
-      setRecords(Object.fromEntries(cs.map((x) => [x.id, true])));
-      setLoading(false);
-    });
-  }, []);
+  const loadRoll = async (sub = subject, d = date) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${API}/api/teacher/attendance?subject_code=${encodeURIComponent(sub)}&date=${encodeURIComponent(d)}`,
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed to load roll (${res.status})`);
+      }
+      const data = await res.json();
+      const list = (data.students || []).map((s: any) => ({
+        id: `s${s.id}`,
+        rollNo: s.roll_no,
+        name: s.name,
+        email: "",
+        mobile: "",
+        department: s.department,
+        semester: 0,
+        section: "",
+        photo: s.photo,
+        attendance: s.attendance_percentage,
+        internalMarks: 0,
+        assignmentMarks: 0,
+        previousResult: 0,
+        backlogs: 0,
+        feePaid: true,
+        feeAmount: 0,
+        feeDueDate: "",
+        createdAt: "",
+        todayStatus: s.today_status,
+      }));
+      setStudents(list);
+      setDepartment(data.department || "");
+      if (Array.isArray(data.subjects) && data.subjects.length) setSubjects(data.subjects);
+      setRecords(Object.fromEntries(list.map((s) => [
+        s.id,
+        s.todayStatus ? s.todayStatus === "Present" : true,
+      ])));
+    } catch (e: any) {
+      setError(e.message || "Failed to load attendance roll");
+      setStudents([]);
+      setRecords({});
+    }
+    setLoading(false);
+  };
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+  useEffect(() => { loadRoll(subject, date); }, [subject, date]);
+
+  if (loading && students.length === 0) return <div className="p-10 text-center text-slate-500">Loading attendance roll…</div>;
+
   const present = Object.values(records).filter(Boolean).length;
 
   const save = async () => {
     setSaving(true);
+    setError(null);
+    setMessage(null);
     try {
-      await fetch(`${API}/api/teacher/attendance`, {
-        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ subject_code: subject, date, records }),
+      const numericRecords: Record<string, boolean> = {};
+      for (const [id, val] of Object.entries(records)) {
+        numericRecords[id.replace(/^s/, "")] = val;
+      }
+      const res = await fetch(`${API}/api/teacher/attendance/mark`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ subject_code: subject, date, records: numericRecords }),
       });
-      alert("Attendance saved to MySQL ✓");
-    } catch { alert("Backend not reachable"); }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.detail || "Failed to save attendance");
+      setMessage(j.message || "Attendance saved to MySQL");
+      await loadRoll(subject, date);
+    } catch (e: any) {
+      setError(e.message || "Backend not reachable");
+    }
     setSaving(false);
   };
 
   return (
     <div>
-      <PageHeader title="Attendance Management" subtitle="Mark attendance for your classes" />
+      <PageHeader
+        title="Attendance Management"
+        subtitle={department ? `Mark attendance for ${department} students` : "Mark attendance for your classes"}
+      />
+
+      {(message || error) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {error || message}
+        </div>
+      )}
 
       <Card className="p-5 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -143,49 +211,59 @@ export function TeacherAttendance() {
           <div>
             <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Subject</label>
             <Select value={subject} onChange={(e) => setSubject(e.target.value)}>
-              <option value="CS301">CS301 - Data Structures</option>
-              <option value="CS302">CS302 - DBMS</option>
+              {subjects.map((code) => (
+                <option key={code} value={code}>{code}</option>
+              ))}
             </Select>
           </div>
           <div className="flex items-end gap-2">
-            <Button variant="primary" className="flex-1" onClick={save} disabled={saving}><CheckCircle2 className="w-4 h-4" /> {saving ? "Saving..." : "Save Attendance"}</Button>
-            <Button variant="secondary" onClick={() => setRecords(Object.fromEntries(students.map((x) => [x.id, true])))}>Reset</Button>
+            <Button variant="primary" className="flex-1" onClick={save} disabled={saving || students.length === 0}>
+              <CheckCircle2 className="w-4 h-4" /> {saving ? "Saving..." : "Save Attendance"}
+            </Button>
+            <Button variant="secondary" onClick={() => setRecords(Object.fromEntries(students.map((x) => [x.id, true])))}>All Present</Button>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-4 text-center">
-          <div><p className="text-xs text-slate-500">Present</p><p className="text-2xl font-bold text-emerald-600">{present}</p></div>
-          <div><p className="text-xs text-slate-500">Absent</p><p className="text-2xl font-bold text-rose-600">{students.length - present}</p></div>
-          <div><p className="text-xs text-slate-500">Attendance %</p><p className="text-2xl font-bold text-indigo-600">{students.length ? Math.round((present/students.length)*100) : 0}%</p></div>
+          <div><p className="text-xs text-slate-500">Present today</p><p className="text-2xl font-bold text-emerald-600">{present}</p></div>
+          <div><p className="text-xs text-slate-500">Absent today</p><p className="text-2xl font-bold text-rose-600">{students.length - present}</p></div>
+          <div><p className="text-xs text-slate-500">Session %</p><p className="text-2xl font-bold text-indigo-600">{students.length ? Math.round((present / students.length) * 100) : 0}%</p></div>
         </div>
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800">
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <h3 className="font-semibold">Class Roll: {subject}</h3>
+          <p className="text-xs text-slate-500">{students.length} students</p>
         </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {students.map((s) => {
-            const present = records[s.id];
+            const isPresent = records[s.id];
             return (
               <div key={s.id} className="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40">
                 <div className="flex items-center gap-3">
                   <img src={s.photo} alt="" className="w-10 h-10 rounded-full bg-slate-200" />
                   <div>
                     <p className="font-medium">{s.name}</p>
-                    <p className="text-xs text-slate-500">{s.rollNo}</p>
+                    <p className="text-xs text-slate-500">{s.rollNo} • Overall: {s.attendance}%</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {s.todayStatus && (
+                    <span className="text-[10px] text-slate-400 mr-2">Saved: {s.todayStatus}</span>
+                  )}
                   <button onClick={() => setRecords({ ...records, [s.id]: true })}
                     className={cn("px-4 py-1.5 rounded-lg text-sm font-medium",
-                      present ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>Present</button>
+                      isPresent ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>Present</button>
                   <button onClick={() => setRecords({ ...records, [s.id]: false })}
                     className={cn("px-4 py-1.5 rounded-lg text-sm font-medium",
-                      !present ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>Absent</button>
+                      !isPresent ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>Absent</button>
                 </div>
               </div>
             );
           })}
+          {students.length === 0 && (
+            <div className="p-10 text-center text-slate-500">No students found for your department</div>
+          )}
         </div>
       </Card>
     </div>
@@ -237,7 +315,7 @@ export function TeacherMarks() {
                   <td className="p-4 font-semibold">{s.internalMarks + s.assignmentMarks}/50</td>
                   <td className="p-4 text-right"><Button variant="primary" onClick={async () => {
                     try {
-                      await fetch(`${API}/api/teacher/marks`, {
+                      await fetch(`${API}/api/teacher/marks/update`, {
                         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
                         body: JSON.stringify({ student_id: parseInt(s.id.replace("s", "")), subject_code: "CS301", internal_marks: s.internalMarks, assignment_marks: s.assignmentMarks }),
                       });
