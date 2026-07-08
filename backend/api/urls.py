@@ -74,6 +74,7 @@ urlpatterns = [
     path('student/hallticket', views_student.get_hallticket, name='student_hallticket'),
     path('student/hallticket/download', views_student.download_hallticket, name='student_download_hallticket'),
     path('student/exams', views_student.exams, name='student_exams'),
+    path('student/face-enroll', views_student.face_enroll, name='student_face_enroll'),
     path('student/face-verify', views_student.face_verify, name='student_face_verify'),
     path('student/notifications', views_student.notifications, name='student_notifications'),
     path('student/fees', views_student.get_fees, name='student_fees'),

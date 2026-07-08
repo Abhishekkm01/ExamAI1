@@ -148,6 +148,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ method, reference }),
     }),
+  studentFaceEnroll: (imageBase64: string) =>
+    tryFetch("/api/student/face-enroll", {
+      method: "POST",
+      body: JSON.stringify({ image_base64: imageBase64 }),
+    }),
+  studentFaceVerify: (imageBase64: string) =>
+    tryFetch("/api/student/face-verify", {
+      method: "POST",
+      body: JSON.stringify({ image_base64: imageBase64 }),
+    }),
+  teacherFaceVerify: (imageBase64: string) =>
+    tryFetch("/api/teacher/face-verify", {
+      method: "POST",
+      body: JSON.stringify({ image_base64: imageBase64 }),
+    }),
   askChatbot: (query: string) =>
     tryFetch("/api/student/chatbot", { method: "POST", body: JSON.stringify({ user_query: query }) }),
 };

@@ -14,6 +14,7 @@ import os
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from .photo_utils import save_profile_photo
+from .face_service import try_enroll_student_face
 
 
 @api_view(['POST'])
@@ -147,6 +148,8 @@ def _create_student_account(data, password):
     except IntegrityError:
         return None, Response({'detail': "Could not create student: the email or roll number is already in use."},
                               status=status.HTTP_400_BAD_REQUEST)
+
+    try_enroll_student_face(student, avatar)
 
     return student, Response({'message': f"Student {user.name} created", 'student_id': student.id, 'is_eligible': passed},
                              status=status.HTTP_201_CREATED)

@@ -30,3 +30,12 @@ def save_profile_photo(uploaded_file, prefix: str = 'student') -> str:
             out.write(chunk)
 
     return photo_public_url(filename)
+
+
+def photo_path_from_url(photo_url: str) -> str | None:
+    if not photo_url or '/media/photos/' not in photo_url:
+        return None
+    filename = photo_url.rsplit('/media/photos/', 1)[-1].split('?')[0]
+    if not filename:
+        return None
+    return os.path.join(settings.MEDIA_ROOT, 'photos', filename)

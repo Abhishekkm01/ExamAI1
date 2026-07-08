@@ -5,6 +5,7 @@ import type { Student, Exam } from "../../data/mockData";
 import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { cn } from "../../utils/cn";
+import { FaceCapture } from "../../components/FaceCapture";
 
 const API = "http://localhost:8000";
 const token = () => localStorage.getItem("examshield_token") || "";
@@ -525,55 +526,117 @@ function ProgressRow({ label, value, threshold, unit = "%", raw }: { label: stri
 
 export function TeacherFaceVerify() {
   const [capturing, setCapturing] = useState(false);
-  const [result, setResult] = useState<{ matched: boolean; confidence: number; name: string } | null>(null);
-  const simulate = () => {
-    setCapturing(true); setResult(null);
-    setTimeout(() => {
-      setResult({ matched: Math.random() > 0.3, confidence: Math.round(70 + Math.random() * 30), name: "Matched Student" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{
+    matched: boolean;
+    confidence: number;
+    name: string;
+    rollNo?: string;
+    photo?: string;
+    message?: string;
+  } | null>(null);
+
+  const verifyCapture = async (imageBase64: string) => {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await fetch(`${API}/api/teacher/face-verify`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && !data.verified) throw new Error(data.detail || data.message || "Verification failed");
+      setResult({
+        matched: !!data.verified,
+        confidence: data.confidence || 0,
+        name: data.student_name || "Unknown",
+        rollNo: data.roll_no,
+        photo: data.photo,
+        message: data.message,
+      });
       setCapturing(false);
-    }, 1500);
+    } catch (err: any) {
+      setError(err.message || "Verification failed");
+      setCapturing(false);
+    } finally {
+      setBusy(false);
+    }
   };
+
   return (
     <div>
-      <PageHeader title="Face Verification" subtitle="Biometric authentication for exam entry" />
+      <PageHeader title="Face Verification" subtitle="Verify students at exam entry using live face matching" />
+
+      <Card className="p-5 mb-6 bg-slate-50 dark:bg-slate-900/40">
+        <h3 className="font-semibold mb-2">How it works</h3>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Students must enroll their face from profile photo or the student Face Verification page.
+          Capture the student&apos;s live face here and the system will match them against enrolled students in your department.
+        </p>
+      </Card>
+
+      {error && (
+        <Card className="p-4 mb-4 border-rose-300 bg-rose-50 dark:bg-rose-950/30">
+          <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{error}</p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h3 className="font-bold mb-4">Live Capture</h3>
-          <div className="aspect-video rounded-xl bg-slate-900 flex items-center justify-center relative overflow-hidden">
-            {capturing ? (
-              <div className="text-center">
-                <Camera className="w-16 h-16 text-indigo-400 mx-auto pulse-ring rounded-full" />
-                <p className="text-white mt-4 animate-pulse">Analyzing face…</p>
+          {!capturing ? (
+            <div className="space-y-4">
+              <div className="aspect-video rounded-xl bg-slate-900 flex items-center justify-center">
+                <div className="text-center">
+                  <Camera className="w-16 h-16 text-slate-500 mx-auto" />
+                  <p className="text-slate-400 mt-4">Open camera to verify a student</p>
+                </div>
               </div>
-            ) : (
-              <div className="text-center">
-                <Camera className="w-16 h-16 text-slate-500 mx-auto" />
-                <p className="text-slate-400 mt-4">Camera ready</p>
-              </div>
-            )}
-            <div className="absolute top-3 left-3 px-2 py-1 rounded-md bg-rose-500 text-white text-xs font-semibold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> LIVE
+              <Button variant="primary" className="w-full" onClick={() => { setCapturing(true); setResult(null); setError(""); }}>
+                <Camera className="w-4 h-4" /> Open Camera
+              </Button>
             </div>
-          </div>
-          <Button variant="primary" className="w-full mt-4" onClick={simulate} disabled={capturing}>
-            <Camera className="w-4 h-4" /> Capture & Verify
-          </Button>
+          ) : (
+            <>
+              <FaceCapture
+                disabled={busy}
+                captureLabel={busy ? "Matching…" : "Capture & Verify Student"}
+                onCapture={verifyCapture}
+              />
+              <Button variant="secondary" className="w-full mt-3" disabled={busy} onClick={() => setCapturing(false)}>
+                Close Camera
+              </Button>
+            </>
+          )}
         </Card>
 
         <Card className="p-6">
           <h3 className="font-bold mb-4">Verification Result</h3>
           {!result ? (
-            <div className="h-full flex items-center justify-center text-slate-400 text-sm">Capture a face to see verification result</div>
+            <div className="h-full min-h-[240px] flex items-center justify-center text-slate-400 text-sm">
+              Capture a student face to see the match result
+            </div>
           ) : (
             <div className={cn("p-6 rounded-xl border-2",
               result.matched ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" : "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800")}>
               <div className="flex items-center gap-4 mb-4">
-                {result.matched ? <CheckCircle2 className="w-16 h-16 text-emerald-600" /> : <AlertTriangle className="w-16 h-16 text-rose-600" />}
+                {result.photo ? (
+                  <img src={result.photo} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-white" />
+                ) : result.matched ? (
+                  <CheckCircle2 className="w-16 h-16 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-16 h-16 text-rose-600" />
+                )}
                 <div>
                   <p className={cn("text-2xl font-bold", result.matched ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300")}>
                     {result.matched ? "VERIFIED" : "NOT VERIFIED"}
                   </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{result.matched ? `Matched: ${result.name}` : "No match found in database"}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                    {result.matched ? `${result.name}${result.rollNo ? ` • ${result.rollNo}` : ""}` : result.message || "No match found in your department"}
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

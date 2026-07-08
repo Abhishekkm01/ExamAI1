@@ -9,6 +9,7 @@ from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, 
 from .permissions import IsStudent
 from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
+from .face_service import try_enroll_student_face, is_face_enrolled, enroll_face_from_base64, verify_student_face
 from .fee_service import get_fee_summary, process_fee_payment
 import sys
 import os
@@ -20,7 +21,6 @@ from reportlab.pdfgen import canvas
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.chatbot import ai_chatbot
 from ai_modules.eligibility_model import eligibility_ai
-from ai_modules.face_recognition_module import face_ai
 
 
 def _hall_ticket_payload(student, user):
@@ -171,6 +171,7 @@ def profile(request):
         'fee_paid': s.fee_paid,
         'fee_amount': s.fee_amount,
         'fee_due_date': s.fee_due_date,
+        'face_enrolled': is_face_enrolled(s),
         'is_eligible': s.is_eligible,
         'eligibility_percentage': s.eligibility_percentage,
         'ai_risk_score': s.ai_risk_score
@@ -248,7 +249,14 @@ def upload_profile_photo(request):
     s.save()
     user.save()
 
-    return Response({'message': 'Photo updated', 'photo': photo_url})
+    enrolled, enroll_message = try_enroll_student_face(s, photo_url)
+
+    return Response({
+        'message': 'Photo updated',
+        'photo': photo_url,
+        'face_enrolled': enrolled,
+        'face_enroll_message': enroll_message,
+    })
 
 
 @api_view(['GET'])
@@ -393,22 +401,58 @@ def exams(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
+def face_enroll(request):
+    """Enroll the student's face from a live webcam capture."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = FaceVerifyRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    ok, message = enroll_face_from_base64(s, serializer.validated_data['image_base64'])
+    if not ok:
+        return Response({'detail': message, 'face_enrolled': False}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        'message': 'Face enrolled successfully',
+        'face_enrolled': True,
+        'student_name': user.name,
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])  # Will be protected by middleware
 def face_verify(request):
     """Face verification for student"""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'student':
         return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
     serializer = FaceVerifyRequestSerializer(data=request.data)
     if serializer.is_valid():
-        res = face_ai.verify_face(serializer.validated_data['image_base64'], [0.1] * 128)
+        res = verify_student_face(s, serializer.validated_data['image_base64'])
         return Response({
             'verified': res['verified'],
             'confidence': res['confidence'],
             'message': res['message'],
-            'student_name': request.user.name
+            'student_name': res.get('student_name', user.name),
+            'roll_no': res.get('roll_no', s.roll_no),
+            'face_enrolled': is_face_enrolled(s),
         })
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

@@ -16,7 +16,7 @@ import os
 
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from ai_modules.face_recognition_module import face_ai
+from .face_service import match_student_face
 
 
 @api_view(['GET'])
@@ -294,29 +294,29 @@ def face_verify(request):
         else:
             dept = t.department
         
-        students = Student.objects.filter(department=dept, is_deleted=False)
-        best_conf = 0.0
-        best_match = None
-        
-        for s in students:
-            res = face_ai.verify_face(serializer.validated_data['image_base64'], [0.1] * 128)
-            if res['verified'] and res['confidence'] > best_conf:
-                best_conf = res['confidence']
-                best_match = s
-        
+        students = Student.objects.filter(department=dept, is_deleted=False).select_related('user')
+        best_match, best_conf, best_result = match_student_face(
+            serializer.validated_data['image_base64'],
+            students,
+        )
+
         if best_match:
             return Response({
                 'verified': True,
                 'confidence': best_conf,
-                'message': 'Verification successful',
-                'student_name': best_match.user.name
+                'message': best_result['message'] if best_result else 'Verification successful',
+                'student_name': best_match.user.name,
+                'roll_no': best_match.roll_no,
+                'student_id': best_match.id,
+                'photo': best_match.photo,
+                'department': best_match.department,
             })
-        
+
         return Response({
             'verified': False,
             'confidence': 0.0,
-            'message': 'No biometric match',
-            'student_name': None
+            'message': 'No matching student found in your department',
+            'student_name': None,
         })
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

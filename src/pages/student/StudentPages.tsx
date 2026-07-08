@@ -6,6 +6,7 @@ import { useAuth, useNotifications } from "../../contexts/AppContext";
 import { useNavigate } from "react-router-dom";
 import { User as UserIcon, GraduationCap, Calendar, Mail, Camera, MessageSquare, Download, Printer, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Send, Sparkles, TicketCheck, BrainCircuit, Lock, Wallet } from "lucide-react";
 import { PhotoUpload, validatePhotoFile } from "../../components/PhotoUpload";
+import { FaceCapture } from "../../components/FaceCapture";
 import { QRCodeSVG } from "qrcode.react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LineChart, Line } from "recharts";
 import { cn } from "../../utils/cn";
@@ -678,77 +679,180 @@ export function StudentExams() {
 
 // ============ FACE VERIFICATION ============
 export function StudentFaceVerify() {
-  const [step, setStep] = useState<"idle" | "capturing" | "success" | "fail">("idle");
-  const [confidence, setConfidence] = useState(0);
-  const start = () => {
-    setStep("capturing"); setConfidence(0);
-    const int = setInterval(() => {
-      setConfidence((c) => {
-        if (c >= 100) {
-          clearInterval(int);
-          setStep(Math.random() > 0.1 ? "success" : "fail");
-          return 100;
+  const [faceEnrolled, setFaceEnrolled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"idle" | "enroll" | "verify">("idle");
+  const [result, setResult] = useState<{ verified: boolean; confidence: number; message: string; studentName?: string } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
+        if (res.ok) {
+          const p = await res.json();
+          setFaceEnrolled(!!p.face_enrolled);
         }
-        return c + 5;
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const runEnroll = async (imageBase64: string) => {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await fetch(`${API}/api/student/face-enroll`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: imageBase64 }),
       });
-    }, 60);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Face enrollment failed");
+      setFaceEnrolled(true);
+      setMode("idle");
+      setResult({ verified: true, confidence: 100, message: "Face enrolled successfully. You can now verify your identity.", studentName: data.student_name });
+    } catch (err: any) {
+      setError(err.message || "Face enrollment failed");
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const runVerify = async (imageBase64: string) => {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await fetch(`${API}/api/student/face-verify`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && !data.verified) throw new Error(data.detail || data.message || "Verification failed");
+      setResult({
+        verified: !!data.verified,
+        confidence: data.confidence || 0,
+        message: data.message || "",
+        studentName: data.student_name,
+      });
+      setMode("idle");
+    } catch (err: any) {
+      setError(err.message || "Verification failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+
   return (
     <div>
-      <PageHeader title="Face Verification" subtitle="Verify your identity using biometric authentication" />
+      <PageHeader
+        title="Face Verification"
+        subtitle="Enroll your face once, then verify identity before exams using your webcam"
+      />
+
+      <Card className="p-5 mb-6 bg-slate-50 dark:bg-slate-900/40">
+        <h3 className="font-semibold mb-2">How it works</h3>
+        <ol className="text-sm text-slate-600 dark:text-slate-300 space-y-1 list-decimal list-inside">
+          <li>Upload a clear profile photo in Profile, or enroll directly from your webcam below.</li>
+          <li>The system saves a numeric face template (not the raw photo) in your student record.</li>
+          <li>At verification, your live webcam photo is compared to that saved template.</li>
+          <li>Teachers can also verify students at exam entry using the same matching system.</li>
+        </ol>
+        <p className={cn("text-sm font-medium mt-3", faceEnrolled ? "text-emerald-600" : "text-amber-600")}>
+          {faceEnrolled ? "✓ Face profile enrolled" : "⚠ Face profile not enrolled yet"}
+        </p>
+        {faceEnrolled && (
+          <p className="text-xs text-slate-500 mt-2">
+            If verification fails, use <span className="font-medium">Re-enroll Face</span> once after updating the app.
+          </p>
+        )}
+      </Card>
+
+      {(error || result) && (
+        <Card className={cn("p-4 mb-4", error ? "border-rose-300 bg-rose-50 dark:bg-rose-950/30" : result?.verified ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30" : "border-rose-300 bg-rose-50 dark:bg-rose-950/30")}>
+          <p className={cn("text-sm font-medium", error ? "text-rose-700" : result?.verified ? "text-emerald-700" : "text-rose-700")}>
+            {error || result?.message}
+          </p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
-          <h3 className="font-bold mb-4">Live Capture</h3>
-          <div className="aspect-video rounded-xl bg-slate-900 flex items-center justify-center relative overflow-hidden">
-            {step === "capturing" ? (
-              <div className="text-center">
-                <div className="w-32 h-32 rounded-full border-4 border-indigo-400 pulse-ring mx-auto flex items-center justify-center">
-                  <Camera className="w-16 h-16 text-indigo-400" />
-                </div>
-                <p className="text-white mt-4">Matching face...</p>
-                <div className="w-48 mx-auto h-1.5 bg-slate-700 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-indigo-500 transition-all" style={{ width: `${confidence}%` }} />
-                </div>
-                <p className="text-indigo-400 text-xs mt-1">{confidence}%</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <Camera className="w-16 h-16 text-slate-500 mx-auto" />
-                <p className="text-slate-400 mt-4">Ready to verify</p>
-              </div>
-            )}
-            <div className="absolute top-3 left-3 px-2 py-1 rounded-md bg-rose-500 text-white text-xs font-semibold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> LIVE
+          <h3 className="font-bold mb-4">{mode === "enroll" ? "Enroll Face" : mode === "verify" ? "Verify Face" : "Webcam"}</h3>
+          {mode === "idle" ? (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Choose an action. Look straight at the camera with good lighting and a neutral background.
+              </p>
+              {!faceEnrolled && (
+                <Button variant="primary" className="w-full" onClick={() => { setResult(null); setError(""); setMode("enroll"); }}>
+                  <Camera className="w-4 h-4" /> Enroll My Face
+                </Button>
+              )}
+              <Button variant={faceEnrolled ? "primary" : "secondary"} className="w-full" disabled={!faceEnrolled} onClick={() => { setResult(null); setError(""); setMode("verify"); }}>
+                <Camera className="w-4 h-4" /> Verify My Identity
+              </Button>
+              {faceEnrolled && (
+                <Button variant="secondary" className="w-full" onClick={() => { setResult(null); setError(""); setMode("enroll"); }}>
+                  Re-enroll Face
+                </Button>
+              )}
             </div>
-          </div>
-          <Button variant="primary" className="w-full mt-4" onClick={start} disabled={step === "capturing"}>
-            <Camera className="w-4 h-4" /> {step === "capturing" ? "Verifying..." : "Start Verification"}
-          </Button>
+          ) : (
+            <>
+              <FaceCapture
+                disabled={busy}
+                captureLabel={busy ? "Processing…" : mode === "enroll" ? "Capture & Enroll" : "Capture & Verify"}
+                onCapture={(image) => mode === "enroll" ? runEnroll(image) : runVerify(image)}
+              />
+              <Button variant="secondary" className="w-full mt-3" disabled={busy} onClick={() => setMode("idle")}>
+                Cancel
+              </Button>
+            </>
+          )}
         </Card>
 
         <Card className="p-6">
           <h3 className="font-bold mb-4">Result</h3>
-          {step === "idle" && <div className="h-full flex items-center justify-center text-slate-400 text-sm">Start verification to see results</div>}
-          {step === "capturing" && <div className="h-full flex items-center justify-center text-slate-400 text-sm">Processing...</div>}
-          {step === "success" && (
+          {!result ? (
+            <div className="h-full min-h-[240px] flex items-center justify-center text-slate-400 text-sm">
+              {mode === "idle" ? "Enroll or verify to see results" : "Capture your face to continue"}
+            </div>
+          ) : result.verified ? (
             <div className="p-6 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800 text-center">
               <CheckCircle2 className="w-20 h-20 text-emerald-600 mx-auto" />
-              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-3">VERIFIED</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">Welcome!</p>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-3">
+                {faceEnrolled && mode === "idle" && result.confidence === 100 ? "ENROLLED" : "VERIFIED"}
+              </p>
+              {result.studentName && <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{result.studentName}</p>}
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <div className="p-3 rounded-lg bg-white dark:bg-slate-900">
                   <p className="text-xs text-slate-500">Confidence</p>
-                  <p className="text-2xl font-bold text-emerald-600">{confidence}%</p>
+                  <p className="text-2xl font-bold text-emerald-600">{result.confidence}%</p>
                 </div>
-                <div className="p-3 rounded-lg bg-white dark:bg-slate-900"><p className="text-xs text-slate-500">Status</p><p className="text-2xl font-bold">✓</p></div>
+                <div className="p-3 rounded-lg bg-white dark:bg-slate-900">
+                  <p className="text-xs text-slate-500">Status</p>
+                  <p className="text-2xl font-bold">✓</p>
+                </div>
               </div>
             </div>
-          )}
-          {step === "fail" && (
+          ) : (
             <div className="p-6 rounded-xl bg-rose-50 dark:bg-rose-900/20 border-2 border-rose-200 dark:border-rose-800 text-center">
               <XCircle className="w-20 h-20 text-rose-600 mx-auto" />
               <p className="text-2xl font-bold text-rose-700 dark:text-rose-300 mt-3">NOT VERIFIED</p>
-              <Button variant="secondary" className="mt-4" onClick={start}>Try Again</Button>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{result.message}</p>
+              <p className="text-xs text-slate-500 mt-3">Try better lighting, look at the camera, or re-enroll your face profile.</p>
+              <div className="flex gap-2 justify-center mt-4">
+                <Button variant="secondary" onClick={() => { setResult(null); setMode("verify"); }}>Try Again</Button>
+                <Button variant="primary" onClick={() => { setResult(null); setMode("enroll"); }}>Re-enroll Face</Button>
+              </div>
             </div>
           )}
         </Card>
