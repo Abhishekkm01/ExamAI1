@@ -13,6 +13,7 @@ import { cn } from "../../utils/cn";
 import { API_BASE } from "../../data/api";
 import { useSystemSettings } from "../../hooks/useSystemSettings";
 import { buildSimpleHallTicketHtml, examHeaderSubtitle, universityInitials } from "../../utils/hallTicket";
+import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX } from "../../data/marksConstants";
 
 const token = () => localStorage.getItem("examshield_token") || "";
 
@@ -100,7 +101,7 @@ export function StudentDashboard() {
   const upcoming = exams.filter(ex => ex.department === student.department);
 
   const performanceData = [
-    { name: "DSA", internal: Math.min(40, student.internalMarks + 1), assign: student.assignmentMarks },
+    { name: "DSA", internal: Math.min(INTERNAL_MARKS_MAX, student.internalMarks + 1), assign: student.assignmentMarks },
     { name: "DBMS", internal: Math.max(20, student.internalMarks - 2), assign: Math.max(4, student.assignmentMarks - 1) },
     { name: "OS", internal: Math.max(15, student.internalMarks - 4), assign: Math.max(3, student.assignmentMarks - 2) },
   ];
@@ -138,7 +139,7 @@ export function StudentDashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Attendance" value={`${student.attendance}%`} icon={GraduationCap} color="indigo" delta={student.attendance >= 75 ? "Above threshold" : "Below threshold"} trend={student.attendance >= 75 ? "up" : "down"} />
-        <StatCard label="Internal Marks" value={`${student.internalMarks}/40`} icon={TrendingUp} color="emerald" delta={`${Math.round((student.internalMarks/40)*100)}%`} />
+        <StatCard label="Internal Marks" value={`${student.internalMarks}/${INTERNAL_MARKS_MAX}`} icon={TrendingUp} color="emerald" delta={`${Math.round((student.internalMarks / INTERNAL_MARKS_MAX) * 100)}%`} />
         <StatCard label="Hall Ticket" value={e.eligible ? "Ready" : "Pending"} icon={TicketCheck} color={e.eligible ? "emerald" : "amber"} />
         <StatCard label="Next Exam" value={upcoming[0]?.date.split("-")[2] || "—"} icon={Calendar} color="violet" delta={upcoming[0]?.subjectName.slice(0, 15)} />
       </div>
@@ -192,8 +193,8 @@ export function StudentDashboard() {
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
                 <YAxis stroke="#94a3b8" fontSize={12} />
                 <Tooltip contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }} />
-                <Bar dataKey="internal" fill="#2563eb" name="Internal /40" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="assign" fill="#7c3aed" name="Assignment /10" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="internal" fill="#2563eb" name={`Internal /${INTERNAL_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="assign" fill="#7c3aed" name={`Assignment /${ASSIGNMENT_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -460,7 +461,7 @@ export function StudentEligibility() {
 
   const criteria = [
     { label: "Attendance ≥ 75%", passed: checks.attendance, value: `${student.attendance}%`, target: "75%" },
-    { label: "Internal Marks ≥ 40%", passed: checks.internals, value: `${Math.round((student.internalMarks/40)*100)}%`, target: "40%" },
+    { label: "Internal Marks ≥ 40%", passed: checks.internals, value: `${Math.round((student.internalMarks / INTERNAL_MARKS_MAX) * 100)}%`, target: "40%" },
     { label: "Fee Paid", passed: checks.fee, value: student.feePaid ? "Paid" : "Pending", target: "Paid" },
     { label: "Previous SGPA ≥ 5", passed: checks.previous, value: (student.previousResult ?? 0).toString(), target: "5.0" },
   ];
@@ -566,6 +567,7 @@ export function StudentHallTicket() {
       ht.exam.room,
       ht.seat_number,
       ht.qr_code_content,
+      ht.subjects,
     );
     const w = window.open("", "_blank");
     if (w) { w.document.write(html); w.document.close(); }
@@ -599,12 +601,25 @@ export function StudentHallTicket() {
                 <InfoRow label="Roll Number" value={ht.student.roll_no} />
                 <InfoRow label="Department" value={ht.student.department} />
                 <InfoRow label="Semester" value={`Semester ${student.semester}`} />
-                <InfoRow label="Subject" value={ht.exam.subject_name} />
-                <InfoRow label="Subject Code" value={ht.exam.subject_code} />
-                <InfoRow label="Date & Time" value={`${ht.exam.date} at ${ht.exam.time}`} />
-                <InfoRow label="Duration" value={ht.exam.duration} />
-                <InfoRow label="Exam Hall" value={ht.exam.room} bold />
-                <InfoRow label="Seat Number" value={ht.seat_number} bold />
+                <div className="py-2 border-b border-slate-100">
+                  <p className="text-slate-500 text-sm mb-2">Examination Subjects</p>
+                  <div className="space-y-2">
+                    {(ht.subjects?.length ? ht.subjects : [ht.exam]).map((subj: any, idx: number) => (
+                      <div key={idx} className="rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-2">
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                          {ht.subjects?.length > 1 ? `${idx + 1}. ` : ""}
+                          {subj.subject_name || subj.subjectName} ({subj.subject_code || subj.subjectCode})
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {subj.exam_date || subj.date} at {subj.exam_time || subj.time}
+                        </p>
+                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mt-1">
+                          Hall: {subj.room || ht.exam.room} • Seat: {subj.seat_number || ht.seat_number}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="flex flex-col items-center">
                 <img src={ht.student.photo} alt="" className="w-32 h-32 rounded-lg bg-slate-100 border-2 border-indigo-200" />
@@ -985,7 +1000,7 @@ export function StudentChatbot() {
           {student ? (
             <div className="space-y-3">
               <StatMini label="Attendance" value={`${student.attendance}%`} ok={student.attendance >= 75} />
-              <StatMini label="Internal Marks" value={`${student.internalMarks}/40`} ok={student.internalMarks >= 32} />
+              <StatMini label="Internal Marks" value={`${student.internalMarks}/${INTERNAL_MARKS_MAX}`} ok={(student.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40} />
               <StatMini label="Eligibility" value={`${getStudentEligibility(student).eligibilityPct}%`} ok={getStudentEligibility(student).eligible} />
               <StatMini label="AI Score" value={getStudentEligibility(student).score} />
               <StatMini label="Backlogs" value={student.backlogs} ok={student.backlogs === 0} />

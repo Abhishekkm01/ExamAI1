@@ -1,4 +1,5 @@
 from .models import SystemSettings, Student
+from .marks_constants import INTERNAL_MARKS_MAX
 
 
 def get_system_settings():
@@ -39,7 +40,7 @@ def passes_eligibility(student, cfg=None):
     """Return True when a student meets configured eligibility criteria."""
     if cfg is None:
         cfg = get_system_settings()
-    internal_pct = (student.internal_marks / 40) * 100
+    internal_pct = (student.internal_marks / INTERNAL_MARKS_MAX) * 100
     return (
         student.attendance_percentage >= cfg.attendance_threshold
         and internal_pct >= cfg.internal_marks_threshold

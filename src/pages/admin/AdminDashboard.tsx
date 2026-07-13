@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { AdminNotSetup } from "../Setup";
+import { INTERNAL_MARKS_MAX } from "../../data/marksConstants";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -231,7 +232,7 @@ export default function AdminDashboard() {
                     </td>
                     <td className="py-3 text-slate-600 dark:text-slate-300">{s.department}</td>
                     <td className="py-3">{s.attendance}%</td>
-                    <td className="py-3">{s.internalMarks}/40</td>
+                    <td className="py-3">{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
                     <td className="py-3">
                       {elg.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">Not Eligible</Badge>}
                     </td>

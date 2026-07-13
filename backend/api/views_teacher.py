@@ -3,7 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Q
-from .models import User, Student, Teacher, Attendance, InternalMark
+from .models import User, Student, Teacher, Attendance, InternalMark, Exam, SeatingArrangement
 from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSerializer,
                           TeacherProfileUpdateSerializer, MarksUpdateSerializer)
 from .permissions import IsTeacher, IsOwner
@@ -17,6 +17,7 @@ import os
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from .face_service import match_student_face
+from .exam_service import exam_to_dict
 
 
 @api_view(['GET'])
@@ -226,12 +227,15 @@ def update_marks(request):
     except Student.DoesNotExist:
         return Response({'detail': 'Student not found in your department'}, status=status.HTTP_404_NOT_FOUND)
 
-    update_student_marks(
-        s,
-        data['subject_code'],
-        internal_marks=data['internal_marks'],
-        assignment_marks=data['assignment_marks'],
-    )
+    try:
+        update_student_marks(
+            s,
+            data['subject_code'],
+            internal_marks=data['internal_marks'],
+            assignment_marks=data['assignment_marks'],
+        )
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({
         'message': 'Marks updated',
@@ -276,11 +280,33 @@ def monitor_students(request):
     return Response(data)
 
 
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def invigilator_exams(request):
+    """List exams where the teacher is assigned as invigilator."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'teacher':
+        return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        teacher = Teacher.objects.get(user_id=user.id, is_deleted=False)
+    except Teacher.DoesNotExist:
+        return Response({'detail': 'Teacher profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    exams = Exam.objects.filter(
+        invigilator=teacher,
+        requires_face_verification=True,
+        is_deleted=False,
+    ).select_related('invigilator__user').prefetch_related('subjects')
+    return Response([exam_to_dict(e) for e in exams])
+
+
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def face_verify(request):
-    """Face verification for teacher"""
+    """Face verification for assigned invigilator at exam entry."""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
@@ -288,13 +314,42 @@ def face_verify(request):
     serializer = FaceVerifyRequestSerializer(data=request.data)
     if serializer.is_valid():
         try:
-            t = Teacher.objects.get(user_id=user.id)
+            t = Teacher.objects.get(user_id=user.id, is_deleted=False)
         except Teacher.DoesNotExist:
-            dept = "Computer Science"
-        else:
-            dept = t.department
-        
-        students = Student.objects.filter(department=dept, is_deleted=False).select_related('user')
+            return Response({'detail': 'Teacher profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        exam_id = serializer.validated_data.get('exam_id')
+        if not exam_id:
+            return Response({'detail': 'exam_id is required for invigilator verification'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            exam = Exam.objects.get(id=exam_id, is_deleted=False)
+        except Exam.DoesNotExist:
+            return Response({'detail': 'Exam not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not exam.requires_face_verification:
+            return Response({'detail': 'Face verification is not required for this exam'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if exam.invigilator_id != t.id:
+            return Response({'detail': 'You are not the assigned invigilator for this exam'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        seated_student_ids = SeatingArrangement.objects.filter(
+            exam=exam
+        ).values_list('student_id', flat=True)
+        students = Student.objects.filter(
+            id__in=seated_student_ids,
+            is_deleted=False,
+        ).select_related('user')
+        if not students.exists():
+            students = Student.objects.filter(
+                department=exam.department,
+                semester=exam.semester,
+                is_eligible=True,
+                is_deleted=False,
+            ).select_related('user')
+
         best_match, best_conf, best_result = match_student_face(
             serializer.validated_data['image_base64'],
             students,
@@ -310,12 +365,14 @@ def face_verify(request):
                 'student_id': best_match.id,
                 'photo': best_match.photo,
                 'department': best_match.department,
+                'exam_id': exam.id,
+                'exam_name': exam.subject_name,
             })
 
         return Response({
             'verified': False,
             'confidence': 0.0,
-            'message': 'No matching student found in your department',
+            'message': 'No matching student found for this exam',
             'student_name': None,
         })
     

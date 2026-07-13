@@ -6,6 +6,7 @@ from ai_modules.eligibility_model import eligibility_ai
 
 from .models import Attendance, Student
 from .settings_service import get_system_settings, passes_eligibility
+from .marks_constants import INTERNAL_MARKS_MAX
 
 
 def parse_student_id(raw_id):
@@ -27,7 +28,7 @@ def refresh_student_eligibility(student):
         min_sgpa=cfg.min_sgpa,
     )
 
-    internal_pct = (student.internal_marks / 40) * 100
+    internal_pct = (student.internal_marks / INTERNAL_MARKS_MAX) * 100
     passed = passes_eligibility(student, cfg)
 
     student.is_eligible = passed

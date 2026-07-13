@@ -70,6 +70,7 @@ urlpatterns = [
     path('teacher/marks/update', views_teacher.update_marks, name='teacher_update_marks'),
     path('teacher/students', views_teacher.monitor_students, name='teacher_monitor_students'),
     path('teacher/face-verify', views_teacher.face_verify, name='teacher_face_verify'),
+    path('teacher/invigilator-exams', views_teacher.invigilator_exams, name='teacher_invigilator_exams'),
     
     # Student endpoints
     path('student/dashboard', views_student.dashboard, name='student_dashboard'),

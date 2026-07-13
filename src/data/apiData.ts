@@ -3,11 +3,12 @@
 
 import { api, isBackendOnline } from "./api";
 import type { Student, Teacher, Exam } from "./types";
+import { INTERNAL_MARKS_MAX } from "./marksConstants";
 
 export function getStudentEligibilityLocal(s: Student) {
   const checks = {
     attendance: s.attendance >= 75,
-    internals:  (s.internalMarks / 40) * 100 >= 40,
+    internals:  (s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40,
     fee:        s.feePaid,
     previous:   s.previousResult >= 5.0,
   };
@@ -17,7 +18,7 @@ export function getStudentEligibilityLocal(s: Student) {
   const eligibilityPct = Math.round((passed / total) * 100);
   const score = Math.min(100, Math.round(
     s.attendance * 0.35 +
-    ((s.internalMarks / 40) * 100) * 0.25 +
+    ((s.internalMarks / INTERNAL_MARKS_MAX) * 100) * 0.25 +
     (s.previousResult / 10) * 100 * 0.2 +
     100 * 0.2
   ));
@@ -60,22 +61,39 @@ export async function fetchTeachers(): Promise<Teacher[]> {
   }));
 }
 
+function mapExam(e: any): Exam {
+  return {
+    id: `e${e.id}`,
+    subjectCode: e.subject_code,
+    subjectName: e.subject_name,
+    department: e.department,
+    semester: e.semester,
+    date: e.exam_date,
+    time: e.exam_time,
+    duration: e.duration,
+    room: e.room,
+    totalMarks: e.total_marks,
+    requiresFaceVerification: e.requires_face_verification ?? true,
+    invigilatorId: e.invigilator_id ?? null,
+    invigilatorName: e.invigilator_name ?? null,
+    subjects: (e.subjects || []).map((s: any) => ({
+      subjectCode: s.subject_code,
+      subjectName: s.subject_name,
+      date: s.exam_date,
+      time: s.exam_time,
+      duration: s.duration,
+    })),
+  };
+}
+
 export async function fetchExams(): Promise<Exam[]> {
   const data = await api.studentExams();
-  return (data || []).map((e: any) => ({
-    id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name,
-    department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time,
-    duration: e.duration, room: e.room, totalMarks: e.total_marks,
-  }));
+  return (data || []).map(mapExam);
 }
 
 export async function fetchAdminExams(): Promise<Exam[]> {
   const data = await api.adminExams();
-  return (data || []).map((e: any) => ({
-    id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name,
-    department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time,
-    duration: e.duration, room: e.room, totalMarks: e.total_marks,
-  }));
+  return (data || []).map(mapExam);
 }
 
 export async function fetchDepartments(): Promise<string[]> {

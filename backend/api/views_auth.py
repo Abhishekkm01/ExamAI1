@@ -14,8 +14,10 @@ import os
 # Add ai_modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
+from .marks_constants import INTERNAL_MARKS_MAX
 from .photo_utils import save_profile_photo
 from .face_service import try_enroll_student_face
+from .exam_service import create_exam_record
 
 
 @api_view(['POST'])
@@ -100,14 +102,14 @@ def _create_student_account(data, password):
     )
 
     passed = (data.get('attendance_percentage', 0) >= 75) and \
-              ((data.get('internal_marks', 0) / 40) * 100 >= 40) and \
+              ((data.get('internal_marks', 0) / INTERNAL_MARKS_MAX) * 100 >= 40) and \
               (data.get('backlogs', 0) == 0) and \
               data.get('fee_paid', False) and \
               (data.get('previous_result', 0) >= 5.0)
 
     pct = round((sum([
         data.get('attendance_percentage', 0) >= 75,
-        (data.get('internal_marks', 0) / 40) * 100 >= 40,
+        (data.get('internal_marks', 0) / INTERNAL_MARKS_MAX) * 100 >= 40,
         data.get('backlogs', 0) == 0,
         data.get('fee_paid', False),
         data.get('previous_result', 0) >= 5.0,
@@ -273,7 +275,9 @@ def setup_exam(request):
             return Response({'detail': f"An exam with subject code {subject_code} already exists."},
                           status=status.HTTP_400_BAD_REQUEST)
         try:
-            exam = Exam.objects.create(**serializer.validated_data)
+            exam = create_exam_record(serializer.validated_data)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError:
             return Response({'detail': f"Could not create exam: subject code {subject_code} is already in use."},
                           status=status.HTTP_400_BAD_REQUEST)

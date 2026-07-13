@@ -13,6 +13,7 @@ import { useDepartments } from "../../hooks/useDepartments";
 import { notifySystemSettingsUpdated, useSystemSettings } from "../../hooks/useSystemSettings";
 import { DepartmentSelect } from "../../components/DepartmentSelect";
 import { examHeaderSubtitle, downloadHallTicket, universityInitials, DEFAULT_HALL_TICKET_EXAM } from "../../utils/hallTicket";
+import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX, INTERNAL_ASSIGNMENT_TOTAL } from "../../data/marksConstants";
 
 async function apiAddStudent(form: any) {
   return apiPost("/api/auth/setup-student", form, "Failed to add student");
@@ -129,7 +130,7 @@ export function AdminStudents() {
                         <span className="text-xs text-slate-500">{s.attendance}%</span>
                       </div>
                     </td>
-                    <td className="p-4">{s.internalMarks}/40</td>
+                    <td className="p-4">{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
                     <td className="p-4">{e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">Not Eligible</Badge>}</td>
                     <td className="p-4">
                       <div className="flex items-center justify-end gap-1">
@@ -266,8 +267,8 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
           <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => update("semester", +e.target.value)} /></Field>
           <Field label="Section"><TextInput value={form.section} onChange={(e) => update("section", e.target.value)} /></Field>
           <Field label="Attendance %"><TextInput type="number" value={form.attendance} onChange={(e) => update("attendance", +e.target.value)} /></Field>
-          <Field label="Internal Marks /40"><TextInput type="number" value={form.internalMarks} onChange={(e) => update("internalMarks", +e.target.value)} /></Field>
-          <Field label="Assignment Marks /10"><TextInput type="number" value={form.assignmentMarks} onChange={(e) => update("assignmentMarks", +e.target.value)} /></Field>
+          <Field label={`Internal Marks /${INTERNAL_MARKS_MAX}`}><TextInput type="number" min={0} max={INTERNAL_MARKS_MAX} value={form.internalMarks} onChange={(e) => update("internalMarks", +e.target.value)} /></Field>
+          <Field label={`Assignment Marks /${ASSIGNMENT_MARKS_MAX}`}><TextInput type="number" min={0} max={ASSIGNMENT_MARKS_MAX} value={form.assignmentMarks} onChange={(e) => update("assignmentMarks", +e.target.value)} /></Field>
           <Field label="Previous SGPA"><TextInput type="number" step="0.1" value={form.previousResult} onChange={(e) => update("previousResult", +e.target.value)} /></Field>
           <Field label="Backlogs"><TextInput type="number" value={form.backlogs} onChange={(e) => update("backlogs", +e.target.value)} /></Field>
           <Field label="Fee Paid">
@@ -315,7 +316,7 @@ function StudentDetailModal({ student, onClose }: { student: Student; onClose: (
             <Info label="Email" value={student.email} />
             <Info label="Mobile" value={student.mobile} />
             <Info label="Attendance" value={`${student.attendance}%`} ok={student.attendance >= 75} />
-            <Info label="Internal Marks" value={`${student.internalMarks}/40`} ok={(student.internalMarks / 40) * 100 >= 40} />
+            <Info label="Internal Marks" value={`${student.internalMarks}/${INTERNAL_MARKS_MAX}`} ok={(student.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40} />
             <Info label="Previous SGPA" value={student.previousResult.toString()} ok={student.previousResult >= 5.0} />
             <Info label="Backlogs" value={student.backlogs.toString()} ok={student.backlogs === 0} />
             <Info label="Fee Status" value={student.feePaid ? "Paid" : "Pending"} ok={student.feePaid} />
@@ -566,6 +567,22 @@ export function AdminExams() {
 function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => void; onSaved: (e: Exam) => void }) {
   const isEdit = !!exam;
   const { departments, loading: deptsLoading } = useDepartments();
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const initialSubjects = exam?.subjects?.length
+    ? exam.subjects.map((s) => ({
+        subject_code: s.subjectCode,
+        subject_name: s.subjectName,
+        exam_date: s.date || exam?.date || "2026-11-10",
+        exam_time: s.time || exam?.time || "10:00 AM",
+        duration: s.duration || exam?.duration || "3 hours",
+      }))
+    : [{
+        subject_code: exam?.subjectCode || "",
+        subject_name: exam?.subjectName || "",
+        exam_date: exam?.date || "2026-11-10",
+        exam_time: exam?.time || "10:00 AM",
+        duration: exam?.duration || "3 hours",
+      }];
   const [form, setForm] = useState({
     subject_code: exam?.subjectCode || "",
     subject_name: exam?.subjectName || "",
@@ -576,9 +593,16 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     duration: exam?.duration || "3 hours",
     room: exam?.room || "",
     total_marks: exam?.totalMarks || 100,
+    requires_face_verification: exam?.requiresFaceVerification ?? true,
+    invigilator_id: exam?.invigilatorId ?? "",
   });
+  const [subjects, setSubjects] = useState(initialSubjects);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchTeachers().then(setTeachers).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!isEdit && departments.length && !form.department) {
@@ -586,16 +610,57 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     }
   }, [departments, isEdit, form.department]);
 
+  const addSubject = () => {
+    setSubjects((list) => [...list, {
+      subject_code: "",
+      subject_name: "",
+      exam_date: form.exam_date,
+      exam_time: form.exam_time,
+      duration: form.duration,
+    }]);
+  };
+
+  const updateSubject = (idx: number, field: string, value: string) => {
+    setSubjects((list) => list.map((s, i) => i === idx ? { ...s, [field]: value } : s));
+    if (idx === 0) {
+      if (field === "subject_code") setForm((f) => ({ ...f, subject_code: value }));
+      if (field === "subject_name") setForm((f) => ({ ...f, subject_name: value }));
+      if (field === "exam_date") setForm((f) => ({ ...f, exam_date: value }));
+      if (field === "exam_time") setForm((f) => ({ ...f, exam_time: value }));
+      if (field === "duration") setForm((f) => ({ ...f, duration: value }));
+    }
+  };
+
+  const removeSubject = (idx: number) => {
+    if (subjects.length <= 1) return;
+    setSubjects((list) => list.filter((_, i) => i !== idx));
+  };
+
   const save = async () => {
     setSaving(true); setErr(null);
+    const payload = {
+      ...form,
+      invigilator_id: form.invigilator_id ? Number(form.invigilator_id) : null,
+      subjects: subjects.filter((s) => s.subject_code && s.subject_name),
+    };
+    if (payload.requires_face_verification && !payload.invigilator_id) {
+      setErr("Please assign an invigilator for face verification.");
+      setSaving(false);
+      return;
+    }
+    if (!payload.subjects.length) {
+      setErr("Add at least one subject for the hall ticket.");
+      setSaving(false);
+      return;
+    }
     try {
       if (isEdit && exam) {
         const eid = exam.id.replace(/^e/, "");
-        await apiPut(`/api/admin/exams/${eid}/update`, form, "Failed to update exam");
+        await apiPut(`/api/admin/exams/${eid}/update`, payload, "Failed to update exam");
         onSaved({
           ...exam,
-          subjectCode: form.subject_code,
-          subjectName: form.subject_name,
+          subjectCode: payload.subjects[0].subject_code,
+          subjectName: payload.subjects[0].subject_name,
           department: form.department,
           semester: form.semester,
           date: form.exam_date,
@@ -603,13 +668,23 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           duration: form.duration,
           room: form.room,
           totalMarks: form.total_marks,
+          requiresFaceVerification: form.requires_face_verification,
+          invigilatorId: payload.invigilator_id,
+          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === payload.invigilator_id)?.name || null,
+          subjects: payload.subjects.map((s) => ({
+            subjectCode: s.subject_code,
+            subjectName: s.subject_name,
+            date: s.exam_date,
+            time: s.exam_time,
+            duration: s.duration,
+          })),
         });
       } else {
-        const res = await apiAddExam(form) as { exam_id: number };
+        const res = await apiAddExam(payload) as { exam_id: number };
         onSaved({
           id: `e${res.exam_id}`,
-          subjectCode: form.subject_code,
-          subjectName: form.subject_name,
+          subjectCode: payload.subjects[0].subject_code,
+          subjectName: payload.subjects[0].subject_name,
           department: form.department,
           semester: form.semester,
           date: form.exam_date,
@@ -617,6 +692,16 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           duration: form.duration,
           room: form.room,
           totalMarks: form.total_marks,
+          requiresFaceVerification: form.requires_face_verification,
+          invigilatorId: payload.invigilator_id,
+          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === payload.invigilator_id)?.name || null,
+          subjects: payload.subjects.map((s) => ({
+            subjectCode: s.subject_code,
+            subjectName: s.subject_name,
+            date: s.exam_date,
+            time: s.exam_time,
+            duration: s.duration,
+          })),
         });
       }
     } catch (e: any) { setErr(e.message); }
@@ -624,14 +709,33 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <h3 className="text-lg font-bold">{isEdit ? "Edit Exam" : "Schedule Exam"}</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-3">
-          <Field label="Subject Code"><TextInput value={form.subject_code} onChange={(e) => setForm({ ...form, subject_code: e.target.value })} placeholder="CS301" /></Field>
-          <Field label="Subject Name"><TextInput value={form.subject_name} onChange={(e) => setForm({ ...form, subject_name: e.target.value })} placeholder="Data Structures" /></Field>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Subjects (shown on hall ticket)</p>
+            <Button variant="secondary" onClick={addSubject}><Plus className="w-3.5 h-3.5" /> Add Subject</Button>
+          </div>
+          {subjects.map((subj, idx) => (
+            <div key={idx} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-slate-500">Subject {idx + 1}</p>
+                {subjects.length > 1 && (
+                  <button onClick={() => removeSubject(idx)} className="text-rose-500 text-xs">Remove</button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput value={subj.subject_code} onChange={(e) => updateSubject(idx, "subject_code", e.target.value)} placeholder="CS301" />
+                <TextInput value={subj.subject_name} onChange={(e) => updateSubject(idx, "subject_name", e.target.value)} placeholder="Data Structures" />
+                <TextInput type="date" value={subj.exam_date} onChange={(e) => updateSubject(idx, "exam_date", e.target.value)} />
+                <TextInput value={subj.exam_time} onChange={(e) => updateSubject(idx, "exam_time", e.target.value)} placeholder="10:00 AM" />
+                <TextInput value={subj.duration} onChange={(e) => updateSubject(idx, "duration", e.target.value)} placeholder="3 hours" className="col-span-2" />
+              </div>
+            </div>
+          ))}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department">
               <DepartmentSelect
@@ -644,14 +748,30 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
             <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => setForm({ ...form, semester: +e.target.value })} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Date"><TextInput type="date" value={form.exam_date} onChange={(e) => setForm({ ...form, exam_date: e.target.value })} /></Field>
-            <Field label="Time"><TextInput value={form.exam_time} onChange={(e) => setForm({ ...form, exam_time: e.target.value })} placeholder="10:00 AM" /></Field>
+            <Field label="Exam Hall / Room"><TextInput value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Hall A-101" /></Field>
+            <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Duration"><TextInput value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} /></Field>
-            <Field label="Room"><TextInput value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Hall A-101" /></Field>
-          </div>
-          <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
+          <Field label="Invigilator (Face Verification)">
+            <Select
+              value={form.invigilator_id}
+              onChange={(e) => setForm({ ...form, invigilator_id: e.target.value })}
+            >
+              <option value="">Select invigilator…</option>
+              {teachers
+                .filter((t) => !form.department || t.department === form.department)
+                .map((t) => (
+                  <option key={t.id} value={t.id.replace(/^t/, "")}>{t.name} ({t.empId})</option>
+                ))}
+            </Select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.requires_face_verification}
+              onChange={(e) => setForm({ ...form, requires_face_verification: e.target.checked })}
+            />
+            Require face verification by assigned invigilator at exam entry
+          </label>
           {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
         </div>
         <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
@@ -666,6 +786,8 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
 // ==================== INTERNAL MARKS ====================
 export function AdminMarks() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [subjectCode, setSubjectCode] = useState("CS301");
   const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -673,9 +795,14 @@ export function AdminMarks() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const maxTotal = INTERNAL_ASSIGNMENT_TOTAL;
+
   useEffect(() => {
-    fetchStudents().then((s) => {
+    Promise.all([fetchStudents(), fetchAdminExams()]).then(([s, e]) => {
       setStudents(s);
+      setExams(e);
+      const codes = e.flatMap((x) => (x.subjects?.length ? x.subjects.map((sub) => sub.subjectCode) : [x.subjectCode]));
+      if (codes.length && !codes.includes(subjectCode)) setSubjectCode(codes[0]);
       setMarks(Object.fromEntries(s.map((x) => [
         x.id,
         { internal: x.internalMarks, assignment: x.assignmentMarks },
@@ -684,11 +811,27 @@ export function AdminMarks() {
     });
   }, []);
 
+  const subjectOptions = Array.from(new Set(
+    exams.flatMap((e) => (e.subjects?.length ? e.subjects.map((s) => s.subjectCode) : [e.subjectCode]))
+  ));
+
   const filtered = students.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
 
   const saveMarks = async (student: Student) => {
     const m = marks[student.id];
     if (!m) return;
+    if (m.internal > INTERNAL_MARKS_MAX) {
+      setError(`Internal marks cannot exceed ${INTERNAL_MARKS_MAX}.`);
+      return;
+    }
+    if (m.assignment > ASSIGNMENT_MARKS_MAX) {
+      setError(`Assignment marks cannot exceed ${ASSIGNMENT_MARKS_MAX}.`);
+      return;
+    }
+    if (m.internal + m.assignment > maxTotal) {
+      setError(`Total marks (${m.internal + m.assignment}) cannot exceed ${INTERNAL_ASSIGNMENT_TOTAL} (internal ${INTERNAL_MARKS_MAX} + assignment ${ASSIGNMENT_MARKS_MAX}).`);
+      return;
+    }
     setSavingId(student.id);
     setError(null);
     setMessage(null);
@@ -697,7 +840,7 @@ export function AdminMarks() {
       await api.adminUpdateStudent(sid, {
         internal_marks: m.internal,
         assignment_marks: m.assignment,
-        subject_code: "CS301",
+        subject_code: subjectCode,
       });
       setMessage(`Marks updated for ${student.name}`);
       setStudents((list) => list.map((s) => s.id === student.id ? {
@@ -728,8 +871,13 @@ export function AdminMarks() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <TextInput placeholder="Search students..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
           </div>
-          {/* <Button variant="primary"><Upload className="w-4 h-4" /> Upload Marks CSV</Button> */}
+          <Select value={subjectCode} onChange={(e) => setSubjectCode(e.target.value)} className="w-40">
+            {(subjectOptions.length ? subjectOptions : [subjectCode]).map((code) => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </Select>
         </div>
+        <p className="text-xs text-slate-500 mt-2">Internal max: {INTERNAL_MARKS_MAX} • Assignment max: {ASSIGNMENT_MARKS_MAX} • Combined total: {INTERNAL_ASSIGNMENT_TOTAL}</p>
       </Card>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -738,9 +886,9 @@ export function AdminMarks() {
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
                 <th className="p-4 font-medium">Department</th>
-                <th className="p-4 font-medium">Internal /40</th>
-                <th className="p-4 font-medium">Assignment /10</th>
-                <th className="p-4 font-medium">Total /50</th>
+                <th className="p-4 font-medium">Internal /{INTERNAL_MARKS_MAX}</th>
+                <th className="p-4 font-medium">Assignment /{ASSIGNMENT_MARKS_MAX}</th>
+                <th className="p-4 font-medium">Total /{maxTotal}</th>
                 <th className="p-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -763,7 +911,7 @@ export function AdminMarks() {
                       <input
                         type="number"
                         min={0}
-                        max={40}
+                        max={INTERNAL_MARKS_MAX}
                         step={0.5}
                         value={m.internal}
                         onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, internal: +e.target.value } })}
@@ -774,14 +922,14 @@ export function AdminMarks() {
                       <input
                         type="number"
                         min={0}
-                        max={10}
+                        max={ASSIGNMENT_MARKS_MAX}
                         step={0.5}
                         value={m.assignment}
                         onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, assignment: +e.target.value } })}
                         className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                       />
                     </td>
-                    <td className="p-4 font-semibold">{m.internal + m.assignment}/50</td>
+                    <td className={cn("p-4 font-semibold", m.internal + m.assignment > maxTotal && "text-rose-600")}>{m.internal + m.assignment}/{maxTotal}</td>
                     <td className="p-4 text-right">
                       <Button variant="secondary" disabled={savingId === s.id} onClick={() => saveMarks(s)}>
                         <Save className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving…" : "Save"}
@@ -830,7 +978,7 @@ export function AdminEligibility() {
         <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Eligibility Criteria</h4>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
           <Criterion label="≥ 75% Attendance" icon="📊" />
-          <Criterion label="≥ 40% Internals" icon="📝" />
+          <Criterion label={`≥ 40% Internals (/${INTERNAL_MARKS_MAX})`} icon="📝" />
           <Criterion label="Zero Backlogs" icon="✅" />
           <Criterion label="Fee Paid" icon="💳" />
           <Criterion label="Previous SGPA ≥ 5" icon="🎓" />
@@ -874,7 +1022,7 @@ export function AdminEligibility() {
                     </div>
                   </td>
                   <td className="py-3">{s.attendance >= 75 ? <Check /> : <XIcon />}{s.attendance}%</td>
-                  <td className="py-3">{(s.internalMarks / 40) * 100 >= 40 ? <Check /> : <XIcon />}{s.internalMarks}/40</td>
+                  <td className="py-3">{(s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40 ? <Check /> : <XIcon />}{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
                   <td className="py-3">{s.backlogs === 0 ? <Check /> : <XIcon />}{s.backlogs}</td>
                   <td className="py-3">{s.feePaid ? <Check /> : <XIcon />}{s.feePaid ? "Paid" : "Due"}</td>
                   <td className="py-3">{s.previousResult >= 5 ? <Check /> : <XIcon />}{s.previousResult}</td>
@@ -909,6 +1057,28 @@ function Check() { return <span className="inline-block mr-1 text-emerald-500">�
 function XIcon() { return <span className="inline-block mr-1 text-rose-500">✗</span>; }
 
 // ==================== HALL TICKETS ====================
+type HallTicketSubjectRow = {
+  subject_code: string;
+  subject_name: string;
+  exam_date?: string;
+  exam_time?: string;
+  duration?: string;
+  seat_number: string;
+  room: string;
+};
+
+type SeatConflict = {
+  subject_code: string;
+  subject_name: string;
+  seat_number: string;
+  room: string;
+  assigned_to: string;
+  assigned_roll_no?: string;
+  suggested_seat: string;
+  exam_date?: string;
+  exam_time?: string;
+};
+
 export function AdminHallTickets() {
   type HallTicketRow = {
     id: number;
@@ -921,26 +1091,73 @@ export function AdminHallTickets() {
     seat_number: string;
     room: string;
     exam: string;
+    subject_code?: string;
+    exam_date?: string;
+    exam_time?: string;
+    duration?: string;
+    subjects?: HallTicketSubjectRow[];
+    has_seat_conflict?: boolean;
+    seat_conflicts?: SeatConflict[];
     qr_code_content: string;
   };
 
   const [tickets, setTickets] = useState<HallTicketRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [editing, setEditing] = useState<{ seat_number: string; room: string } | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editSubjects, setEditSubjects] = useState<HallTicketSubjectRow[]>([]);
+  const [seatConflicts, setSeatConflicts] = useState<SeatConflict[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { settings: systemSettings } = useSystemSettings();
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
-      setTickets(await api.adminHallTickets());
-    } catch {}
+      const data = await api.adminHallTickets();
+      setTickets(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(e.message || "Failed to load hall tickets");
+      setTickets([]);
+    }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
+
+  const openEdit = (t: HallTicketRow) => {
+    const base = t.subjects?.length
+      ? t.subjects.map((s) => ({
+          subject_code: s.subject_code,
+          subject_name: s.subject_name,
+          exam_date: s.exam_date,
+          exam_time: s.exam_time,
+          duration: s.duration,
+          seat_number: s.seat_number || t.seat_number,
+          room: s.room || t.room,
+        }))
+      : [{
+          subject_code: t.subject_code || "",
+          subject_name: t.exam,
+          exam_date: t.exam_date,
+          exam_time: t.exam_time,
+          duration: t.duration,
+          seat_number: t.seat_number,
+          room: t.room,
+        }];
+    setEditSubjects(base);
+    setEditingId(t.id);
+    setSeatConflicts(t.seat_conflicts || []);
+    setMessage(null);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditSubjects([]);
+    setSeatConflicts([]);
+  };
 
   const generateAll = async () => {
     setBusy(true);
@@ -955,26 +1172,53 @@ export function AdminHallTickets() {
     setBusy(false);
   };
 
-  const saveTicket = async (id: number) => {
-    if (!editing) return;
+  const applySuggestedSeats = (conflicts: SeatConflict[]) => {
+    setEditSubjects((list) => list.map((s) => {
+      const hit = conflicts.find((c) => c.subject_code === s.subject_code);
+      return hit ? { ...s, seat_number: hit.suggested_seat } : s;
+    }));
+    setSeatConflicts([]);
+    setError(null);
+    setMessage("Suggested available seats applied — click Save Subject Seats to confirm.");
+  };
+
+  const saveTicket = async (ticketId: number, autoResolve = false) => {
     setBusy(true);
+    setError(null);
+    if (!autoResolve) setSeatConflicts([]);
     try {
-      await api.adminUpdateHallTicket(id, editing);
-      setMessage("Hall ticket updated");
-      setSelected(null);
-      setEditing(null);
+      const result = await api.adminUpdateHallTicket(ticketId, {
+        subjects: editSubjects.map((s) => ({
+          subject_code: s.subject_code,
+          seat_number: s.seat_number,
+          room: s.room,
+        })),
+        auto_resolve_seats: autoResolve,
+      });
+      setMessage(result.message || "Hall ticket updated — seat & hall saved for all subjects");
+      cancelEdit();
       await load();
     } catch (e: any) {
-      alert(e.message);
+      const conflicts = Array.isArray(e.conflicts) ? e.conflicts as SeatConflict[] : [];
+      if (conflicts.length) {
+        setSeatConflicts(conflicts);
+        setError(e.message || "Seat conflict — another student already has this seat for the same subject and time.");
+      } else {
+        setError(e.message || "Failed to save hall ticket");
+      }
     }
     setBusy(false);
+  };
+
+  const updateEditSubject = (idx: number, field: "seat_number" | "room", value: string) => {
+    setEditSubjects((list) => list.map((s, i) => i === idx ? { ...s, [field]: value } : s));
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading hall tickets from MySQL…</div>;
 
   return (
     <div>
-      <PageHeader title="Hall Ticket Management" subtitle="View, edit seat & hall numbers, and generate tickets"
+      <PageHeader title="Hall Ticket Management" subtitle="Set exam hall and seat number separately for each subject on every hall ticket"
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => window.location.href = "/admin/seating"}>
@@ -986,82 +1230,165 @@ export function AdminHallTickets() {
           </div>
         } />
 
-      {message && (
-        <div className="mb-4 p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-300">{message}</div>
+      <Card className="p-4 mb-6 bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800">
+        <p className="text-sm text-indigo-900 dark:text-indigo-200">
+          <strong>Per-subject seating:</strong> Each hall ticket lists all exam subjects. Click <strong>Edit Subject Seats</strong> on a student card to set a different hall and seat for each subject, then save.
+        </p>
+      </Card>
+
+      {(message || error || seatConflicts.length > 0) && (
+        <div className="space-y-3 mb-4">
+          {(message || error) && (
+            <div className={cn("p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+              {error || message}
+            </div>
+          )}
+          {seatConflicts.length > 0 && (
+            <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-amber-900 dark:text-amber-200">Seat conflict detected</p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300">The same hall and seat cannot be assigned twice for the same exam, subject, date and time.</p>
+                  </div>
+                </div>
+                <Button variant="primary" disabled={busy} onClick={() => applySuggestedSeats(seatConflicts)}>
+                  Use suggested seats
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {seatConflicts.map((c) => (
+                  <div key={c.subject_code} className="text-sm text-amber-900 dark:text-amber-100 bg-white/70 dark:bg-slate-900/40 rounded-lg px-3 py-2">
+                    <strong>{c.subject_name}</strong> — seat <strong>{c.seat_number}</strong> in <strong>{c.room}</strong> is taken by <strong>{c.assigned_to}</strong>
+                    {c.assigned_roll_no ? ` (${c.assigned_roll_no})` : ""}. Suggested: <strong>{c.suggested_seat}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3">
+                <Button variant="secondary" disabled={busy} onClick={() => editingId && saveTicket(editingId, true)}>
+                  Auto-fix and save now
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
-      <Card className="overflow-hidden mb-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/50">
-              <tr className="text-left text-slate-600 dark:text-slate-300">
-                <th className="p-4 font-medium">Student</th>
-                <th className="p-4 font-medium">Hall Ticket</th>
-                <th className="p-4 font-medium">Exam Hall</th>
-                <th className="p-4 font-medium">Seat</th>
-                <th className="p-4 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {tickets.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <img src={t.photo} alt="" className="w-10 h-10 rounded-full bg-slate-200" />
-                      <div>
-                        <p className="font-medium">{t.student_name}</p>
-                        <p className="text-xs text-slate-500">{t.roll_no} • {t.department}</p>
+      {tickets.length === 0 ? (
+        <Card className="p-10 text-center text-slate-500">
+          No hall tickets yet. Run seating arrangement, sync hall tickets, or click Generate / Sync All.
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {tickets.map((t) => {
+            const isEditing = editingId === t.id;
+            const subjectRows = isEditing
+              ? editSubjects
+              : (t.subjects?.length
+                ? t.subjects
+                : [{ subject_code: t.subject_code || "", subject_name: t.exam, seat_number: t.seat_number, room: t.room, exam_date: t.exam_date, exam_time: t.exam_time }]);
+
+            return (
+              <Card key={t.id} className={cn("overflow-hidden", isEditing && "ring-2 ring-indigo-500", t.has_seat_conflict && !isEditing && "ring-2 ring-amber-400")}>
+                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <img src={t.photo} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-slate-900 dark:text-white">{t.student_name}</p>
+                        {t.has_seat_conflict && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                            <AlertTriangle className="w-3 h-3" /> Seat conflict
+                          </span>
+                        )}
                       </div>
+                      <p className="text-xs text-slate-500">{t.roll_no} • {t.department} • {t.hall_ticket_no}</p>
                     </div>
-                  </td>
-                  <td className="p-4 font-mono text-xs">{t.hall_ticket_no}</td>
-                  <td className="p-4">
-                    {selected === t.id ? (
-                      <TextInput value={editing?.room ?? t.room} onChange={(e) => setEditing({ ...(editing || { seat_number: t.seat_number, room: t.room }), room: e.target.value })} />
-                    ) : t.room}
-                  </td>
-                  <td className="p-4">
-                    {selected === t.id ? (
-                      <TextInput value={editing?.seat_number ?? t.seat_number} onChange={(e) => setEditing({ ...(editing || { seat_number: t.seat_number, room: t.room }), seat_number: e.target.value })} className="w-24" />
-                    ) : <span className="font-semibold text-indigo-600">{t.seat_number}</span>}
-                  </td>
-                  <td className="p-4 text-right">
-                    {selected === t.id ? (
-                      <div className="flex justify-end gap-1">
-                        <Button variant="primary" onClick={() => saveTicket(t.id)} disabled={busy}><Save className="w-3.5 h-3.5" /> Save</Button>
-                        <Button variant="secondary" onClick={() => { setSelected(null); setEditing(null); }}>Cancel</Button>
-                      </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {isEditing ? (
+                      <>
+                        <Button variant="primary" disabled={busy} onClick={() => saveTicket(t.id)}>
+                          <Save className="w-4 h-4" /> {busy ? "Saving…" : "Save Subject Seats"}
+                        </Button>
+                        <Button variant="secondary" onClick={cancelEdit}>Cancel</Button>
+                      </>
                     ) : (
-                      <div className="flex justify-end gap-1">
-                        <Button variant="secondary" onClick={() => { setSelected(t.id); setEditing({ seat_number: t.seat_number, room: t.room }); }}>
-                          <Edit2 className="w-3.5 h-3.5" /> Edit
+                      <>
+                        <Button variant="primary" onClick={() => openEdit(t)}>
+                          <Edit2 className="w-4 h-4" /> Edit Subject Seats
                         </Button>
                         <Button variant="secondary" onClick={() => {
                           const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
-                          downloadHallTicket(
-                            student,
-                            t.hall_ticket_no,
-                            systemSettings.university_name,
-                            systemSettings.academic_year,
-                            t.room,
-                            t.seat_number,
-                            t.qr_code_content,
-                          );
+                          downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
+                            subjectCode: t.subject_code || t.exam, subjectName: t.exam,
+                            date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
+                            duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
+                          });
                         }}>
-                          <Download className="w-3.5 h-3.5" />
+                          <Download className="w-4 h-4" /> PDF
                         </Button>
-                      </div>
+                      </>
                     )}
-                  </td>
-                </tr>
-              ))}
-              {tickets.length === 0 && (
-                <tr><td colSpan={5} className="p-10 text-center text-slate-500">No hall tickets yet. Use Seating Arrangement then Sync, or Generate All.</td></tr>
-              )}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Subjects — Hall & Seat</p>
+                  <div className="space-y-3">
+                    {subjectRows.map((s, idx) => {
+                      const rowConflict = (isEditing ? seatConflicts : t.seat_conflicts)?.find((c) => c.subject_code === s.subject_code);
+                      return (
+                      <div key={`${s.subject_code}-${idx}`} className={cn(
+                        "grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 rounded-xl border",
+                        rowConflict
+                          ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+                          : "bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-700",
+                      )}>
+                        <div className="md:col-span-4">
+                          <p className="font-semibold text-slate-900 dark:text-white">{s.subject_name}</p>
+                          <p className="text-xs text-slate-500">{s.subject_code}{s.exam_date ? ` • ${s.exam_date} ${s.exam_time || ""}` : ""}</p>
+                          {rowConflict && (
+                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                              Conflict with {rowConflict.assigned_to} — try seat {rowConflict.suggested_seat}
+                            </p>
+                          )}
+                        </div>
+                        {isEditing ? (
+                          <>
+                            <div className="md:col-span-4">
+                              <Field label="Exam Hall">
+                                <TextInput value={s.room} onChange={(e) => updateEditSubject(idx, "room", e.target.value)} placeholder="Hall A-101" />
+                              </Field>
+                            </div>
+                            <div className="md:col-span-4">
+                              <Field label="Seat Number">
+                                <TextInput value={s.seat_number} onChange={(e) => updateEditSubject(idx, "seat_number", e.target.value)} placeholder="A1" />
+                              </Field>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="md:col-span-4">
+                              <p className="text-xs text-slate-500 mb-0.5">Exam Hall</p>
+                              <p className="font-semibold text-indigo-700 dark:text-indigo-300">{s.room || "—"}</p>
+                            </div>
+                            <div className="md:col-span-4">
+                              <p className="text-xs text-slate-500 mb-0.5">Seat Number</p>
+                              <p className="font-semibold text-indigo-700 dark:text-indigo-300">{s.seat_number || "—"}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );})}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
         </div>
-      </Card>
+      )}
     </div>
   );
 }

@@ -30,15 +30,23 @@ async function tryFetch(path: string, options: RequestInit = {}): Promise<any> {
     throw new Error(`Network error: cannot reach ${API_BASE}`);
   }
   if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    let conflicts: unknown = null;
+    try {
+      const j = await res.json();
+      detail = j.detail || detail;
+      conflicts = j.conflicts ?? null;
+    } catch {}
+    const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail)) as Error & {
+      conflicts?: unknown;
+      status?: number;
+    };
+    err.conflicts = conflicts;
+    err.status = res.status;
     if (res.status === 401) {
-      let detail = "Unauthorized";
-      try {
-        const j = await res.json();
-        detail = j.detail || detail;
-      } catch {}
       throw new Error(`401: ${detail}`);
     }
-    throw new Error(`HTTP ${res.status}`);
+    throw err;
   }
   backendOnline = true;
   const ct = res.headers.get("content-type") || "";
@@ -150,6 +158,7 @@ export const api = {
     tryFetch("/api/admin/notifications/create", { method: "POST", body: JSON.stringify(data) }),
 
   // -------- Teacher --------
+  teacherProfile: () => tryFetch("/api/teacher/profile"),
   teacherDashboard: () => tryFetch("/api/teacher/dashboard"),
   teacherStudents: () => tryFetch("/api/teacher/students"),
   teacherMarks: (subject = "CS301") =>
@@ -186,11 +195,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ image_base64: imageBase64 }),
     }),
-  teacherFaceVerify: (imageBase64: string) =>
+  teacherFaceVerify: (imageBase64: string, examId: number) =>
     tryFetch("/api/teacher/face-verify", {
       method: "POST",
-      body: JSON.stringify({ image_base64: imageBase64 }),
+      body: JSON.stringify({ image_base64: imageBase64, exam_id: examId }),
     }),
+  teacherInvigilatorExams: () => tryFetch("/api/teacher/invigilator-exams"),
   askChatbot: (query: string) =>
     tryFetch("/api/student/chatbot", { method: "POST", body: JSON.stringify({ user_query: query }) }),
 };

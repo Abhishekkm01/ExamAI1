@@ -6,37 +6,75 @@ import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertT
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { cn } from "../../utils/cn";
 import { FaceCapture } from "../../components/FaceCapture";
+import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX, INTERNAL_ASSIGNMENT_TOTAL } from "../../data/marksConstants";
 
-import { API_BASE } from "../../data/api";
+import { API_BASE, api } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
 
 export function TeacherDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [department, setDepartment] = useState("");
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [teacherName, setTeacherName] = useState("");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetchTeacherStudents(),
+      api.teacherDashboard().catch(() => null),
+      api.teacherProfile().catch(() => null),
+    ]).then(([studentList, dashboard, profile]) => {
+      setStudents(studentList);
+      setDepartment(profile?.department || studentList[0]?.department || "");
+      setSubjects(dashboard?.subjects_assigned || []);
+      setTeacherName(profile?.name || "");
+      setLoading(false);
+    }).catch((e) => {
+      setError(e.message || "Failed to load teacher dashboard");
+      setLoading(false);
+    });
+  }, []);
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
 
-  const csStudents = students.filter(s => s.department === "Computer Science");
-  const totalStudents = csStudents.length;
-  const avgAttendance = totalStudents ? Math.round(csStudents.reduce((a, s) => a + s.attendance, 0) / totalStudents) : 0;
-  const avgInternals = totalStudents ? Math.round(csStudents.reduce((a, s) => a + s.internalMarks, 0) / totalStudents) : 0;
+  const deptStudents = students;
+  const totalStudents = deptStudents.length;
+  const avgAttendance = totalStudents ? Math.round(deptStudents.reduce((a, s) => a + s.attendance, 0) / totalStudents) : 0;
+  const avgInternals = totalStudents ? Math.round(deptStudents.reduce((a, s) => a + s.internalMarks, 0) / totalStudents) : 0;
 
-  const attendanceData = csStudents.map((s) => ({ name: s.name.split(" ")[0], attendance: s.attendance }));
-  const eligible = csStudents.filter((s) => getStudentEligibility(s).eligible).length;
+  const attendanceData = deptStudents.map((s) => ({ name: s.name.split(" ")[0], attendance: s.attendance }));
+  const eligible = deptStudents.filter((s) => getStudentEligibility(s).eligible).length;
   const pieData = [
     { name: "Eligible", value: eligible, fill: "#10b981" },
-    { name: "Not Eligible", value: totalStudents - eligible, fill: "#ef4444" },
+    { name: "Not Eligible", value: Math.max(0, totalStudents - eligible), fill: "#ef4444" },
   ];
 
   return (
     <div>
-      <PageHeader title="Teacher Dashboard" subtitle="Prof. Sneha Rao • CS Department (live MySQL data)" />
+      <PageHeader
+        title="Teacher Dashboard"
+        subtitle={`${teacherName || "Teacher"}${department ? ` • ${department}` : ""} (live MySQL data)`}
+      />
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg text-sm bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">{error}</div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Students" value={totalStudents} icon={Users} color="indigo" delta="CS Department" />
-        <StatCard label="Subjects Assigned" value={2} icon={BookOpen} color="violet" delta="CS301, CS302" />
+        <StatCard label="Total Students" value={totalStudents} icon={Users} color="indigo" delta={department || "Your department"} />
+        <StatCard label="Subjects Assigned" value={subjects.length || "—"} icon={BookOpen} color="violet" delta={subjects.length ? subjects.join(", ") : "No subjects"} />
         <StatCard label="Avg Attendance" value={`${avgAttendance}%`} icon={ClipboardList} color="emerald" delta="Last 7 days" />
-        <StatCard label="Avg Internals" value={`${avgInternals}/40`} icon={BarChart3} color="amber" />
+        <StatCard label="Avg Internals" value={`${avgInternals}/${INTERNAL_MARKS_MAX}`} icon={BarChart3} color="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -75,7 +113,7 @@ export function TeacherDashboard() {
       <Card className="p-5">
         <h3 className="font-semibold mb-4">Students Requiring Attention</h3>
         <div className="space-y-3">
-          {csStudents.filter(s => s.attendance < 75 || s.backlogs > 0).map((s) => (
+          {deptStudents.filter(s => s.attendance < 75 || s.backlogs > 0).map((s) => (
             <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
               <div className="flex items-center gap-3">
                 <img src={s.photo} alt="" className="w-10 h-10 rounded-full bg-slate-200" />
@@ -90,8 +128,10 @@ export function TeacherDashboard() {
               </div>
             </div>
           ))}
-          {csStudents.filter(s => s.attendance < 75 || s.backlogs > 0).length === 0 && (
-            <p className="text-center text-slate-500 py-6">All students are in good standing 🎉</p>
+          {deptStudents.filter(s => s.attendance < 75 || s.backlogs > 0).length === 0 && (
+            <p className="text-center text-slate-500 py-6">
+              {totalStudents === 0 ? "No students found in your department." : "All students are in good standing 🎉"}
+            </p>
           )}
         </div>
       </Card>
@@ -274,6 +314,7 @@ export function TeacherAttendance() {
 export function TeacherMarks() {
   const [subject, setSubject] = useState("CS301");
   const [subjects, setSubjects] = useState<string[]>(["CS301", "CS302"]);
+  const maxTotal = INTERNAL_ASSIGNMENT_TOTAL;
   const [department, setDepartment] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
@@ -341,6 +382,18 @@ export function TeacherMarks() {
   const saveMarks = async (studentId: string) => {
     const m = marks[studentId];
     if (!m) return;
+    if (m.internal > INTERNAL_MARKS_MAX) {
+      setError(`Internal marks cannot exceed ${INTERNAL_MARKS_MAX}.`);
+      return;
+    }
+    if (m.assignment > ASSIGNMENT_MARKS_MAX) {
+      setError(`Assignment marks cannot exceed ${ASSIGNMENT_MARKS_MAX}.`);
+      return;
+    }
+    if (m.internal + m.assignment > maxTotal) {
+      setError(`Total marks (${m.internal + m.assignment}) cannot exceed ${INTERNAL_ASSIGNMENT_TOTAL} (internal ${INTERNAL_MARKS_MAX} + assignment ${ASSIGNMENT_MARKS_MAX}).`);
+      return;
+    }
     setSavingId(studentId);
     setError(null);
     setMessage(null);
@@ -399,9 +452,9 @@ export function TeacherMarks() {
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
-                <th className="p-4 font-medium">Internal /40</th>
-                <th className="p-4 font-medium">Assignment /10</th>
-                <th className="p-4 font-medium">Total /50</th>
+                <th className="p-4 font-medium">Internal /{INTERNAL_MARKS_MAX}</th>
+                <th className="p-4 font-medium">Assignment /{ASSIGNMENT_MARKS_MAX}</th>
+                <th className="p-4 font-medium">Total /{maxTotal}</th>
                 <th className="p-4 font-medium text-right">Action</th>
               </tr>
             </thead>
@@ -420,7 +473,7 @@ export function TeacherMarks() {
                       <input
                         type="number"
                         min={0}
-                        max={40}
+                        max={INTERNAL_MARKS_MAX}
                         step={0.5}
                         value={m.internal}
                         onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, internal: +e.target.value } })}
@@ -431,14 +484,14 @@ export function TeacherMarks() {
                       <input
                         type="number"
                         min={0}
-                        max={10}
+                        max={ASSIGNMENT_MARKS_MAX}
                         step={0.5}
                         value={m.assignment}
                         onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, assignment: +e.target.value } })}
                         className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                       />
                     </td>
-                    <td className="p-4 font-semibold">{m.internal + m.assignment}/50</td>
+                    <td className={cn("p-4 font-semibold", m.internal + m.assignment > maxTotal && "text-rose-600")}>{m.internal + m.assignment}/{maxTotal}</td>
                     <td className="p-4 text-right">
                       <Button variant="primary" disabled={savingId === s.id} onClick={() => saveMarks(s.id)}>
                         <CheckCircle2 className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving…" : "Save"}
@@ -460,9 +513,25 @@ export function TeacherMarks() {
 
 export function TeacherStudents() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [department, setDepartment] = useState("");
   const [filter, setFilter] = useState<"all" | "at-risk">("all");
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchTeacherStudents().then((s) => { setStudents(s.filter(x => x.department === "Computer Science")); setLoading(false); }); }, []);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetchTeacherStudents(),
+      api.teacherProfile().catch(() => null),
+    ]).then(([list, profile]) => {
+      setStudents(list);
+      setDepartment(profile?.department || list[0]?.department || "");
+      setLoading(false);
+    }).catch((e) => {
+      setError(e.message || "Failed to load students");
+      setLoading(false);
+    });
+  }, []);
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
 
   const list = students.map((s) => ({ s, e: getStudentEligibility(s) }));
@@ -470,7 +539,7 @@ export function TeacherStudents() {
 
   return (
     <div>
-      <PageHeader title="Student Monitoring" subtitle="Track attendance, marks and eligibility (live from MySQL)"
+      <PageHeader title="Student Monitoring" subtitle={department ? `${department} students (live from MySQL)` : "Track attendance, marks and eligibility (live from MySQL)"}
         actions={
           <div className="flex gap-2">
             {(["all", "at-risk"] as const).map((f) => (
@@ -481,8 +550,17 @@ export function TeacherStudents() {
           </div>
         }
       />
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg text-sm bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">{error}</div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(({ s, e }) => (
+        {filtered.length === 0 ? (
+          <Card className="p-10 text-center text-slate-500 col-span-full">
+            {students.length === 0 ? "No students found in your department." : "No students match this filter."}
+          </Card>
+        ) : filtered.map(({ s, e }) => (
           <Card key={s.id} className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3 mb-4">
               <img src={s.photo} alt="" className="w-14 h-14 rounded-full bg-slate-200" />
@@ -494,7 +572,7 @@ export function TeacherStudents() {
             </div>
             <div className="space-y-3">
               <ProgressRow label="Attendance" value={s.attendance} threshold={75} />
-              <ProgressRow label="Internals" value={(s.internalMarks / 40) * 100} threshold={40} unit="/40" raw={s.internalMarks} />
+              <ProgressRow label="Internals" value={(s.internalMarks / INTERNAL_MARKS_MAX) * 100} threshold={40} unit={`/${INTERNAL_MARKS_MAX}`} raw={s.internalMarks} />
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">SGPA</p><p className="font-bold">{s.previousResult}</p></div>
                 <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">Backlogs</p><p className={cn("font-bold", s.backlogs > 0 ? "text-rose-600" : "text-emerald-600")}>{s.backlogs}</p></div>
@@ -525,6 +603,8 @@ function ProgressRow({ label, value, threshold, unit = "%", raw }: { label: stri
 }
 
 export function TeacherFaceVerify() {
+  const [exams, setExams] = useState<{ id: number; subject_name: string; subject_code: string; exam_date: string }[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState<number | "">("");
   const [capturing, setCapturing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -537,18 +617,25 @@ export function TeacherFaceVerify() {
     message?: string;
   } | null>(null);
 
+  useEffect(() => {
+    api.teacherInvigilatorExams()
+      .then((list: any[]) => {
+        setExams(list || []);
+        if (list?.length === 1) setSelectedExamId(list[0].id);
+      })
+      .catch(() => setExams([]));
+  }, []);
+
   const verifyCapture = async (imageBase64: string) => {
+    if (!selectedExamId) {
+      setError("Select an exam you are assigned to invigilate.");
+      return;
+    }
     setBusy(true);
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`${API_BASE}/api/teacher/face-verify`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ image_base64: imageBase64 }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok && !data.verified) throw new Error(data.detail || data.message || "Verification failed");
+      const data = await api.teacherFaceVerify(imageBase64, Number(selectedExamId)) as any;
       setResult({
         matched: !!data.verified,
         confidence: data.confidence || 0,
@@ -568,14 +655,27 @@ export function TeacherFaceVerify() {
 
   return (
     <div>
-      <PageHeader title="Face Verification" subtitle="Verify students at exam entry using live face matching" />
+      <PageHeader title="Face Verification" subtitle="Verify students at exam entry as assigned invigilator" />
 
       <Card className="p-5 mb-6 bg-slate-50 dark:bg-slate-900/40">
         <h3 className="font-semibold mb-2">How it works</h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Students must enroll their face from profile photo or the student Face Verification page.
-          Capture the student&apos;s live face here and the system will match them against enrolled students in your department.
+          Admin assigns you as invigilator when scheduling an exam. Select that exam below, then capture the student&apos;s live face to verify their identity against enrolled students seated for the exam.
         </p>
+      </Card>
+
+      <Card className="p-5 mb-6">
+        <Field label="Exam Session">
+          <Select value={selectedExamId} onChange={(e) => setSelectedExamId(e.target.value ? Number(e.target.value) : "")}>
+            <option value="">Select exam…</option>
+            {exams.map((e) => (
+              <option key={e.id} value={e.id}>{e.subject_code} — {e.subject_name} ({e.exam_date})</option>
+            ))}
+          </Select>
+        </Field>
+        {exams.length === 0 && (
+          <p className="text-sm text-amber-600 mt-2">No exams assigned to you as invigilator yet.</p>
+        )}
       </Card>
 
       {error && (

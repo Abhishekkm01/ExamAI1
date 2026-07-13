@@ -5,6 +5,9 @@ from rest_framework import status
 from django.db.models import Q
 from .models import User, Student, Exam, Notification, ChatbotLog, HallTicket, SeatingArrangement
 from .seating_service import build_qr_content, room_display_name
+from .exam_service import get_exam_subjects, subjects_subject_codes, resolve_hall_ticket_exam
+from .marks_constants import INTERNAL_MARKS_MAX
+from .hall_ticket_service import merge_hall_ticket_subjects, sync_hall_ticket_subjects, refresh_hall_ticket_qr
 from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, StudentProfileUpdateSerializer, PayFeeSerializer
 from .permissions import IsStudent
 from .auth_utils import verify_password, get_password_hash
@@ -26,9 +29,30 @@ from ai_modules.eligibility_model import eligibility_ai
 
 def _hall_ticket_payload(student, user):
     """Build hall ticket response from DB record, seating, or defaults."""
-    if hasattr(student, 'hall_ticket') and student.hall_ticket.is_active:
-        ht = student.hall_ticket
-        exam = ht.exam
+    ht = getattr(student, 'hall_ticket', None)
+    if ht and ht.is_active:
+        exam = resolve_hall_ticket_exam(student, ht)
+        if not exam:
+            return None
+        seating = SeatingArrangement.objects.filter(
+            student=student, exam=exam,
+        ).select_related('room').first()
+        room = ht.room
+        seat_number = ht.seat_number
+        if seating and not ht.subject_assignments.exists():
+            seat_number = seating.seat_number
+            room = room_display_name(seating.room)
+        if not ht.subject_assignments.exists():
+            subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
+        else:
+            subjects = merge_hall_ticket_subjects(ht, exam)
+        subject_codes = subjects_subject_codes(subjects)
+        qr = build_qr_content(
+            ht.hall_ticket_no, student.roll_no, exam.subject_code,
+            subjects[0]['seat_number'] if subjects else seat_number,
+            subjects[0]['room'] if subjects else room,
+            subject_codes=subject_codes,
+        )
         return {
             'is_eligible': True,
             'hall_ticket_no': ht.hall_ticket_no,
@@ -44,34 +68,38 @@ def _hall_ticket_payload(student, user):
                 'date': exam.exam_date,
                 'time': exam.exam_time,
                 'duration': exam.duration,
-                'room': ht.room,
+                'room': room,
             },
-            'seat_number': ht.seat_number,
-            'qr_code_content': ht.qr_code_content,
+            'subjects': subjects,
+            'seat_number': subjects[0]['seat_number'] if subjects else seat_number,
+            'qr_code_content': qr,
         }
 
-    exam = Exam.objects.filter(department=student.department, is_deleted=False).first()
-    if not exam:
-        exam = Exam.objects.filter(is_deleted=False).first()
+    exam = resolve_hall_ticket_exam(student)
     if not exam:
         return None
 
     seating = SeatingArrangement.objects.filter(
-        student=student, exam=exam
+        student=student, exam=exam,
     ).select_related('room').first()
 
     hall_ticket_no = f"HT2026{student.roll_no}"
     if seating:
         seat_number = seating.seat_number
         room = room_display_name(seating.room)
-        qr = build_qr_content(
-            hall_ticket_no, student.roll_no, exam.subject_code,
-            seat_number, seating.room.room_code
-        )
     else:
         seat_number = f"S{100 + student.id}"
         room = exam.room
-        qr = build_qr_content(hall_ticket_no, student.roll_no, exam.subject_code, seat_number, room)
+
+    subjects = [
+        {**subj, 'seat_number': seat_number, 'room': room}
+        for subj in get_exam_subjects(exam)
+    ]
+    subject_codes = subjects_subject_codes(subjects)
+    qr = build_qr_content(
+        hall_ticket_no, student.roll_no, exam.subject_code,
+        seat_number, room, subject_codes=subject_codes,
+    )
 
     return {
         'is_eligible': True,
@@ -90,6 +118,7 @@ def _hall_ticket_payload(student, user):
             'duration': exam.duration,
             'room': room,
         },
+        'subjects': subjects,
         'seat_number': seat_number,
         'qr_code_content': qr,
     }
@@ -288,7 +317,7 @@ def eligibility(request):
         'ai_probability': ai['probability'],
         'checks': {
             'attendance': s.attendance_percentage >= 75.0,
-            'internals': (s.internal_marks / 40.0) >= 0.4,
+            'internals': (s.internal_marks / INTERNAL_MARKS_MAX) * 100 >= 40,
             'backlogs': s.backlogs == 0,
             'fee': s.fee_paid,
             'previous_sgpa': s.previous_result >= 5.0
@@ -306,7 +335,9 @@ def get_hallticket(request):
         return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
     
     try:
-        s = Student.objects.get(user_id=user.id)
+        s = Student.objects.select_related(
+            'user', 'hall_ticket', 'hall_ticket__exam',
+        ).prefetch_related('hall_ticket__subject_assignments').get(user_id=user.id)
     except Student.DoesNotExist:
         return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
     
@@ -341,6 +372,7 @@ def download_hallticket(request):
         return Response({'detail': 'No exam found'}, status=status.HTTP_404_NOT_FOUND)
 
     exam_data = payload['exam']
+    subjects = payload.get('subjects') or [exam_data]
     cfg = get_system_settings()
     out = io.BytesIO()
     p = canvas.Canvas(out, pagesize=letter)
@@ -353,11 +385,15 @@ def download_hallticket(request):
     p.drawString(100, 645, f"Student: {user.name}")
     p.drawString(100, 620, f"Roll Number: {s.roll_no}")
     p.drawString(100, 595, f"Department: {s.department} | Semester {s.semester}")
-    p.drawString(100, 560, f"Subject: {exam_data['subject_name']} ({exam_data['subject_code']})")
-    p.drawString(100, 535, f"Schedule: {exam_data['date']} at {exam_data['time']} | Duration: {exam_data['duration']}")
-    p.drawString(100, 510, f"Exam Hall: {exam_data['room']} | Seat: {payload['seat_number']}")
-    p.drawString(100, 460, f"QR: {payload['qr_code_content']}")
-    p.drawString(100, 420, "Controller of Examinations (Digitally Signed)")
+    y = 570
+    p.drawString(100, y, "Subjects:")
+    y -= 18
+    for subj in subjects:
+        p.drawString(110, y, f"- {subj['subject_name']} ({subj['subject_code']}) — {subj.get('exam_date', exam_data['date'])} at {subj.get('exam_time', exam_data['time'])}")
+        y -= 16
+    p.drawString(100, y - 4, f"Exam Hall: {exam_data['room']} | Seat: {payload['seat_number']}")
+    p.drawString(100, y - 28, f"QR: {payload['qr_code_content']}")
+    p.drawString(100, y - 68, "Controller of Examinations (Digitally Signed)")
     p.showPage()
     p.save()
     out.seek(0)

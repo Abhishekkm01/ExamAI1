@@ -113,6 +113,11 @@ class Exam(models.Model):
     duration = models.CharField(max_length=50, default='3 hours')
     room = models.CharField(max_length=100)
     total_marks = models.IntegerField(default=100)
+    requires_face_verification = models.BooleanField(default=True)
+    invigilator = models.ForeignKey(
+        'Teacher', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invigilated_exams',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
@@ -124,6 +129,26 @@ class Exam(models.Model):
             models.Index(fields=['department']),
             models.Index(fields=['is_deleted']),
             models.Index(fields=['department', 'semester'], name='idx_exam_dept_sem'),
+        ]
+
+
+class ExamSubject(models.Model):
+    """Additional subjects on a single hall ticket / exam session."""
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='subjects')
+    subject_code = models.CharField(max_length=50)
+    subject_name = models.CharField(max_length=255)
+    exam_date = models.CharField(max_length=50, blank=True, default='')
+    exam_time = models.CharField(max_length=50, blank=True, default='')
+    duration = models.CharField(max_length=50, blank=True, default='')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = 'exam_subjects'
+        ordering = ['sort_order', 'id']
+        unique_together = [('exam', 'subject_code')]
+        indexes = [
+            models.Index(fields=['exam']),
+            models.Index(fields=['subject_code']),
         ]
 
 
@@ -178,6 +203,36 @@ class HallTicket(models.Model):
         ]
 
 
+class HallTicketSubject(models.Model):
+    """Per-subject seat and hall assignment on a student's hall ticket."""
+    hall_ticket = models.ForeignKey(
+        HallTicket, on_delete=models.CASCADE, related_name='subject_assignments',
+    )
+    exam = models.ForeignKey(
+        Exam, on_delete=models.CASCADE, related_name='hall_ticket_subject_assignments',
+    )
+    subject_code = models.CharField(max_length=50)
+    subject_name = models.CharField(max_length=255)
+    exam_date = models.CharField(max_length=50, blank=True, default='')
+    exam_time = models.CharField(max_length=50, blank=True, default='')
+    duration = models.CharField(max_length=50, blank=True, default='')
+    seat_number = models.CharField(max_length=50)
+    room = models.CharField(max_length=100)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'hall_ticket_subjects'
+        ordering = ['sort_order', 'id']
+        unique_together = [('hall_ticket', 'subject_code')]
+        indexes = [
+            models.Index(fields=['hall_ticket']),
+            models.Index(fields=['subject_code']),
+            models.Index(fields=['exam', 'subject_code']),
+        ]
+
+
 class SeatingRoom(models.Model):
     room_code = models.CharField(max_length=50, unique=True, db_index=True)
     room_name = models.CharField(max_length=255)
@@ -216,7 +271,10 @@ class SeatingArrangement(models.Model):
 
     class Meta:
         db_table = 'seating_arrangements'
-        unique_together = [('exam', 'student')]
+        unique_together = [
+            ('exam', 'student'),
+            ('exam', 'room', 'seat_row', 'seat_column'),
+        ]
         indexes = [
             models.Index(fields=['exam']),
             models.Index(fields=['room']),

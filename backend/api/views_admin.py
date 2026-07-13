@@ -31,6 +31,15 @@ from rest_framework.decorators import permission_classes as rf_permission_classe
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from ai_modules.eligibility_model import eligibility_ai
 from .settings_service import get_system_settings, settings_to_dict, refresh_all_eligibility, passes_eligibility
+from .exam_service import (
+    create_exam_record, update_exam_record, exam_to_dict,
+    get_exam_subjects, subjects_subject_codes, resolve_hall_ticket_exam,
+)
+from .hall_ticket_service import (
+    merge_hall_ticket_subjects, sync_hall_ticket_subjects,
+    update_hall_ticket_subjects, refresh_hall_ticket_qr,
+    detect_ticket_seat_conflicts, SeatConflictError,
+)
 from .marks_service import update_student_marks
 
 
@@ -266,12 +275,15 @@ def update_student(request, sid):
         setattr(s, field, value)
 
     if 'internal_marks' in data or 'assignment_marks' in data:
-        update_student_marks(
-            s,
-            subject_code,
-            internal_marks=data.get('internal_marks', s.internal_marks),
-            assignment_marks=data.get('assignment_marks', s.assignment_marks),
-        )
+        try:
+            update_student_marks(
+                s,
+                subject_code,
+                internal_marks=data.get('internal_marks', s.internal_marks),
+                assignment_marks=data.get('assignment_marks', s.assignment_marks),
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     else:
         refresh_student_eligibility(s)
 
@@ -398,22 +410,8 @@ def delete_teacher(request, tid):
 @rf_permission_classes([IsAdmin])
 def list_exams(request):
     """List all exams"""
-    exams = Exam.objects.filter(is_deleted=False)
-    data = []
-    for e in exams:
-        data.append({
-            'id': e.id,
-            'subject_code': e.subject_code,
-            'subject_name': e.subject_name,
-            'department': e.department,
-            'semester': e.semester,
-            'exam_date': e.exam_date,
-            'exam_time': e.exam_time,
-            'duration': e.duration,
-            'room': e.room,
-            'total_marks': e.total_marks
-        })
-    return Response(data)
+    exams = Exam.objects.filter(is_deleted=False).select_related('invigilator__user').prefetch_related('subjects')
+    return Response([exam_to_dict(e) for e in exams])
 
 
 @api_view(['POST'])
@@ -423,7 +421,10 @@ def create_exam(request):
     """Create a new exam"""
     serializer = ExamCreateSerializer(data=request.data)
     if serializer.is_valid():
-        exam = Exam.objects.create(**serializer.validated_data)
+        try:
+            exam = create_exam_record(serializer.validated_data)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Exam scheduled', 'exam_id': exam.id}, 
                        status=status.HTTP_201_CREATED)
     
@@ -450,22 +451,14 @@ def update_exam(request, eid):
     ).exclude(id=exam.id).exists():
         return Response({'detail': 'Subject code already in use'}, status=status.HTTP_400_BAD_REQUEST)
 
-    for field, value in data.items():
-        setattr(exam, field, value)
-    exam.save()
+    try:
+        update_exam_record(exam, data)
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response({
         'message': 'Exam updated',
-        'id': exam.id,
-        'subject_code': exam.subject_code,
-        'subject_name': exam.subject_name,
-        'department': exam.department,
-        'semester': exam.semester,
-        'exam_date': exam.exam_date,
-        'exam_time': exam.exam_time,
-        'duration': exam.duration,
-        'room': exam.room,
-        'total_marks': exam.total_marks,
+        **exam_to_dict(exam),
     })
 
 
@@ -533,9 +526,7 @@ def generate_halltickets(request):
     count = 0
 
     for s in eligible:
-        exam = Exam.objects.filter(department=s.department, is_deleted=False).first()
-        if not exam:
-            exam = Exam.objects.filter(is_deleted=False).first()
+        exam = resolve_hall_ticket_exam(s, getattr(s, 'hall_ticket', None))
         if not exam:
             continue
 
@@ -545,20 +536,35 @@ def generate_halltickets(request):
             count += 1
             continue
 
-        if hasattr(s, 'hall_ticket') and s.hall_ticket.is_active:
-            continue
-
+        subjects = get_exam_subjects(exam)
+        subject_codes = subjects_subject_codes(subjects)
         hall_ticket_no = f"HT2026{s.roll_no}"
         seat_number = f"S{100 + s.id}"
         room = exam.room
-        HallTicket.objects.create(
+
+        if hasattr(s, 'hall_ticket') and s.hall_ticket.is_active:
+            ht = s.hall_ticket
+            ht.exam = exam
+            ht.seat_number = ht.seat_number or seat_number
+            ht.room = ht.room or room
+            sync_hall_ticket_subjects(ht, exam, ht.seat_number, ht.room)
+            refresh_hall_ticket_qr(ht, exam, s)
+            count += 1
+            continue
+
+        ht = HallTicket.objects.create(
             hall_ticket_no=hall_ticket_no,
             student=s,
             exam=exam,
             seat_number=seat_number,
             room=room,
-            qr_code_content=build_qr_content(hall_ticket_no, s.roll_no, exam.subject_code, seat_number, room),
+            qr_code_content=build_qr_content(
+                hall_ticket_no, s.roll_no, exam.subject_code,
+                seat_number, room, subject_codes=subject_codes,
+            ),
         )
+        sync_hall_ticket_subjects(ht, exam, seat_number, room)
+        refresh_hall_ticket_qr(ht, exam, s)
         count += 1
 
     return Response({'message': f'Generated {count} hall tickets.'})
@@ -568,7 +574,7 @@ def generate_halltickets(request):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def update_hallticket(request, ht_id):
-    """Admin: update seat number and hall/room on a hall ticket."""
+    """Admin: update seat/hall per subject on a hall ticket."""
     try:
         ht = HallTicket.objects.select_related('student', 'exam').get(id=ht_id, is_active=True)
     except HallTicket.DoesNotExist:
@@ -579,39 +585,52 @@ def update_hallticket(request, ht_id):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
-    if 'seat_number' in data:
-        ht.seat_number = data['seat_number']
-    if 'room' in data:
-        ht.room = data['room']
+    exam = resolve_hall_ticket_exam(ht.student, ht)
+    if not exam:
+        return Response({'detail': 'No active exam found for this hall ticket'}, status=status.HTTP_400_BAD_REQUEST)
 
-    ht.qr_code_content = build_qr_content(
-        ht.hall_ticket_no, ht.student.roll_no, ht.exam.subject_code,
-        ht.seat_number, ht.room
-    )
-    ht.save()
+    auto_resolve = data.get('auto_resolve_seats', False)
+    resolved = []
+    try:
+        if 'subjects' in data and data['subjects']:
+            subjects, resolved = update_hall_ticket_subjects(
+                ht, exam, data['subjects'], auto_resolve=auto_resolve,
+            )
+        else:
+            if 'seat_number' in data:
+                ht.seat_number = data['seat_number']
+            if 'room' in data:
+                ht.room = data['room']
+            ht.save()
+            subjects = sync_hall_ticket_subjects(ht, exam, ht.seat_number, ht.room)
+    except SeatConflictError as e:
+        return Response({
+            'detail': str(e),
+            'conflicts': e.conflicts,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    refresh_hall_ticket_qr(ht, exam, ht.student)
 
     seating = SeatingArrangement.objects.filter(
-        student=ht.student, exam=ht.exam
+        student=ht.student, exam=exam,
     ).select_related('room').first()
-    if seating and 'seat_number' in data:
-        seating.seat_number = data['seat_number']
+    if seating and subjects:
+        seating.seat_number = subjects[0]['seat_number']
         seating.save()
-    if seating and 'room' in data:
-        room = SeatingRoom.objects.filter(
-            Q(room_name__icontains=data['room']) | Q(room_code__icontains=data['room']),
-            is_active=True,
-        ).first()
-        if room:
-            seating.room = room
-            seating.save()
+
+    msg = 'Hall ticket updated'
+    if resolved:
+        msg = f"Hall ticket updated — {len(resolved)} seat conflict(s) auto-assigned to available seats"
 
     return Response({
         'id': ht.id,
         'hall_ticket_no': ht.hall_ticket_no,
         'seat_number': ht.seat_number,
         'room': ht.room,
+        'subjects': subjects,
         'qr_code_content': ht.qr_code_content,
-        'message': 'Hall ticket updated',
+        'resolved_conflicts': resolved,
+        'message': msg,
     })
 
 
@@ -620,9 +639,21 @@ def update_hallticket(request, ht_id):
 @rf_permission_classes([IsAdmin])
 def list_halltickets(request):
     """List all hall tickets"""
-    hts = HallTicket.objects.filter(is_active=True).select_related('student', 'student__user', 'exam')
+    hts = HallTicket.objects.filter(is_active=True).select_related(
+        'student', 'student__user', 'exam',
+    ).prefetch_related('subject_assignments')
     data = []
     for h in hts:
+        exam = resolve_hall_ticket_exam(h.student, h)
+        if exam:
+            subjects = merge_hall_ticket_subjects(h, exam)
+            if not h.subject_assignments.exists():
+                sync_hall_ticket_subjects(h, exam, h.seat_number, h.room)
+                subjects = merge_hall_ticket_subjects(h, exam)
+            seat_conflicts = detect_ticket_seat_conflicts(h, exam)
+        else:
+            subjects = []
+            seat_conflicts = []
         data.append({
             'id': h.id,
             'hall_ticket_no': h.hall_ticket_no,
@@ -633,9 +664,15 @@ def list_halltickets(request):
             'photo': h.student.photo,
             'seat_number': h.seat_number,
             'room': h.room,
-            'exam': h.exam.subject_name,
-            'exam_id': h.exam_id,
-            'subject_code': h.exam.subject_code,
+            'exam': exam.subject_name if exam else h.exam.subject_name,
+            'exam_id': exam.id if exam else h.exam_id,
+            'subject_code': exam.subject_code if exam else h.exam.subject_code,
+            'exam_date': exam.exam_date if exam else h.exam.exam_date,
+            'exam_time': exam.exam_time if exam else h.exam.exam_time,
+            'duration': exam.duration if exam else h.exam.duration,
+            'subjects': subjects,
+            'seat_conflicts': seat_conflicts,
+            'has_seat_conflict': len(seat_conflicts) > 0,
             'qr_code_content': h.qr_code_content,
         })
     return Response(data)

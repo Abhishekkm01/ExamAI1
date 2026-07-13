@@ -23,6 +23,49 @@ type HallTicketExam = {
   room: string;
 };
 
+type HallTicketSubject = {
+  subject_code?: string;
+  subjectCode?: string;
+  subject_name?: string;
+  subjectName?: string;
+  exam_date?: string;
+  date?: string;
+  exam_time?: string;
+  time?: string;
+  duration?: string;
+  seat_number?: string;
+  seatNumber?: string;
+  room?: string;
+};
+
+function subjectLabel(s: HallTicketSubject) {
+  const code = s.subject_code || s.subjectCode || "";
+  const name = s.subject_name || s.subjectName || "";
+  const date = s.exam_date || s.date || "";
+  const time = s.exam_time || s.time || "";
+  const duration = s.duration || "";
+  return `${name} (${code}) — ${date} at ${time}${duration ? ` • ${duration}` : ""}`;
+}
+
+function subjectsHtml(subjects: HallTicketSubject[] | undefined, exam: HallTicketExam): string {
+  const list = subjects?.length ? subjects : [{ subject_code: exam.subjectCode, subject_name: exam.subjectName, exam_date: exam.date, exam_time: exam.time, duration: exam.duration }];
+  if (!list.length) return "";
+  const header = list.length > 1
+    ? `<div class="info-row"><span class="l">Subjects</span><span class="v">${list.length} papers</span></div>`
+    : "";
+  const rows = list.map((s, idx) => {
+    const label = list.length > 1 ? `Subject ${idx + 1}` : "Subject";
+    const seat = s.seat_number || s.seatNumber || "";
+    const room = s.room || "";
+    const detail = subjectLabel(s).replace(/</g, "&lt;");
+    const seating = (seat || room)
+      ? `<div class="info-row sub"><span class="l">Hall / Seat</span><span class="v">${room || "—"} • ${seat || "—"}</span></div>`
+      : "";
+    return `<div class="info-row"><span class="l">${label}</span><span class="v">${detail}</span></div>${seating}`;
+  }).join("");
+  return header + rows;
+}
+
 export const DEFAULT_HALL_TICKET_EXAM = {
   subjectCode: "CS301",
   subjectName: "Data Structures & Algorithms",
@@ -40,10 +83,12 @@ export function downloadHallTicket(
   room = DEFAULT_HALL_TICKET_EXAM.room,
   seatNumber?: string,
   qrContent?: string,
+  subjects?: HallTicketSubject[],
+  examOverride?: Partial<HallTicketExam>,
 ) {
-  const exam = { ...DEFAULT_HALL_TICKET_EXAM, room };
+  const exam = { ...DEFAULT_HALL_TICKET_EXAM, room, ...examOverride };
   const seat = seatNumber || `S${100 + parseInt(student.id.replace(/\D/g, ""), 10)}`;
-  openHallTicketPrintWindow(student, hallTicketNo, universityName, academicYear, exam, seat, qrContent);
+  openHallTicketPrintWindow(student, hallTicketNo, universityName, academicYear, exam, seat, qrContent, subjects);
 }
 
 export function openHallTicketPrintWindow(
@@ -54,6 +99,7 @@ export function openHallTicketPrintWindow(
   exam: HallTicketExam,
   seat: string,
   qrContent?: string,
+  subjects?: HallTicketSubject[],
 ) {
   const qrValue = qrContent || JSON.stringify({
     htNo: hallTicketNo,
@@ -104,10 +150,7 @@ body{font-family:system-ui,-apple-system,sans-serif;padding:40px;background:#fff
         <div class="info-row"><span class="l">Roll Number</span><span class="v">${student.rollNo}</span></div>
         <div class="info-row"><span class="l">Department</span><span class="v">${student.department}</span></div>
         <div class="info-row"><span class="l">Semester</span><span class="v">Semester ${student.semester}</span></div>
-        <div class="info-row"><span class="l">Subject</span><span class="v">${exam.subjectName}</span></div>
-        <div class="info-row"><span class="l">Subject Code</span><span class="v">${exam.subjectCode}</span></div>
-        <div class="info-row"><span class="l">Date & Time</span><span class="v">${exam.date} at ${exam.time}</span></div>
-        <div class="info-row"><span class="l">Duration</span><span class="v">${exam.duration}</span></div>
+        ${subjectsHtml(subjects, exam)}
         <div class="info-row bold"><span class="l">Exam Hall</span><span class="v">${exam.room}</span></div>
         <div class="info-row bold"><span class="l">Seat Number</span><span class="v">${seat}</span></div>
       </div>
@@ -147,8 +190,18 @@ export function buildSimpleHallTicketHtml(
   room: string,
   seat: string,
   qrContent: string,
-): string {
+  subjects?: HallTicketSubject[],
+) {
   const subtitle = examHeaderSubtitle(academicYear);
+  const subjectRows = (subjects?.length ? subjects : [{ subject_name: examName, subject_code: examCode, exam_date: date, exam_time: time, duration, room, seat_number: seat }])
+    .map((s, idx) => {
+      const subjSeat = s.seat_number || s.seatNumber || seat;
+      const subjRoom = s.room || room;
+      const label = (subjects?.length || 0) > 1 ? `Subject ${idx + 1}` : "Subject";
+      return `<div class="r"><span class="l">${label}</span><span class="v">${subjectLabel({ ...s, seat_number: subjSeat, room: subjRoom }).replace(/</g, "&lt;")}</span></div>`
+        + `<div class="r"><span class="l">Hall / Seat</span><span class="v">${subjRoom} • ${subjSeat}</span></div>`;
+    })
+    .join("");
   return `<!DOCTYPE html><html><head><title>Hall Ticket</title>
 <style>body{font-family:sans-serif;padding:30px}.card{border:3px solid #2563eb;border-radius:12px;max-width:700px;margin:0 auto;overflow:hidden}.h{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;padding:20px}.b{padding:25px}.r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.r .l{color:#64748b}.r .v{font-weight:600}</style></head><body>
 <div class="card"><div class="h"><h2>${universityName}</h2><p>${subtitle}</p></div>
@@ -157,9 +210,7 @@ export function buildSimpleHallTicketHtml(
 <div class="r"><span class="l">Student</span><span class="v">${studentName}</span></div>
 <div class="r"><span class="l">Roll No</span><span class="v">${rollNo}</span></div>
 <div class="r"><span class="l">Department</span><span class="v">${department}</span></div>
-<div class="r"><span class="l">Subject</span><span class="v">${examName} (${examCode})</span></div>
-<div class="r"><span class="l">Date / Time</span><span class="v">${date} at ${time}</span></div>
-<div class="r"><span class="l">Duration</span><span class="v">${duration}</span></div>
+${subjectRows}
 <div class="r"><span class="l">Exam Hall</span><span class="v">${room}</span></div>
 <div class="r"><span class="l">Seat Number</span><span class="v">${seat}</span></div>
 <p style="text-align:center;margin-top:20px;color:#475569">QR Code: ${qrContent}</p>

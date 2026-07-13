@@ -214,7 +214,21 @@ def update_arrangement(request, arrangement_id):
     
     serializer = SeatingArrangementUpdateSerializer(data=request.data, partial=True)
     if serializer.is_valid():
-        for field, value in serializer.validated_data.items():
+        data = serializer.validated_data
+        room_id = data.get('room_id', arrangement.room_id)
+        seat_row = data.get('seat_row', arrangement.seat_row)
+        seat_column = data.get('seat_column', arrangement.seat_column)
+        if SeatingArrangement.objects.filter(
+            exam_id=arrangement.exam_id,
+            room_id=room_id,
+            seat_row=seat_row,
+            seat_column=seat_column,
+        ).exclude(id=arrangement.id).exists():
+            return Response(
+                {'detail': 'This seat is already assigned to another student'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for field, value in data.items():
             if field == 'room_id':
                 arrangement.room_id = value
             else:

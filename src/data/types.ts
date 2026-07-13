@@ -40,6 +40,14 @@ export interface Teacher {
   photo: string;
 }
 
+export interface ExamSubject {
+  subjectCode: string;
+  subjectName: string;
+  date?: string;
+  time?: string;
+  duration?: string;
+}
+
 export interface Exam {
   id: string;
   subjectCode: string;
@@ -51,6 +59,10 @@ export interface Exam {
   duration: string;
   room: string;
   totalMarks: number;
+  requiresFaceVerification?: boolean;
+  invigilatorId?: number | null;
+  invigilatorName?: string | null;
+  subjects?: ExamSubject[];
 }
 
 export interface Notification {

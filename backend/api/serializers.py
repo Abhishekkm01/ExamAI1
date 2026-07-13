@@ -180,6 +180,14 @@ class LoginSerializer(serializers.Serializer):
         return data
 
 
+class ExamSubjectInputSerializer(serializers.Serializer):
+    subject_code = serializers.CharField()
+    subject_name = serializers.CharField()
+    exam_date = serializers.CharField(required=False, allow_blank=True)
+    exam_time = serializers.CharField(required=False, allow_blank=True)
+    duration = serializers.CharField(required=False, allow_blank=True)
+
+
 class SetupExamSerializer(serializers.Serializer):
     subject_code = serializers.CharField()
     subject_name = serializers.CharField()
@@ -190,9 +198,33 @@ class SetupExamSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
+    requires_face_verification = serializers.BooleanField(default=True)
+    invigilator_id = serializers.IntegerField(required=False, allow_null=True)
+    subjects = ExamSubjectInputSerializer(many=True, required=False)
 
     def validate_department(self, value):
         return validate_department_name(value)
+
+    def validate(self, data):
+        subjects = data.get('subjects') or []
+        if subjects:
+            codes = [s['subject_code'] for s in subjects]
+            if len(codes) != len(set(codes)):
+                raise serializers.ValidationError({'subjects': 'Duplicate subject codes are not allowed.'})
+            primary = subjects[0]
+            data['subject_code'] = primary['subject_code']
+            data['subject_name'] = primary['subject_name']
+            if primary.get('exam_date'):
+                data['exam_date'] = primary['exam_date']
+            if primary.get('exam_time'):
+                data['exam_time'] = primary['exam_time']
+            if primary.get('duration'):
+                data['duration'] = primary['duration']
+        if data.get('requires_face_verification') and not data.get('invigilator_id'):
+            raise serializers.ValidationError({
+                'invigilator_id': 'An invigilator must be assigned when face verification is required.',
+            })
+        return data
 
 
 class SendNotificationSerializer(serializers.Serializer):
@@ -227,8 +259,29 @@ class StudentCreateSerializer(serializers.Serializer):
 class MarksUpdateSerializer(serializers.Serializer):
     student_id = serializers.IntegerField()
     subject_code = serializers.CharField(default='CS301')
-    internal_marks = serializers.FloatField(min_value=0, max_value=40)
-    assignment_marks = serializers.FloatField(min_value=0, max_value=10)
+    internal_marks = serializers.FloatField(min_value=0)
+    assignment_marks = serializers.FloatField(min_value=0)
+
+    def validate(self, data):
+        from .models import Exam
+        from .marks_constants import INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX, INTERNAL_ASSIGNMENT_TOTAL
+        internal = data['internal_marks']
+        assignment = data['assignment_marks']
+        total = internal + assignment
+        if internal > INTERNAL_MARKS_MAX:
+            raise serializers.ValidationError(
+                f'Internal marks ({internal}) cannot exceed {INTERNAL_MARKS_MAX}.'
+            )
+        if assignment > ASSIGNMENT_MARKS_MAX:
+            raise serializers.ValidationError(
+                f'Assignment marks ({assignment}) cannot exceed {ASSIGNMENT_MARKS_MAX}.'
+            )
+        if total > INTERNAL_ASSIGNMENT_TOTAL:
+            raise serializers.ValidationError(
+                f'Total marks ({total}) cannot exceed {INTERNAL_ASSIGNMENT_TOTAL} '
+                f'(internal {INTERNAL_MARKS_MAX} + assignment {ASSIGNMENT_MARKS_MAX}).'
+            )
+        return data
 
 
 class StudentUpdateSerializer(serializers.Serializer):
@@ -266,9 +319,27 @@ class ExamCreateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
+    requires_face_verification = serializers.BooleanField(default=True)
+    invigilator_id = serializers.IntegerField(required=False, allow_null=True)
+    subjects = ExamSubjectInputSerializer(many=True, required=False)
 
     def validate_department(self, value):
         return validate_department_name(value)
+
+    def validate(self, data):
+        subjects = data.get('subjects') or []
+        if subjects:
+            codes = [s['subject_code'] for s in subjects]
+            if len(codes) != len(set(codes)):
+                raise serializers.ValidationError({'subjects': 'Duplicate subject codes are not allowed.'})
+            primary = subjects[0]
+            data['subject_code'] = primary['subject_code']
+            data['subject_name'] = primary['subject_name']
+        if data.get('requires_face_verification') and not data.get('invigilator_id'):
+            raise serializers.ValidationError({
+                'invigilator_id': 'An invigilator must be assigned when face verification is required.',
+            })
+        return data
 
 
 class ExamUpdateSerializer(serializers.Serializer):
@@ -281,11 +352,22 @@ class ExamUpdateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField(required=False)
     total_marks = serializers.IntegerField(required=False)
+    requires_face_verification = serializers.BooleanField(required=False)
+    invigilator_id = serializers.IntegerField(required=False, allow_null=True)
+    subjects = ExamSubjectInputSerializer(many=True, required=False)
 
     def validate_department(self, value):
         if not value:
             return value
         return validate_department_name(value)
+
+    def validate(self, data):
+        subjects = data.get('subjects') or []
+        if subjects:
+            codes = [s['subject_code'] for s in subjects]
+            if len(codes) != len(set(codes)):
+                raise serializers.ValidationError({'subjects': 'Duplicate subject codes are not allowed.'})
+        return data
 
 
 class TeacherUpdateSerializer(serializers.Serializer):
@@ -310,6 +392,7 @@ class NotificationCreateSerializer(serializers.Serializer):
 
 class FaceVerifyRequestSerializer(serializers.Serializer):
     image_base64 = serializers.CharField()
+    exam_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class FaceVerifyResponseSerializer(serializers.Serializer):
@@ -351,9 +434,17 @@ class AdminProfileUpdateSerializer(serializers.Serializer):
         return data
 
 
+class HallTicketSubjectUpdateSerializer(serializers.Serializer):
+    subject_code = serializers.CharField()
+    seat_number = serializers.CharField(required=False, allow_blank=True)
+    room = serializers.CharField(required=False, allow_blank=True)
+
+
 class HallTicketUpdateSerializer(serializers.Serializer):
     seat_number = serializers.CharField(required=False)
     room = serializers.CharField(required=False)
+    subjects = HallTicketSubjectUpdateSerializer(many=True, required=False)
+    auto_resolve_seats = serializers.BooleanField(default=False, required=False)
 
 
 class SeatingRoomSerializer(serializers.Serializer):

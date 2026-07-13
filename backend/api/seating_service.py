@@ -1,10 +1,12 @@
 from .models import Exam, Student, SeatingRoom, SeatingArrangement, HallTicket
+from .exam_service import get_exam_subjects, subjects_subject_codes
 from django.db import transaction
 import random
 
 
-def build_qr_content(hall_ticket_no, roll_no, subject_code, seat_number, room_label):
-    return f"HT:{hall_ticket_no}|Roll:{roll_no}|Exam:{subject_code}|Seat:{seat_number}|Room:{room_label}"
+def build_qr_content(hall_ticket_no, roll_no, subject_code, seat_number, room_label, subject_codes=None):
+    codes = subject_codes or subject_code
+    return f"HT:{hall_ticket_no}|Roll:{roll_no}|Exam:{codes}|Seat:{seat_number}|Room:{room_label}"
 
 
 def room_display_name(room):
@@ -13,6 +15,39 @@ def room_display_name(room):
 
 class SeatingArrangementService:
     """Service class for handling seating arrangements with various strategies"""
+
+    @staticmethod
+    def _seat_key(room_id, row, column):
+        return (room_id, row, column)
+
+    @staticmethod
+    def validate_unique_seats(exam_id, arrangements_data, exclude_student_ids=None):
+        """Ensure no two students share the same seat for an exam."""
+        exclude_student_ids = exclude_student_ids or set()
+        seen = {}
+        for arr in arrangements_data:
+            room_id = arr.get('room_id') or (arr['room'].id if arr.get('room') else None)
+            row = arr['seat_row']
+            col = arr['seat_column']
+            student_id = arr.get('student_id') or (arr['student'].id if arr.get('student') else None)
+            if student_id in exclude_student_ids:
+                continue
+            key = SeatingArrangementService._seat_key(room_id, row, col)
+            if key in seen:
+                raise ValueError(
+                    f"Seat {arr.get('seat_number', f'row {row + 1} col {col + 1}')} is already assigned to another student"
+                )
+            seen[key] = student_id
+
+        existing = SeatingArrangement.objects.filter(exam_id=exam_id)
+        if exclude_student_ids:
+            existing = existing.exclude(student_id__in=exclude_student_ids)
+        for arr in existing:
+            key = SeatingArrangementService._seat_key(arr.room_id, arr.seat_row, arr.seat_column)
+            if key in seen:
+                raise ValueError(
+                    f"Seat {arr.seat_number} is already assigned to another student"
+                )
     
     @staticmethod
     def generate_seat_number(row, column, room_code):
@@ -34,6 +69,7 @@ class SeatingArrangementService:
         room_index = 0
         row = 0
         column = 0
+        occupied = set()
         
         for student in students:
             # Skip if student is not eligible
@@ -43,11 +79,19 @@ class SeatingArrangementService:
             # Find next available room
             while room_index < len(rooms):
                 room = rooms[room_index]
-                capacity = SeatingArrangementService.get_room_capacity(room)
                 
                 # Check if room has space
                 if row < room.rows and column < room.columns:
+                    seat_key = SeatingArrangementService._seat_key(room.id, row, column)
+                    if seat_key in occupied:
+                        column += 1
+                        if column >= room.columns:
+                            column = 0
+                            row += 1
+                        continue
+
                     seat_number = SeatingArrangementService.generate_seat_number(row, column, room.room_code)
+                    occupied.add(seat_key)
                     
                     arrangements.append({
                         'student': student,
@@ -204,10 +248,21 @@ class SeatingArrangementService:
             leave_empty_seats, 
             seats_between_students
         )
+
+        normalized = [{
+            'student_id': arr_data['student'].id,
+            'room_id': arr_data['room'].id,
+            'seat_row': arr_data['seat_row'],
+            'seat_column': arr_data['seat_column'],
+            'seat_number': arr_data['seat_number'],
+            'student': arr_data['student'],
+            'room': arr_data['room'],
+        } for arr_data in arrangements_data]
+        SeatingArrangementService.validate_unique_seats(exam_id, normalized)
         
         # Create SeatingArrangement objects
         created_arrangements = []
-        for arr_data in arrangements_data:
+        for arr_data in normalized:
             arrangement = SeatingArrangement.objects.create(
                 exam=exam,
                 room=arr_data['room'],
@@ -240,6 +295,11 @@ class SeatingArrangementService:
         
         # Delete existing arrangements for this exam
         SeatingArrangement.objects.filter(exam=exam).delete()
+
+        if not arrangements_data:
+            return {'total_arrangements': 0, 'exam': exam.subject_name}
+
+        SeatingArrangementService.validate_unique_seats(exam_id, arrangements_data)
         
         created_arrangements = []
         for arr_data in arrangements_data:
@@ -367,15 +427,18 @@ class SeatingArrangementService:
             raise ValueError("No seating arrangements found for this exam")
 
         synced = 0
+        subjects = get_exam_subjects(exam)
+        subject_codes = subjects_subject_codes(subjects)
         for arr in arrangements:
             student = arr.student
             hall_ticket_no = f"HT2026{student.roll_no}"
             room_label = room_display_name(arr.room)
             qr = build_qr_content(
                 hall_ticket_no, student.roll_no, exam.subject_code,
-                arr.seat_number, arr.room.room_code
+                arr.seat_number, arr.room.room_code,
+                subject_codes=subject_codes,
             )
-            HallTicket.objects.update_or_create(
+            ht, _ = HallTicket.objects.update_or_create(
                 student=student,
                 defaults={
                     'exam': exam,
@@ -386,6 +449,8 @@ class SeatingArrangementService:
                     'is_active': True,
                 },
             )
+            from .hall_ticket_service import sync_hall_ticket_subjects
+            sync_hall_ticket_subjects(ht, exam, default_seat=arr.seat_number, default_room=room_label)
             synced += 1
 
         SeatingArrangement.objects.filter(exam=exam).update(is_confirmed=True)
@@ -398,11 +463,14 @@ class SeatingArrangementService:
         exam = arrangement.exam
         hall_ticket_no = f"HT2026{student.roll_no}"
         room_label = room_display_name(arrangement.room)
+        subjects = get_exam_subjects(exam)
+        subject_codes = subjects_subject_codes(subjects)
         qr = build_qr_content(
             hall_ticket_no, student.roll_no, exam.subject_code,
-            arrangement.seat_number, arrangement.room.room_code
+            arrangement.seat_number, arrangement.room.room_code,
+            subject_codes=subject_codes,
         )
-        HallTicket.objects.update_or_create(
+        ht, _ = HallTicket.objects.update_or_create(
             student=student,
             defaults={
                 'exam': exam,
@@ -413,3 +481,5 @@ class SeatingArrangementService:
                 'is_active': True,
             },
         )
+        from .hall_ticket_service import sync_hall_ticket_subjects
+        sync_hall_ticket_subjects(ht, exam, default_seat=arrangement.seat_number, default_room=room_label)
