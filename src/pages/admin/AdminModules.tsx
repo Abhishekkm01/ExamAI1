@@ -736,7 +736,11 @@ export function AdminExams() {
           <Card key={e.id} className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <Badge variant="indigo">{e.subjectCode}</Badge>
+                <div className="flex flex-wrap gap-1">
+                  {(e.subjects?.length ? e.subjects : [{ subjectCode: e.subjectCode }]).map((s) => (
+                    <Badge key={s.subjectCode} variant="indigo">{s.subjectCode}</Badge>
+                  ))}
+                </div>
                 <h3 className="font-bold text-slate-900 dark:text-white mt-2">{e.title || e.subjectName}</h3>
                 {(e.title && e.title !== e.subjectName) && (
                   <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{e.subjectName}</p>

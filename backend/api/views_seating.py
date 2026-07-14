@@ -144,7 +144,9 @@ def list_arrangements(request):
     if room_id:
         arrangements = arrangements.filter(room_id=room_id)
     
-    arrangements = arrangements.select_related('student__user', 'room', 'exam')
+    arrangements = arrangements.select_related(
+        'student__user', 'room', 'exam',
+    ).order_by('room_id', 'seat_row', 'seat_column', 'id')
     serializer = SeatingArrangementSerializer(arrangements, many=True)
     return Response(serializer.data)
 
@@ -215,25 +217,41 @@ def update_arrangement(request, arrangement_id):
     serializer = SeatingArrangementUpdateSerializer(data=request.data, partial=True)
     if serializer.is_valid():
         data = serializer.validated_data
-        room_id = data.get('room_id', arrangement.room_id)
-        seat_row = data.get('seat_row', arrangement.seat_row)
-        seat_column = data.get('seat_column', arrangement.seat_column)
-        if SeatingArrangement.objects.filter(
-            exam_id=arrangement.exam_id,
-            room_id=room_id,
-            seat_row=seat_row,
-            seat_column=seat_column,
-        ).exclude(id=arrangement.id).exists():
-            return Response(
-                {'detail': 'This seat is already assigned to another student'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        for field, value in data.items():
-            if field == 'room_id':
-                arrangement.room_id = value
+        try:
+            # If only seat_number (and optional room) provided, move on the grid
+            if 'seat_number' in data and 'seat_row' not in data and 'seat_column' not in data:
+                SeatingArrangementService.apply_seat_label(
+                    arrangement,
+                    data['seat_number'],
+                    room_id=data.get('room_id'),
+                )
             else:
-                setattr(arrangement, field, value)
-        arrangement.save()
+                room_id = data.get('room_id', arrangement.room_id)
+                seat_row = data.get('seat_row', arrangement.seat_row)
+                seat_column = data.get('seat_column', arrangement.seat_column)
+                if SeatingArrangement.objects.filter(
+                    exam_id=arrangement.exam_id,
+                    room_id=room_id,
+                    seat_row=seat_row,
+                    seat_column=seat_column,
+                ).exclude(id=arrangement.id).exists():
+                    return Response(
+                        {'detail': 'This seat is already assigned to another student'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                for field, value in data.items():
+                    if field == 'room_id':
+                        arrangement.room_id = value
+                    else:
+                        setattr(arrangement, field, value)
+                if 'seat_row' in data or 'seat_column' in data:
+                    arrangement.seat_number = SeatingArrangementService.generate_seat_number(
+                        arrangement.seat_row, arrangement.seat_column, arrangement.room.room_code,
+                    )
+                arrangement.save()
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         SeatingArrangementService.sync_arrangement_to_hall_ticket(arrangement)
         response_serializer = SeatingArrangementSerializer(arrangement)
         return Response(response_serializer.data)

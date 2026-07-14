@@ -637,12 +637,23 @@ def update_hallticket(request, ht_id):
 
     refresh_hall_ticket_qr(ht, exam, ht.student)
 
-    seating = SeatingArrangement.objects.filter(
-        student=ht.student, exam=exam,
-    ).select_related('room').first()
-    if seating and subjects:
-        seating.seat_number = subjects[0]['seat_number']
-        seating.save()
+    primary = subjects[0] if subjects else {
+        'seat_number': ht.seat_number,
+        'room': ht.room,
+    }
+    try:
+        SeatingArrangementService.sync_from_hall_ticket_seat(
+            ht.student,
+            exam,
+            primary.get('seat_number') or ht.seat_number,
+            primary.get('room') or ht.room,
+        )
+    except ValueError as e:
+        return Response({
+            'detail': str(e),
+            'subjects': subjects,
+            'hall_ticket_saved': True,
+        }, status=status.HTTP_400_BAD_REQUEST)
 
     msg = 'Hall ticket updated'
     if resolved:
@@ -674,10 +685,12 @@ def list_halltickets(request):
     data = []
     for h in hts:
         exam = h.exam
-        subjects = merge_hall_ticket_subjects(h, exam)
-        if not h.subject_assignments.exists():
+        exam_subject_count = len(get_exam_subjects(exam))
+        assigned_count = h.subject_assignments.count()
+        # Always backfill when exam gained subjects after the ticket was created
+        if assigned_count == 0 or assigned_count != exam_subject_count:
             sync_hall_ticket_subjects(h, exam, h.seat_number, h.room)
-            subjects = merge_hall_ticket_subjects(h, exam)
+        subjects = merge_hall_ticket_subjects(h, exam)
         if not h.qr_code_content or not h.qr_code_content.startswith('{'):
             refresh_hall_ticket_qr(h, exam, h.student)
         seat_conflicts = detect_ticket_seat_conflicts(h, exam)

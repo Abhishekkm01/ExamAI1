@@ -67,6 +67,7 @@ export default function AdminSeating() {
   const [edits, setEdits] = useState<Record<number, { seat_number: string; room_id: number }>>({});
   const [newRoom, setNewRoom] = useState({ room_code: "", room_name: "", rows: 8, columns: 6 });
   const [viewRoomId, setViewRoomId] = useState<number | null>(null);
+  const [mapRefresh, setMapRefresh] = useState(0);
 
   const fetchRoomLayout = useCallback(async (roomId: number, forExamId?: string): Promise<RoomLayout> => {
     const qs = forExamId ? `?exam_id=${forExamId}` : "";
@@ -100,6 +101,7 @@ export default function AdminSeating() {
         next[a.id] = { seat_number: a.seat_number, room_id: a.room_id };
       });
       setEdits(next);
+      setMapRefresh((n) => n + 1);
     } catch (e: any) {
       setError(e.message);
     }
@@ -155,8 +157,25 @@ export default function AdminSeating() {
           arrangement_strategy: strategy,
         }),
       });
-      setMessage(`Seated ${result.students_seated} students across ${result.rooms_used} hall(s)`);
+      const subjectCount = result.subject_count || result.subjects?.length || 1;
+      const strategyLabel = {
+        sequential: "roll number order",
+        alphabetical: "alphabetical name order",
+        department: "section then roll order",
+        random: "random order",
+      }[result.strategy_used || strategy] || strategy;
+      // Push seats onto all hall-ticket subjects for this exam
+      const sync = await apiFetch("/api/admin/seating/sync-halltickets", {
+        method: "POST",
+        body: JSON.stringify({ exam_id: +examId }),
+      });
+      setMessage(
+        `Seated ${result.students_seated} students in ${strategyLabel} across ${result.rooms_used} hall(s) ` +
+        `for ${subjectCount} subject${subjectCount === 1 ? "" : "s"}. ${sync.message || "Hall tickets synced."}`
+      );
       await loadArrangements(examId);
+      // Jump map to first selected room if needed
+      if (selectedRooms[0]) setViewRoomId(selectedRooms[0]);
     } catch (e: any) {
       setError(e.message);
     }
@@ -175,6 +194,7 @@ export default function AdminSeating() {
       });
       setMessage(`Updated seating for ${arr.student_name}`);
       await loadArrangements(examId);
+      if (edit.room_id) setViewRoomId(edit.room_id);
     } catch (e: any) {
       setError(e.message);
     }
@@ -251,17 +271,41 @@ export default function AdminSeating() {
           <Select value={examId} onChange={(e) => setExamId(e.target.value)} className="mb-3">
             {exams.map((e) => {
               const id = String(parseInt(e.id.replace(/\D/g, ""), 10) || e.id);
-              return <option key={e.id} value={id}>{e.subjectName} • {e.department} • Sem {e.semester}</option>;
+              const codes = e.subjects?.length
+                ? e.subjects.map((s) => s.subjectCode).join(", ")
+                : e.subjectCode;
+              const label = e.title || e.subjectName;
+              return (
+                <option key={e.id} value={id}>
+                  {label} [{codes}] • {e.department} • Sem {e.semester}
+                </option>
+              );
             })}
           </Select>
           {selectedExam && (
-            <p className="text-xs text-slate-500 mb-3">Default hall from exam: <span className="font-medium">{selectedExam.room}</span></p>
+            <div className="mb-3 space-y-1">
+              <p className="text-xs text-slate-500">
+                Default hall from exam: <span className="font-medium">{selectedExam.room}</span>
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {(selectedExam.subjects?.length
+                  ? selectedExam.subjects
+                  : [{ subjectCode: selectedExam.subjectCode, subjectName: selectedExam.subjectName }]
+                ).map((s) => (
+                  <Badge key={s.subjectCode} variant="indigo">{s.subjectCode}</Badge>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Auto Arrange seats students once for this examination, then syncs that seat to every subject on the hall ticket.
+                Override per-subject seats on Hall Tickets if needed — the map follows the primary subject seat.
+              </p>
+            </div>
           )}
           <label className="block text-xs font-medium text-slate-500 mb-1">Strategy</label>
           <Select value={strategy} onChange={(e) => setStrategy(e.target.value)} className="mb-3">
-            <option value="sequential">Sequential (roll order)</option>
-            <option value="alphabetical">Alphabetical (name)</option>
-            <option value="department">By department</option>
+            <option value="sequential">Sequential by roll number</option>
+            <option value="alphabetical">Alphabetical by name</option>
+            <option value="department">By section (then roll no)</option>
             <option value="random">Random</option>
           </Select>
           <label className="block text-xs font-medium text-slate-500 mb-2">Select hall(s)</label>
@@ -338,7 +382,7 @@ export default function AdminSeating() {
           roomId={viewRoomId}
           examId={examId || undefined}
           fetchLayout={fetchRoomLayout}
-          refreshKey={arrangements.length}
+          refreshKey={`${examId}-${mapRefresh}-${arrangements.map((a) => `${a.id}:${a.room_id}:${a.seat_number}`).join("|")}`}
         />
       </Card>
 
