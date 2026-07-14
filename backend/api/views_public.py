@@ -16,7 +16,7 @@ def _lookup_and_verify(ht_no, scanned_content=None):
 
     try:
         ht = HallTicket.objects.select_related('student__user', 'exam').get(
-            hall_ticket_no=ht_no, is_active=True,
+            hall_ticket_no=ht_no, is_active=True, exam__is_deleted=False,
         )
     except HallTicket.DoesNotExist:
         return None, Response({'valid': False, 'detail': 'Invalid Hall Ticket'}, status=status.HTTP_404_NOT_FOUND)
@@ -83,6 +83,5 @@ def meta(request):
         'eligibility_thresholds': {
             'attendance': cfg.attendance_threshold,
             'internal_marks': cfg.internal_marks_threshold,
-            'min_sgpa': cfg.min_sgpa,
         },
     })

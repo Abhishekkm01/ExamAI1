@@ -119,6 +119,7 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return tryFetch(`/api/admin/students?${q}`);
   },
+  adminGetStudent: (id: number) => tryFetch(`/api/admin/students/${id}`),
   adminUpdateStudent: (id: number, data: Record<string, unknown>) =>
     tryFetch(`/api/admin/students/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
   adminDeleteStudent: (id: number) =>
@@ -130,6 +131,7 @@ export const api = {
   setupExam: (data: Record<string, unknown>) =>
     tryFetch("/api/auth/setup-exam", { method: "POST", body: JSON.stringify(data) }),
   adminTeachers: () => tryFetch("/api/admin/teachers"),
+  adminGetTeacher: (id: number) => tryFetch(`/api/admin/teachers/${id}`),
   updateTeacher: (id: number, data: Record<string, unknown>) =>
     tryFetch(`/api/admin/teachers/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTeacher: (id: number) =>
@@ -203,10 +205,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ image_base64: imageBase64 }),
     }),
-  teacherFaceVerify: (imageBase64: string, examId: number) =>
+  teacherFaceVerify: (imageBase64: string, examSubjectId: number) =>
     tryFetch("/api/teacher/face-verify", {
       method: "POST",
-      body: JSON.stringify({ image_base64: imageBase64, exam_id: examId }),
+      body: JSON.stringify({ image_base64: imageBase64, exam_subject_id: examSubjectId }),
     }),
   teacherInvigilatorExams: () => tryFetch("/api/teacher/invigilator-exams"),
   askChatbot: (query: string) =>

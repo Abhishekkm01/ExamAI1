@@ -46,10 +46,13 @@ export interface ExamSubject {
   date?: string;
   time?: string;
   duration?: string;
+  invigilatorId?: number | null;
+  invigilatorName?: string | null;
 }
 
 export interface Exam {
   id: string;
+  title?: string;
   subjectCode: string;
   subjectName: string;
   department: string;

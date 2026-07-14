@@ -455,7 +455,7 @@ export function StudentEligibility() {
   }, []);
   if (loading || !student) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   const e = getStudentEligibility(student);
-  const checks = eligibility?.checks || { attendance: e.checks.attendance, internals: e.checks.internals, fee: e.checks.fee, previous: e.checks.previous };
+  const checks = eligibility?.checks || { attendance: e.checks.attendance, internals: e.checks.internals, fee: e.checks.fee };
   const passedCount = Object.values(checks).filter(Boolean).length;
   const isEligible = eligibility?.is_eligible ?? e.eligible;
 
@@ -463,7 +463,6 @@ export function StudentEligibility() {
     { label: "Attendance ≥ 75%", passed: checks.attendance, value: `${student.attendance}%`, target: "75%" },
     { label: "Internal Marks ≥ 40%", passed: checks.internals, value: `${Math.round((student.internalMarks / INTERNAL_MARKS_MAX) * 100)}%`, target: "40%" },
     { label: "Fee Paid", passed: checks.fee, value: student.feePaid ? "Paid" : "Pending", target: "Paid" },
-    { label: "Previous SGPA ≥ 5", passed: checks.previous, value: (student.previousResult ?? 0).toString(), target: "5.0" },
   ];
 
   return (
@@ -476,7 +475,7 @@ export function StudentEligibility() {
           <div className="w-32 h-32 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-5xl font-extrabold">{e.eligibilityPct}%</div>
           <div>
             <h3 className="text-3xl font-bold">{isEligible ? "You are ELIGIBLE" : "Currently NOT ELIGIBLE"}</h3>
-            <p className="mt-1 text-white/80">You meet {passedCount} of 4 criteria • AI Risk Score: {e.score}</p>
+            <p className="mt-1 text-white/80">You meet {passedCount} of {criteria.length} criteria • AI Risk Score: {e.score}</p>
           </div>
         </div>
       </div>
@@ -568,6 +567,9 @@ export function StudentHallTicket() {
       ht.seat_number,
       ht.qr_code_content,
       ht.subjects,
+      ht.exam.title,
+      student.semester,
+      ht.student.photo,
     );
     const w = window.open("", "_blank");
     if (w) { w.document.write(html); w.document.close(); }
@@ -587,35 +589,46 @@ export function StudentHallTicket() {
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border-2 border-indigo-600 overflow-hidden shadow-xl">
           <div className="bg-brand-gradient text-white p-5 flex items-center justify-between">
-            <div><p className="font-bold text-xl">{systemSettings.university_name}</p><p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p></div>
+            <div><p className="font-bold text-xl">{systemSettings.university_name}</p><p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year, ht.exam.title || ht.exam.subject_name)}</p></div>
             <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">{universityInitials(systemSettings.university_name)}</div>
           </div>
           <div className="p-8">
             <div className="text-center mb-6 pb-4 border-b-2 border-slate-200">
               <p className="text-xs uppercase tracking-widest text-slate-500">Official Hall Ticket</p>
               <p className="font-mono font-bold text-2xl text-indigo-600 mt-1">{ht.hall_ticket_no}</p>
+              <p className="text-sm font-semibold text-slate-700 mt-2">{ht.exam.title || ht.exam.subject_name}</p>
             </div>
-            <div className="grid grid-cols-3 gap-8">
-              <div className="col-span-2 space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="md:col-span-2 space-y-3">
+                <InfoRow label="Examination" value={ht.exam.title || ht.exam.subject_name} bold />
                 <InfoRow label="Candidate Name" value={ht.student.name} />
                 <InfoRow label="Roll Number" value={ht.student.roll_no} />
                 <InfoRow label="Department" value={ht.student.department} />
                 <InfoRow label="Semester" value={`Semester ${student.semester}`} />
-                <div className="py-2 border-b border-slate-100">
-                  <p className="text-slate-500 text-sm mb-2">Examination Subjects</p>
+                <div className="pt-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Examination Subjects</p>
                   <div className="space-y-2">
                     {(ht.subjects?.length ? ht.subjects : [ht.exam]).map((subj: any, idx: number) => (
-                      <div key={idx} className="rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-2">
-                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                          {ht.subjects?.length > 1 ? `${idx + 1}. ` : ""}
-                          {subj.subject_name || subj.subjectName} ({subj.subject_code || subj.subjectCode})
+                      <div key={idx} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-3">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                            {(ht.subjects?.length || 0) > 1 ? `Subject ${idx + 1}` : "Subject"}
+                          </p>
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
+                            {subj.subject_code || subj.subjectCode}
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {subj.subject_name || subj.subjectName}
                         </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {subj.exam_date || subj.date} at {subj.exam_time || subj.time}
+                        <p className="text-xs text-slate-500 mt-1">
+                          {subj.exam_date || subj.date} · {subj.exam_time || subj.time}
+                          {(subj.duration || ht.exam.duration) ? ` · ${subj.duration || ht.exam.duration}` : ""}
                         </p>
-                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mt-1">
-                          Hall: {subj.room || ht.exam.room} • Seat: {subj.seat_number || ht.seat_number}
-                        </p>
+                        <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-600 grid grid-cols-2 gap-2 text-xs">
+                          <p><span className="text-slate-500">Hall</span> <span className="font-semibold text-indigo-700 dark:text-indigo-300">{subj.room || ht.exam.room}</span></p>
+                          <p><span className="text-slate-500">Seat</span> <span className="font-semibold text-indigo-700 dark:text-indigo-300">{subj.seat_number || ht.seat_number}</span></p>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -702,7 +715,14 @@ export function StudentFaceVerify() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"idle" | "enroll" | "verify">("idle");
-  const [result, setResult] = useState<{ verified: boolean; confidence: number; message: string; studentName?: string } | null>(null);
+  const [result, setResult] = useState<{
+    verified: boolean;
+    confidence: number;
+    message: string;
+    studentName?: string;
+    rollNo?: string;
+    department?: string;
+  } | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -758,8 +778,10 @@ export function StudentFaceVerify() {
         confidence: data.confidence || 0,
         message: data.message || "",
         studentName: data.student_name,
+        rollNo: data.roll_no,
+        department: data.department,
       });
-      setMode("idle");
+      // Keep camera open on verify so the next attempt doesn't remount/restart the stream
     } catch (err: any) {
       setError(err.message || "Verification failed");
     } finally {
@@ -789,7 +811,8 @@ export function StudentFaceVerify() {
         </p>
         {faceEnrolled && (
           <p className="text-xs text-slate-500 mt-2">
-            If verification fails, use <span className="font-medium">Re-enroll Face</span> once after updating the app.
+            If you keep seeing &quot;does not match&quot;, click <span className="font-medium">Re-enroll Face</span> once
+            (webcam enroll works better than an old profile photo), then verify again.
           </p>
         )}
       </Card>
@@ -850,7 +873,20 @@ export function StudentFaceVerify() {
               <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-3">
                 {faceEnrolled && mode === "idle" && result.confidence === 100 ? "ENROLLED" : "VERIFIED"}
               </p>
-              {result.studentName && <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{result.studentName}</p>}
+              <div className="mt-4 space-y-2 text-left">
+                <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                  <span className="text-sm text-slate-500">Name</span>
+                  <span className="text-sm font-semibold">{result.studentName || "—"}</span>
+                </div>
+                <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                  <span className="text-sm text-slate-500">Roll No</span>
+                  <span className="text-sm font-semibold">{result.rollNo || "—"}</span>
+                </div>
+                <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                  <span className="text-sm text-slate-500">Department</span>
+                  <span className="text-sm font-semibold">{result.department || "—"}</span>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <div className="p-3 rounded-lg bg-white dark:bg-slate-900">
                   <p className="text-xs text-slate-500">Confidence</p>

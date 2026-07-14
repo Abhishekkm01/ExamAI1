@@ -92,7 +92,7 @@ export default function AdminDashboard() {
               {eligible} of {totalStudents} students are exam-eligible
             </h3>
             <p className="mt-2 text-white/80 max-w-2xl">
-              ExamShield AI predicts eligibility based on attendance, internals, backlogs, fee status, and previous results.
+              ExamShield AI predicts eligibility based on attendance, internals, and fee status.
             </p>
             <button onClick={() => navigate("/admin/eligibility")}
               className="mt-4 px-4 py-2 rounded-lg bg-white/20 backdrop-blur hover:bg-white/30 text-white font-medium text-sm transition">

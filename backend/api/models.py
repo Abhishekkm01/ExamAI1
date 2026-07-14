@@ -104,6 +104,7 @@ class Teacher(models.Model):
 
 
 class Exam(models.Model):
+    title = models.CharField(max_length=255, blank=True, default='')
     subject_code = models.CharField(max_length=50, unique=True, db_index=True)
     subject_name = models.CharField(max_length=255)
     department = models.CharField(max_length=100, db_index=True)
@@ -141,6 +142,10 @@ class ExamSubject(models.Model):
     exam_time = models.CharField(max_length=50, blank=True, default='')
     duration = models.CharField(max_length=50, blank=True, default='')
     sort_order = models.PositiveSmallIntegerField(default=0)
+    invigilator = models.ForeignKey(
+        'Teacher', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invigilated_exam_subjects',
+    )
 
     class Meta:
         db_table = 'exam_subjects'

@@ -103,17 +103,13 @@ def _create_student_account(data, password):
 
     passed = (data.get('attendance_percentage', 0) >= 75) and \
               ((data.get('internal_marks', 0) / INTERNAL_MARKS_MAX) * 100 >= 40) and \
-              (data.get('backlogs', 0) == 0) and \
-              data.get('fee_paid', False) and \
-              (data.get('previous_result', 0) >= 5.0)
+              data.get('fee_paid', False)
 
     pct = round((sum([
         data.get('attendance_percentage', 0) >= 75,
         (data.get('internal_marks', 0) / INTERNAL_MARKS_MAX) * 100 >= 40,
-        data.get('backlogs', 0) == 0,
         data.get('fee_paid', False),
-        data.get('previous_result', 0) >= 5.0,
-    ]) / 5) * 100)
+    ]) / 3) * 100)
 
     avatar = data.get('photo') or f"https://api.dicebear.com/7.x/avataaars/svg?seed={data.get('roll_no') or data['email']}"
     try:

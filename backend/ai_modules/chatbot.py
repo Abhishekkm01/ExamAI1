@@ -28,13 +28,14 @@ Live academic database state:
 - Attendance: {student_context.get('attendance_percentage')}% (min 75%)
 - Internal Marks: {student_context.get('internal_marks')}/40 (min 16/40)
 - Assignment Marks: {student_context.get('assignment_marks')}/10
-- Previous SGPA: {student_context.get('previous_result')}
-- Active Backlogs: {student_context.get('backlogs')}
+- Previous SGPA: {student_context.get('previous_result')} (informational only; not used for eligibility)
+- Active Backlogs: {student_context.get('backlogs')} (informational only; not used for eligibility)
 - Fee Paid: {'Paid' if student_context.get('fee_paid') else 'Pending'}
 - Fee Amount: ₹{student_context.get('fee_amount')} | Due: {student_context.get('fee_due_date')}
 - Eligibility: {'Eligible' if student_context.get('is_eligible') else 'Not Eligible'} ({student_context.get('eligibility_percentage')}%)
 - AI Risk Score: {student_context.get('ai_risk_score')}/100
 
+Eligibility criteria are attendance, internals, and fee payment only — previous SGPA and backlogs do not affect eligibility.
 Be professional, helpful, and clear. Use the facts above.
 """
         if self.client:

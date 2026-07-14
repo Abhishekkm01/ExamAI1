@@ -31,47 +31,51 @@ def _hall_ticket_payload(student, user):
     """Build hall ticket response from DB record, seating, or defaults."""
     ht = getattr(student, 'hall_ticket', None)
     if ht and ht.is_active:
-        exam = resolve_hall_ticket_exam(student, ht)
-        if not exam:
-            return None
-        seating = SeatingArrangement.objects.filter(
-            student=student, exam=exam,
-        ).select_related('room').first()
-        room = ht.room
-        seat_number = ht.seat_number
-        if seating and not ht.subject_assignments.exists():
-            seat_number = seating.seat_number
-            room = room_display_name(seating.room)
-        if not ht.subject_assignments.exists():
-            subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
+        # Drop tickets whose linked exam was deleted
+        if not ht.exam_id or ht.exam.is_deleted:
+            ht.is_active = False
+            ht.save(update_fields=['is_active', 'updated_at'])
         else:
-            subjects = merge_hall_ticket_subjects(ht, exam)
-        if not ht.qr_code_content or not ht.qr_code_content.startswith('{'):
-            refresh_hall_ticket_qr(ht, exam, student)
-        qr = ht.qr_code_content
-        room = subjects[0]['room'] if subjects else ht.room
-        seat_number = subjects[0]['seat_number'] if subjects else ht.seat_number
-        return {
-            'is_eligible': True,
-            'hall_ticket_no': ht.hall_ticket_no,
-            'student': {
-                'name': user.name,
-                'roll_no': student.roll_no,
-                'department': student.department,
-                'photo': student.photo,
-            },
-            'exam': {
-                'subject_code': exam.subject_code,
-                'subject_name': exam.subject_name,
-                'date': exam.exam_date,
-                'time': exam.exam_time,
-                'duration': exam.duration,
-                'room': room,
-            },
-            'subjects': subjects,
-            'seat_number': subjects[0]['seat_number'] if subjects else seat_number,
-            'qr_code_content': qr,
-        }
+            exam = ht.exam
+            seating = SeatingArrangement.objects.filter(
+                student=student, exam=exam,
+            ).select_related('room').first()
+            room = ht.room
+            seat_number = ht.seat_number
+            if seating and not ht.subject_assignments.exists():
+                seat_number = seating.seat_number
+                room = room_display_name(seating.room)
+            if not ht.subject_assignments.exists():
+                subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
+            else:
+                subjects = merge_hall_ticket_subjects(ht, exam)
+            if not ht.qr_code_content or not ht.qr_code_content.startswith('{'):
+                refresh_hall_ticket_qr(ht, exam, student)
+            qr = ht.qr_code_content
+            room = subjects[0]['room'] if subjects else ht.room
+            seat_number = subjects[0]['seat_number'] if subjects else ht.seat_number
+            return {
+                'is_eligible': True,
+                'hall_ticket_no': ht.hall_ticket_no,
+                'student': {
+                    'name': user.name,
+                    'roll_no': student.roll_no,
+                    'department': student.department,
+                    'photo': student.photo,
+                },
+                'exam': {
+                    'title': exam.title or exam.subject_name,
+                    'subject_code': exam.subject_code,
+                    'subject_name': exam.subject_name,
+                    'date': exam.exam_date,
+                    'time': exam.exam_time,
+                    'duration': exam.duration,
+                    'room': room,
+                },
+                'subjects': subjects,
+                'seat_number': subjects[0]['seat_number'] if subjects else seat_number,
+                'qr_code_content': qr,
+            }
 
     exam = resolve_hall_ticket_exam(student)
     if not exam:
@@ -107,6 +111,7 @@ def _hall_ticket_payload(student, user):
             'photo': student.photo,
         },
         'exam': {
+            'title': exam.title or exam.subject_name,
             'subject_code': exam.subject_code,
             'subject_name': exam.subject_name,
             'date': exam.exam_date,
@@ -314,9 +319,7 @@ def eligibility(request):
         'checks': {
             'attendance': s.attendance_percentage >= 75.0,
             'internals': (s.internal_marks / INTERNAL_MARKS_MAX) * 100 >= 40,
-            'backlogs': s.backlogs == 0,
             'fee': s.fee_paid,
-            'previous_sgpa': s.previous_result >= 5.0
         }
     })
 
@@ -375,13 +378,15 @@ def download_hallticket(request):
     p.setFont("Helvetica-Bold", 20)
     p.drawString(100, 740, cfg.university_name)
     p.setFont("Helvetica", 14)
-    p.drawString(100, 715, f"Official Hall Ticket - Academic Year {cfg.academic_year}")
+    p.drawString(100, 715, f"{exam_data.get('title') or exam_data.get('subject_name') or 'Examination'} - Academic Year {cfg.academic_year}")
     p.setFont("Helvetica", 12)
     p.drawString(100, 670, f"Hall Ticket No: {payload['hall_ticket_no']}")
     p.drawString(100, 645, f"Student: {user.name}")
     p.drawString(100, 620, f"Roll Number: {s.roll_no}")
     p.drawString(100, 595, f"Department: {s.department} | Semester {s.semester}")
     y = 570
+    p.drawString(100, y, f"Examination: {exam_data.get('title') or exam_data.get('subject_name')}")
+    y -= 22
     p.drawString(100, y, "Subjects:")
     y -= 18
     for subj in subjects:
@@ -484,6 +489,7 @@ def face_verify(request):
             'message': res['message'],
             'student_name': res.get('student_name', user.name),
             'roll_no': res.get('roll_no', s.roll_no),
+            'department': s.department,
             'face_enrolled': is_face_enrolled(s),
         })
 

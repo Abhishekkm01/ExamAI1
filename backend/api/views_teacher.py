@@ -3,7 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Q
-from .models import User, Student, Teacher, Attendance, InternalMark, Exam, SeatingArrangement
+from .models import User, Student, Teacher, Attendance, InternalMark, Exam, ExamSubject, SeatingArrangement, HallTicket
 from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSerializer,
                           TeacherProfileUpdateSerializer, MarksUpdateSerializer)
 from .permissions import IsTeacher, IsOwner
@@ -284,7 +284,7 @@ def monitor_students(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def invigilator_exams(request):
-    """List exams where the teacher is assigned as invigilator."""
+    """List exam subjects where the teacher is assigned as invigilator."""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
@@ -294,12 +294,26 @@ def invigilator_exams(request):
     except Teacher.DoesNotExist:
         return Response({'detail': 'Teacher profile not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    exams = Exam.objects.filter(
+    subjects = ExamSubject.objects.filter(
         invigilator=teacher,
-        requires_face_verification=True,
-        is_deleted=False,
-    ).select_related('invigilator__user').prefetch_related('subjects')
-    return Response([exam_to_dict(e) for e in exams])
+        exam__requires_face_verification=True,
+        exam__is_deleted=False,
+    ).select_related('exam').order_by('exam_date', 'exam_time', 'sort_order')
+    return Response([
+        {
+            'id': s.id,
+            'exam_id': s.exam_id,
+            'subject_code': s.subject_code,
+            'subject_name': s.subject_name,
+            'exam_date': s.exam_date or s.exam.exam_date,
+            'exam_time': s.exam_time or s.exam.exam_time,
+            'duration': s.duration or s.exam.duration,
+            'room': s.exam.room,
+            'department': s.exam.department,
+            'semester': s.exam.semester,
+        }
+        for s in subjects
+    ])
 
 
 @api_view(['POST'])
@@ -318,41 +332,86 @@ def face_verify(request):
         except Teacher.DoesNotExist:
             return Response({'detail': 'Teacher profile not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        exam_subject_id = serializer.validated_data.get('exam_subject_id')
         exam_id = serializer.validated_data.get('exam_id')
-        if not exam_id:
-            return Response({'detail': 'exam_id is required for invigilator verification'},
-                            status=status.HTTP_400_BAD_REQUEST)
+        exam = None
+        exam_subject = None
 
-        try:
-            exam = Exam.objects.get(id=exam_id, is_deleted=False)
-        except Exam.DoesNotExist:
-            return Response({'detail': 'Exam not found'}, status=status.HTTP_404_NOT_FOUND)
+        if exam_subject_id:
+            try:
+                exam_subject = ExamSubject.objects.select_related('exam').get(
+                    id=exam_subject_id,
+                    exam__is_deleted=False,
+                )
+            except ExamSubject.DoesNotExist:
+                return Response({'detail': 'Exam subject not found'}, status=status.HTTP_404_NOT_FOUND)
+            exam = exam_subject.exam
+        elif exam_id:
+            assigned = ExamSubject.objects.filter(
+                exam_id=exam_id,
+                invigilator=t,
+                exam__is_deleted=False,
+            )
+            if assigned.count() == 1:
+                exam_subject = assigned.first()
+                exam = exam_subject.exam
+            elif assigned.count() > 1:
+                return Response(
+                    {'detail': 'exam_subject_id is required when you invigilate multiple subjects on this exam'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            else:
+                try:
+                    exam = Exam.objects.get(id=exam_id, is_deleted=False)
+                except Exam.DoesNotExist:
+                    return Response({'detail': 'Exam not found'}, status=status.HTTP_404_NOT_FOUND)
+                if exam.invigilator_id != t.id:
+                    return Response({'detail': 'You are not the assigned invigilator for this exam'},
+                                    status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'exam_id or exam_subject_id is required for invigilator verification'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         if not exam.requires_face_verification:
             return Response({'detail': 'Face verification is not required for this exam'},
                             status=status.HTTP_400_BAD_REQUEST)
-        if exam.invigilator_id != t.id:
-            return Response({'detail': 'You are not the assigned invigilator for this exam'},
+        if exam_subject and exam_subject.invigilator_id != t.id:
+            return Response({'detail': 'You are not the assigned invigilator for this subject'},
                             status=status.HTTP_403_FORBIDDEN)
 
-        seated_student_ids = SeatingArrangement.objects.filter(
-            exam=exam
-        ).values_list('student_id', flat=True)
+        seated_student_ids = list(
+            SeatingArrangement.objects.filter(exam=exam).values_list('student_id', flat=True)
+        )
+        hall_ticket_ids = list(
+            HallTicket.objects.filter(exam=exam, is_active=True).values_list('student_id', flat=True)
+        )
+        # Match against seated + hall-ticket students, and any enrolled faces in the same dept/sem.
+        # (Previously only seated students were checked, so enrolled students without seating failed.)
         students = Student.objects.filter(
-            id__in=seated_student_ids,
             is_deleted=False,
-        ).select_related('user')
+        ).filter(
+            Q(id__in=seated_student_ids)
+            | Q(id__in=hall_ticket_ids)
+            | Q(department=exam.department, semester=exam.semester)
+        ).exclude(
+            Q(face_encoding__isnull=True) | Q(face_encoding=''),
+        ).select_related('user').distinct()
+
         if not students.exists():
-            students = Student.objects.filter(
-                department=exam.department,
-                semester=exam.semester,
-                is_eligible=True,
-                is_deleted=False,
-            ).select_related('user')
+            return Response({
+                'verified': False,
+                'confidence': 0.0,
+                'message': (
+                    'No students with an enrolled face found for this exam. '
+                    'Ask the student to enroll their face first, or assign seating/hall tickets.'
+                ),
+                'student_name': None,
+            })
 
         best_match, best_conf, best_result = match_student_face(
             serializer.validated_data['image_base64'],
             students,
+            match_slack=0.0,
         )
 
         if best_match:
@@ -366,14 +425,27 @@ def face_verify(request):
                 'photo': best_match.photo,
                 'department': best_match.department,
                 'exam_id': exam.id,
-                'exam_name': exam.subject_name,
+                'exam_name': exam.title or exam.subject_name,
             })
+
+        msg = (best_result or {}).get('message') or 'No matching student found for this exam'
+        if best_conf <= 0:
+            msg = (
+                'Could not match this face to any enrolled student for this exam. '
+                'Confirm the student enrolled their face and is in this department/semester.'
+            )
+        elif best_conf < 40:
+            msg = (
+                f'No confident match (best {best_conf:.0f}%). '
+                'Ask the student to re-enroll their face, then try again with better lighting.'
+            )
 
         return Response({
             'verified': False,
-            'confidence': 0.0,
-            'message': 'No matching student found for this exam',
+            'confidence': best_conf or 0.0,
+            'message': msg,
             'student_name': None,
+            'candidates_checked': students.count(),
         })
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

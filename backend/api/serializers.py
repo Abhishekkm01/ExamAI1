@@ -186,9 +186,27 @@ class ExamSubjectInputSerializer(serializers.Serializer):
     exam_date = serializers.CharField(required=False, allow_blank=True)
     exam_time = serializers.CharField(required=False, allow_blank=True)
     duration = serializers.CharField(required=False, allow_blank=True)
+    invigilator_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+def _validate_subject_invigilators(data):
+    if not data.get('requires_face_verification', True):
+        return
+    subjects = data.get('subjects') or []
+    if not subjects:
+        return
+    missing = [s['subject_code'] for s in subjects if not s.get('invigilator_id')]
+    if missing:
+        raise serializers.ValidationError({
+            'subjects': (
+                'An invigilator must be assigned for each subject when face verification is required. '
+                f'Missing for: {", ".join(missing)}'
+            ),
+        })
 
 
 class SetupExamSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False, allow_blank=True)
     subject_code = serializers.CharField()
     subject_name = serializers.CharField()
     department = serializers.CharField()
@@ -220,10 +238,10 @@ class SetupExamSerializer(serializers.Serializer):
                 data['exam_time'] = primary['exam_time']
             if primary.get('duration'):
                 data['duration'] = primary['duration']
-        if data.get('requires_face_verification') and not data.get('invigilator_id'):
-            raise serializers.ValidationError({
-                'invigilator_id': 'An invigilator must be assigned when face verification is required.',
-            })
+        if not (data.get('title') or '').strip():
+            data['title'] = data.get('subject_name') or ''
+        if data.get('requires_face_verification'):
+            _validate_subject_invigilators(data)
         return data
 
 
@@ -310,6 +328,7 @@ class StudentUpdateSerializer(serializers.Serializer):
 
 
 class ExamCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False, allow_blank=True)
     subject_code = serializers.CharField()
     subject_name = serializers.CharField()
     department = serializers.CharField()
@@ -335,14 +354,15 @@ class ExamCreateSerializer(serializers.Serializer):
             primary = subjects[0]
             data['subject_code'] = primary['subject_code']
             data['subject_name'] = primary['subject_name']
-        if data.get('requires_face_verification') and not data.get('invigilator_id'):
-            raise serializers.ValidationError({
-                'invigilator_id': 'An invigilator must be assigned when face verification is required.',
-            })
+        if not (data.get('title') or '').strip():
+            data['title'] = data.get('subject_name') or ''
+        if data.get('requires_face_verification'):
+            _validate_subject_invigilators(data)
         return data
 
 
 class ExamUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False, allow_blank=True)
     subject_code = serializers.CharField(required=False)
     subject_name = serializers.CharField(required=False)
     department = serializers.CharField(required=False)
@@ -393,6 +413,7 @@ class NotificationCreateSerializer(serializers.Serializer):
 class FaceVerifyRequestSerializer(serializers.Serializer):
     image_base64 = serializers.CharField()
     exam_id = serializers.IntegerField(required=False, allow_null=True)
+    exam_subject_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class FaceVerifyResponseSerializer(serializers.Serializer):

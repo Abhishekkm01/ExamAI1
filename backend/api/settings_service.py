@@ -44,7 +44,5 @@ def passes_eligibility(student, cfg=None):
     return (
         student.attendance_percentage >= cfg.attendance_threshold
         and internal_pct >= cfg.internal_marks_threshold
-        and student.backlogs == 0
         and student.fee_paid
-        and student.previous_result >= cfg.min_sgpa
     )

@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q, Sum, Avg
 from django.db import transaction
-from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
+from .models import User, Student, Teacher, Exam, ExamSubject, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
 from .seating_service import SeatingArrangementService, room_display_name
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
@@ -50,7 +50,7 @@ def dashboard(request):
     """Admin dashboard metrics"""
     students = Student.objects.filter(is_deleted=False)
     eligible_count = students.filter(is_eligible=True).count()
-    hall_tickets_count = HallTicket.objects.filter(is_active=True).count()
+    hall_tickets_count = HallTicket.objects.filter(is_active=True, exam__is_deleted=False).count()
     
     avg_att = students.aggregate(avg_att=Avg('attendance_percentage'))['avg_att'] or 0
     avg_att = round(avg_att, 1)
@@ -219,10 +219,11 @@ def create_student(request):
                 fee_paid=data['fee_paid'],
                 fee_amount=data['fee_amount'],
                 fee_due_date=data.get('fee_due_date'),
-                is_eligible=ai['is_eligible'],
-                eligibility_percentage=ai['probability'] * 100.0,
+                is_eligible=False,
+                eligibility_percentage=0,
                 ai_risk_score=ai['risk_score'],
             )
+            refresh_student_eligibility(student)
         
         return Response({'message': 'Student created', 'student_id': student.id}, 
                        status=status.HTTP_201_CREATED)
@@ -339,6 +340,48 @@ def list_teachers(request):
     return Response(data)
 
 
+@api_view(['GET'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def get_teacher(request, tid):
+    """Get single teacher details with assigned invigilation exams."""
+    try:
+        t = Teacher.objects.select_related('user').get(id=tid, is_deleted=False)
+    except Teacher.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    duties = ExamSubject.objects.filter(
+        invigilator=t,
+        exam__is_deleted=False,
+    ).select_related('exam').order_by('exam_date', 'exam_time', 'sort_order')
+
+    return Response({
+        'id': t.id,
+        'name': t.user.name,
+        'email': t.user.email,
+        'emp_id': t.emp_id,
+        'department': t.department,
+        'photo': t.photo,
+        'assigned_subjects': t.assigned_subjects.split(',') if t.assigned_subjects else [],
+        'invigilator_exams': [
+            {
+                'id': s.exam.id,
+                'exam_subject_id': s.id,
+                'subject_code': s.subject_code,
+                'subject_name': s.subject_name,
+                'department': s.exam.department,
+                'semester': s.exam.semester,
+                'exam_date': s.exam_date or s.exam.exam_date,
+                'exam_time': s.exam_time or s.exam.exam_time,
+                'duration': s.duration or s.exam.duration,
+                'room': s.exam.room,
+                'requires_face_verification': s.exam.requires_face_verification,
+            }
+            for s in duties
+        ],
+    })
+
+
 @api_view(['PUT'])
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
@@ -410,7 +453,7 @@ def delete_teacher(request, tid):
 @rf_permission_classes([IsAdmin])
 def list_exams(request):
     """List all exams"""
-    exams = Exam.objects.filter(is_deleted=False).select_related('invigilator__user').prefetch_related('subjects')
+    exams = Exam.objects.filter(is_deleted=False).prefetch_related('subjects__invigilator__user')
     return Response([exam_to_dict(e) for e in exams])
 
 
@@ -466,14 +509,16 @@ def update_exam(request, eid):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def delete_exam(request, eid):
-    """Soft delete an exam"""
+    """Soft delete an exam and deactivate its hall tickets."""
     try:
         exam = Exam.objects.get(id=eid, is_deleted=False)
     except Exam.DoesNotExist:
         return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
     exam.is_deleted = True
-    exam.save()
+    exam.save(update_fields=['is_deleted', 'updated_at'])
+    HallTicket.objects.filter(exam=exam, is_active=True).update(is_active=False)
+    SeatingArrangement.objects.filter(exam=exam).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -482,30 +527,16 @@ def delete_exam(request, eid):
 @rf_permission_classes([IsAdmin])
 def verify_all(request):
     """Verify eligibility for all students"""
-    cfg = get_system_settings()
     students = Student.objects.filter(is_deleted=False)
 
     for s in students:
-        ai = eligibility_ai.predict_eligibility(
-            s.attendance_percentage,
-            s.internal_marks,
-            s.previous_result,
-            s.backlogs,
-            attendance_threshold=cfg.attendance_threshold,
-            min_sgpa=cfg.min_sgpa,
-        )
-
-        s.is_eligible = passes_eligibility(s, cfg)
-        s.eligibility_percentage = round(ai['probability'] * 100.0, 1)
-        s.ai_risk_score = ai['risk_score']
-        s.save()
-
+        refresh_student_eligibility(s)
         EligibilityPrediction.objects.create(
             student=s,
-            predicted_probability=ai['probability'],
-            risk_score=ai['risk_score']
+            predicted_probability=s.eligibility_percentage / 100.0,
+            risk_score=s.ai_risk_score,
         )
-    
+
     return Response({'message': f'Verified eligibility for {students.count()} students.'})
 
 
@@ -537,26 +568,24 @@ def generate_halltickets(request):
             continue
 
         hall_ticket_no = f"HT2026{s.roll_no}"
-        seat_number = f"S{100 + s.id}"
-        room = exam.room
+        existing = getattr(s, 'hall_ticket', None)
+        if existing and existing.exam_id == exam.id and existing.is_active:
+            seat_number = existing.seat_number or f"S{100 + s.id}"
+            room = existing.room or exam.room
+        else:
+            seat_number = f"S{100 + s.id}"
+            room = exam.room
 
-        if hasattr(s, 'hall_ticket') and s.hall_ticket.is_active:
-            ht = s.hall_ticket
-            ht.exam = exam
-            ht.seat_number = ht.seat_number or seat_number
-            ht.room = ht.room or room
-            sync_hall_ticket_subjects(ht, exam, ht.seat_number, ht.room)
-            refresh_hall_ticket_qr(ht, exam, s)
-            count += 1
-            continue
-
-        ht = HallTicket.objects.create(
-            hall_ticket_no=hall_ticket_no,
+        ht, _ = HallTicket.objects.update_or_create(
             student=s,
-            exam=exam,
-            seat_number=seat_number,
-            room=room,
-            qr_code_content='',
+            defaults={
+                'exam': exam,
+                'hall_ticket_no': hall_ticket_no,
+                'seat_number': seat_number,
+                'room': room,
+                'qr_code_content': '',
+                'is_active': True,
+            },
         )
         sync_hall_ticket_subjects(ht, exam, seat_number, room)
         refresh_hall_ticket_qr(ht, exam, s)
@@ -571,7 +600,9 @@ def generate_halltickets(request):
 def update_hallticket(request, ht_id):
     """Admin: update seat/hall per subject on a hall ticket."""
     try:
-        ht = HallTicket.objects.select_related('student', 'exam').get(id=ht_id, is_active=True)
+        ht = HallTicket.objects.select_related('student', 'exam').get(
+            id=ht_id, is_active=True, exam__is_deleted=False,
+        )
     except HallTicket.DoesNotExist:
         return Response({'detail': 'Hall ticket not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -633,24 +664,23 @@ def update_hallticket(request, ht_id):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def list_halltickets(request):
-    """List all hall tickets"""
-    hts = HallTicket.objects.filter(is_active=True).select_related(
+    """List all hall tickets for active (non-deleted) exams."""
+    hts = HallTicket.objects.filter(
+        is_active=True,
+        exam__is_deleted=False,
+    ).select_related(
         'student', 'student__user', 'exam',
     ).prefetch_related('subject_assignments')
     data = []
     for h in hts:
-        exam = resolve_hall_ticket_exam(h.student, h)
-        if exam:
+        exam = h.exam
+        subjects = merge_hall_ticket_subjects(h, exam)
+        if not h.subject_assignments.exists():
+            sync_hall_ticket_subjects(h, exam, h.seat_number, h.room)
             subjects = merge_hall_ticket_subjects(h, exam)
-            if not h.subject_assignments.exists():
-                sync_hall_ticket_subjects(h, exam, h.seat_number, h.room)
-                subjects = merge_hall_ticket_subjects(h, exam)
-            if not h.qr_code_content or not h.qr_code_content.startswith('{'):
-                refresh_hall_ticket_qr(h, exam, h.student)
-            seat_conflicts = detect_ticket_seat_conflicts(h, exam)
-        else:
-            subjects = []
-            seat_conflicts = []
+        if not h.qr_code_content or not h.qr_code_content.startswith('{'):
+            refresh_hall_ticket_qr(h, exam, h.student)
+        seat_conflicts = detect_ticket_seat_conflicts(h, exam)
         data.append({
             'id': h.id,
             'hall_ticket_no': h.hall_ticket_no,
@@ -661,12 +691,13 @@ def list_halltickets(request):
             'photo': h.student.photo,
             'seat_number': h.seat_number,
             'room': h.room,
-            'exam': exam.subject_name if exam else h.exam.subject_name,
-            'exam_id': exam.id if exam else h.exam_id,
-            'subject_code': exam.subject_code if exam else h.exam.subject_code,
-            'exam_date': exam.exam_date if exam else h.exam.exam_date,
-            'exam_time': exam.exam_time if exam else h.exam.exam_time,
-            'duration': exam.duration if exam else h.exam.duration,
+            'exam': exam.subject_name,
+            'exam_title': exam.title or exam.subject_name,
+            'exam_id': exam.id,
+            'subject_code': exam.subject_code,
+            'exam_date': exam.exam_date,
+            'exam_time': exam.exam_time,
+            'duration': exam.duration,
             'subjects': subjects,
             'seat_conflicts': seat_conflicts,
             'has_seat_conflict': len(seat_conflicts) > 0,

@@ -10,17 +10,15 @@ export function getStudentEligibilityLocal(s: Student) {
     attendance: s.attendance >= 75,
     internals:  (s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40,
     fee:        s.feePaid,
-    previous:   s.previousResult >= 5.0,
   };
   const passed = Object.values(checks).filter(Boolean).length;
   const total  = Object.keys(checks).length;
   const eligible = passed === total;
   const eligibilityPct = Math.round((passed / total) * 100);
   const score = Math.min(100, Math.round(
-    s.attendance * 0.35 +
-    ((s.internalMarks / INTERNAL_MARKS_MAX) * 100) * 0.25 +
-    (s.previousResult / 10) * 100 * 0.2 +
-    100 * 0.2
+    s.attendance * 0.45 +
+    ((s.internalMarks / INTERNAL_MARKS_MAX) * 100) * 0.35 +
+    (s.feePaid ? 20 : 0)
   ));
   return { checks, passed, total, eligible, eligibilityPct, score };
 }
@@ -64,6 +62,7 @@ export async function fetchTeachers(): Promise<Teacher[]> {
 function mapExam(e: any): Exam {
   return {
     id: `e${e.id}`,
+    title: e.title || e.subject_name,
     subjectCode: e.subject_code,
     subjectName: e.subject_name,
     department: e.department,
@@ -82,6 +81,8 @@ function mapExam(e: any): Exam {
       date: s.exam_date,
       time: s.exam_time,
       duration: s.duration,
+      invigilatorId: s.invigilator_id ?? null,
+      invigilatorName: s.invigilator_name ?? null,
     })),
   };
 }

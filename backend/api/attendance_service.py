@@ -25,7 +25,6 @@ def refresh_student_eligibility(student):
         student.previous_result,
         student.backlogs,
         attendance_threshold=cfg.attendance_threshold,
-        min_sgpa=cfg.min_sgpa,
     )
 
     internal_pct = (student.internal_marks / INTERNAL_MARKS_MAX) * 100
@@ -36,10 +35,8 @@ def refresh_student_eligibility(student):
     student.eligibility_percentage = round((sum([
         student.attendance_percentage >= cfg.attendance_threshold,
         internal_pct >= cfg.internal_marks_threshold,
-        student.backlogs == 0,
         student.fee_paid,
-        student.previous_result >= cfg.min_sgpa,
-    ]) / 5) * 100)
+    ]) / 3) * 100)
     student.save()
     return student
 

@@ -5,7 +5,7 @@ import { downloadAdminReport, api } from "../../data/api";
 import { apiDelete, apiPost, apiPut } from "../../data/http";
 import type { Student, Teacher, Exam } from "../../data/types";
 import { useNotifications } from "../../contexts/AppContext";
-import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database } from "lucide-react";
+import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, XCircle, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database, User, GraduationCap, BookOpen } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell, Legend } from "recharts";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../../utils/cn";
@@ -295,34 +295,235 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
 }
 
 function StudentDetailModal({ student, onClose }: { student: Student; onClose: () => void }) {
-  const e = getStudentEligibility(student);
+  const [detail, setDetail] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sid = parseInt(student.id.replace(/^s/, ""), 10);
+    api.adminGetStudent(sid)
+      .then(setDetail)
+      .catch((e: Error) => setError(e.message || "Failed to load student"))
+      .finally(() => setLoading(false));
+  }, [student.id]);
+
+  const s: Student = detail ? {
+    id: student.id,
+    rollNo: detail.roll_no,
+    name: detail.name,
+    email: detail.email,
+    mobile: detail.mobile || "",
+    department: detail.department,
+    semester: detail.semester,
+    section: detail.section || "A",
+    photo: detail.photo,
+    attendance: detail.attendance,
+    internalMarks: detail.internal_marks,
+    assignmentMarks: detail.assignment_marks ?? 0,
+    previousResult: detail.previous_result,
+    backlogs: detail.backlogs,
+    feePaid: detail.fee_paid,
+    feeAmount: detail.fee_amount,
+    feeDueDate: detail.fee_due_date || "",
+    createdAt: student.createdAt,
+  } : student;
+
+  const e = getStudentEligibility(s);
+  const internalPct = Math.round((s.internalMarks / INTERNAL_MARKS_MAX) * 100);
+  const totalInternal = s.internalMarks + (s.assignmentMarks || 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <GraduationCap className="w-5 h-5 text-indigo-600" /> Student Details
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
+        </div>
+
+        {loading ? (
+          <div className="p-12 text-center text-slate-500">Loading full profile from MySQL…</div>
+        ) : error ? (
+          <div className="p-8 text-center text-rose-600">{error}</div>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row items-start gap-5 p-5 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40 border border-indigo-100 dark:border-indigo-900/50">
+              <img src={s.photo} alt="" className="w-24 h-24 rounded-2xl bg-slate-200 border-4 border-white dark:border-slate-800 shadow-md object-cover" />
+              <div className="flex-1">
+                <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{s.name}</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{s.rollNo} • {s.department}</p>
+                <p className="text-sm text-slate-500">Semester {s.semester} • Section {s.section}</p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {e.eligible || detail?.is_eligible ? (
+                    <Badge variant="green">Eligible for Exam</Badge>
+                  ) : (
+                    <Badge variant="red">Not Eligible</Badge>
+                  )}
+                  {detail?.eligibility_percentage != null && (
+                    <Badge variant="indigo">AI Score: {Math.round(detail.eligibility_percentage)}%</Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><User className="w-3.5 h-3.5" /> Contact</h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Info label="Email" value={s.email} />
+                <Info label="Mobile" value={s.mobile || "—"} />
+              </div>
+            </section>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><ClipboardList className="w-3.5 h-3.5" /> Academic Record</h5>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Info label="Attendance" value={`${s.attendance}%`} ok={s.attendance >= 75} />
+                <Info label="Internal Marks" value={`${s.internalMarks}/${INTERNAL_MARKS_MAX} (${internalPct}%)`} ok={internalPct >= 40} />
+                <Info label="Assignment Marks" value={`${s.assignmentMarks}/${ASSIGNMENT_MARKS_MAX}`} />
+                <Info label="Total Internal" value={`${totalInternal}/${INTERNAL_ASSIGNMENT_TOTAL}`} />
+                <Info label="Active Backlogs" value={String(s.backlogs)} />
+                <Info label="Previous SGPA" value={s.previousResult.toFixed(2)} />
+              </div>
+              <div className="mt-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Attendance</span><span>{s.attendance}%</span></div>
+                <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div className={cn("h-full rounded-full", s.attendance >= 75 ? "bg-emerald-500" : "bg-rose-500")} style={{ width: `${Math.min(100, s.attendance)}%` }} />
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Wallet className="w-3.5 h-3.5" /> Fee Status</h5>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Info label="Fee Paid" value={s.feePaid ? "Yes" : "No"} ok={s.feePaid} />
+                <Info label="Fee Amount" value={`₹${s.feeAmount?.toLocaleString?.() ?? s.feeAmount}`} />
+                <Info label="Due Date" value={s.feeDueDate || "—"} ok={s.feePaid} />
+              </div>
+            </section>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><BrainCircuit className="w-3.5 h-3.5" /> Eligibility Breakdown</h5>
+              <div className="space-y-2">
+                <EligibilityRow label="Attendance ≥ 75%" ok={e.checks.attendance} detail={`${s.attendance}%`} />
+                <EligibilityRow label="Internal marks ≥ 40%" ok={e.checks.internals} detail={`${internalPct}%`} />
+                <EligibilityRow label="Exam fee paid" ok={e.checks.fee} detail={s.feePaid ? "Paid" : "Pending"} />
+              </div>
+              {detail?.ai_risk_score != null && (
+                <p className="text-xs text-slate-500 mt-3">AI risk score: <span className="font-semibold">{Math.round(detail.ai_risk_score)}</span> (lower is better)</p>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EligibilityRow({ label, ok, detail }: { label: string; ok: boolean; detail: string }) {
+  return (
+    <div className={cn("flex items-center justify-between p-3 rounded-lg border text-sm",
+      ok ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/20" : "border-rose-200 bg-rose-50/50 dark:border-rose-900/50 dark:bg-rose-950/20")}>
+      <div className="flex items-center gap-2">
+        {ok ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <XCircle className="w-4 h-4 text-rose-500" />}
+        <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
+      </div>
+      <span className={cn("text-xs font-semibold", ok ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400")}>{detail}</span>
+    </div>
+  );
+}
+
+function TeacherDetailModal({ teacher, onClose }: { teacher: Teacher; onClose: () => void }) {
+  const [detail, setDetail] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tid = parseInt(teacher.id.replace(/^t/, ""), 10);
+    api.adminGetTeacher(tid)
+      .then(setDetail)
+      .catch((e: Error) => setError(e.message || "Failed to load teacher"))
+      .finally(() => setLoading(false));
+  }, [teacher.id]);
+
+  const t = detail || teacher;
+  const subjects: string[] = detail?.assigned_subjects || teacher.subjects || [];
+  const exams: any[] = detail?.invigilator_exams || [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Student Profile</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <User className="w-5 h-5 text-indigo-600" /> Teacher Details
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-6">
-          <div className="flex items-center gap-4 mb-6">
-            <img src={student.photo} alt="" className="w-20 h-20 rounded-full bg-slate-200" />
-            <div>
-              <h4 className="text-xl font-bold text-slate-900 dark:text-white">{student.name}</h4>
-              <p className="text-sm text-slate-500">{student.rollNo} • {student.department}</p>
-              {e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">Not Eligible</Badge>}
+
+        {loading ? (
+          <div className="p-12 text-center text-slate-500">Loading teacher profile…</div>
+        ) : error ? (
+          <div className="p-8 text-center text-rose-600">{error}</div>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div className="flex items-start gap-5 p-5 rounded-xl bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-950/40 dark:to-indigo-950/40 border border-violet-100 dark:border-violet-900/50">
+              <img
+                src={t.photo || teacher.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${teacher.empId}`}
+                alt=""
+                className="w-24 h-24 rounded-2xl bg-slate-200 border-4 border-white dark:border-slate-800 shadow-md object-cover"
+              />
+              <div>
+                <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{t.name || teacher.name}</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{t.emp_id || teacher.empId}</p>
+                <p className="text-sm text-slate-500">{t.department || teacher.department}</p>
+                <div className="mt-2"><Badge variant="indigo">Faculty</Badge></div>
+              </div>
             </div>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Contact</h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Info label="Email" value={t.email || teacher.email} />
+                <Info label="Employee ID" value={t.emp_id || teacher.empId} />
+                <Info label="Department" value={t.department || teacher.department} />
+              </div>
+            </section>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><BookOpen className="w-3.5 h-3.5" /> Assigned Subjects</h5>
+              {subjects.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {subjects.map((sub) => <Badge key={sub} variant="indigo">{sub}</Badge>)}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No subjects assigned</p>
+              )}
+            </section>
+
+            <section>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Invigilation Duties</h5>
+              {exams.length ? (
+                <div className="space-y-2">
+                  {exams.map((ex) => (
+                    <div key={ex.exam_subject_id ?? `${ex.id}-${ex.subject_code}`} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">
+                      <p className="font-semibold text-slate-800 dark:text-white">{ex.subject_name} ({ex.subject_code})</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {ex.department} • Sem {ex.semester} • {ex.exam_date} at {ex.exam_time}
+                        {ex.duration ? ` • ${ex.duration}` : ""}
+                      </p>
+                      <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" /> {ex.room}
+                        {ex.requires_face_verification && " • Face verification required"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Not assigned as invigilator for any exam yet</p>
+              )}
+            </section>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <Info label="Email" value={student.email} />
-            <Info label="Mobile" value={student.mobile} />
-            <Info label="Attendance" value={`${student.attendance}%`} ok={student.attendance >= 75} />
-            <Info label="Internal Marks" value={`${student.internalMarks}/${INTERNAL_MARKS_MAX}`} ok={(student.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40} />
-            <Info label="Previous SGPA" value={student.previousResult.toString()} ok={student.previousResult >= 5.0} />
-            <Info label="Backlogs" value={student.backlogs.toString()} ok={student.backlogs === 0} />
-            <Info label="Fee Status" value={student.feePaid ? "Paid" : "Pending"} ok={student.feePaid} />
-            <Info label="Fee Due" value={student.feeDueDate} />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -354,6 +555,7 @@ export function AdminTeachers() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Teacher | null>(null);
+  const [viewing, setViewing] = useState<Teacher | null>(null);
 
   const reload = () => fetchTeachers().then((t) => { setList(t); setLoading(false); });
   useEffect(() => { reload(); }, []);
@@ -385,6 +587,9 @@ export function AdminTeachers() {
                   <p className="text-xs text-slate-500">{t.empId} • {t.department}</p>
                 </div>
                 <div className="flex gap-1">
+                  <button onClick={() => setViewing(t)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="View details">
+                    <Eye className="w-4 h-4 text-slate-500" />
+                  </button>
                   <button onClick={() => setEditing(t)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
                     <Edit2 className="w-4 h-4 text-slate-500" />
                   </button>
@@ -404,6 +609,7 @@ export function AdminTeachers() {
       </Card>
       {adding && <TeacherModal onClose={() => setAdding(false)} onSaved={(t) => { setList((l) => [t, ...l]); setAdding(false); }} />}
       {editing && <TeacherModal teacher={editing} onClose={() => setEditing(null)} onSaved={(t) => { setList((l) => l.map((x) => x.id === t.id ? t : x)); setEditing(null); }} />}
+      {viewing && <TeacherDetailModal teacher={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -510,7 +716,7 @@ export function AdminExams() {
   useEffect(() => { fetchAdminExams().then((e) => { setList(e); setLoading(false); }); }, []);
 
   const onDelete = async (exam: Exam) => {
-    if (!confirm(`Delete exam ${exam.subjectCode} — ${exam.subjectName}?`)) return;
+    if (!confirm(`Delete exam ${exam.title || exam.subjectName}?`)) return;
     try {
       const eid = exam.id.replace(/^e/, "");
       await apiDelete(`/api/admin/exams/${eid}/delete`, "Failed to delete exam");
@@ -531,7 +737,10 @@ export function AdminExams() {
             <div className="flex items-start justify-between mb-3">
               <div>
                 <Badge variant="indigo">{e.subjectCode}</Badge>
-                <h3 className="font-bold text-slate-900 dark:text-white mt-2">{e.subjectName}</h3>
+                <h3 className="font-bold text-slate-900 dark:text-white mt-2">{e.title || e.subjectName}</h3>
+                {(e.title && e.title !== e.subjectName) && (
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{e.subjectName}</p>
+                )}
                 <p className="text-xs text-slate-500 mt-0.5">{e.department} • Sem {e.semester}</p>
               </div>
               <div className="flex items-start gap-2">
@@ -577,6 +786,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
         exam_date: s.date || exam?.date || "2026-11-10",
         exam_time: s.time || exam?.time || "10:00 AM",
         duration: s.duration || exam?.duration || "3 hours",
+        invigilator_id: s.invigilatorId != null ? String(s.invigilatorId) : "",
       }))
     : [{
         subject_code: exam?.subjectCode || "",
@@ -584,8 +794,10 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
         exam_date: exam?.date || "2026-11-10",
         exam_time: exam?.time || "10:00 AM",
         duration: exam?.duration || "3 hours",
+        invigilator_id: exam?.invigilatorId != null ? String(exam.invigilatorId) : "",
       }];
   const [form, setForm] = useState({
+    title: exam?.title || exam?.subjectName || "",
     subject_code: exam?.subjectCode || "",
     subject_name: exam?.subjectName || "",
     department: exam?.department || "",
@@ -596,7 +808,6 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     room: exam?.room || "",
     total_marks: exam?.totalMarks || 100,
     requires_face_verification: exam?.requiresFaceVerification ?? true,
-    invigilator_id: exam?.invigilatorId ?? "",
   });
   const [subjects, setSubjects] = useState(initialSubjects);
   const [saving, setSaving] = useState(false);
@@ -626,6 +837,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
       exam_date: form.exam_date,
       exam_time: form.exam_time,
       duration: form.duration,
+      invigilator_id: "",
     }]);
   };
 
@@ -647,18 +859,33 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
 
   const save = async () => {
     setSaving(true); setErr(null);
+    const filteredSubjects = subjects.filter((s) => s.subject_code && s.subject_name);
     const payload = {
       ...form,
-      invigilator_id: form.invigilator_id ? Number(form.invigilator_id) : null,
-      subjects: subjects.filter((s) => s.subject_code && s.subject_name),
+      subjects: filteredSubjects.map((s) => ({
+        subject_code: s.subject_code,
+        subject_name: s.subject_name,
+        exam_date: s.exam_date,
+        exam_time: s.exam_time,
+        duration: s.duration,
+        invigilator_id: s.invigilator_id ? Number(s.invigilator_id) : null,
+      })),
     };
-    if (payload.requires_face_verification && !payload.invigilator_id) {
-      setErr("Please assign an invigilator for face verification.");
-      setSaving(false);
-      return;
+    if (payload.requires_face_verification) {
+      const missing = filteredSubjects.filter((s) => !s.invigilator_id);
+      if (missing.length) {
+        setErr(`Please assign an invigilator for each subject (${missing.map((s) => s.subject_code || "new subject").join(", ")}).`);
+        setSaving(false);
+        return;
+      }
     }
     if (!payload.subjects.length) {
       setErr("Add at least one subject for the hall ticket.");
+      setSaving(false);
+      return;
+    }
+    if (!form.title.trim()) {
+      setErr("Enter an overall examination title.");
       setSaving(false);
       return;
     }
@@ -667,12 +894,23 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
       setSaving(false);
       return;
     }
+    const mapSubject = (s: typeof filteredSubjects[0]) => ({
+      subjectCode: s.subject_code,
+      subjectName: s.subject_name,
+      date: s.exam_date,
+      time: s.exam_time,
+      duration: s.duration,
+      invigilatorId: s.invigilator_id ? Number(s.invigilator_id) : null,
+      invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === Number(s.invigilator_id))?.name || null,
+    });
+    const primaryInvigilator = payload.subjects[0]?.invigilator_id ?? null;
     try {
       if (isEdit && exam) {
         const eid = exam.id.replace(/^e/, "");
         await apiPut(`/api/admin/exams/${eid}/update`, payload, "Failed to update exam");
         onSaved({
           ...exam,
+          title: form.title.trim(),
           subjectCode: payload.subjects[0].subject_code,
           subjectName: payload.subjects[0].subject_name,
           department: form.department,
@@ -683,20 +921,15 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           room: form.room,
           totalMarks: form.total_marks,
           requiresFaceVerification: form.requires_face_verification,
-          invigilatorId: payload.invigilator_id,
-          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === payload.invigilator_id)?.name || null,
-          subjects: payload.subjects.map((s) => ({
-            subjectCode: s.subject_code,
-            subjectName: s.subject_name,
-            date: s.exam_date,
-            time: s.exam_time,
-            duration: s.duration,
-          })),
+          invigilatorId: primaryInvigilator,
+          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === primaryInvigilator)?.name || null,
+          subjects: payload.subjects.map(mapSubject),
         });
       } else {
         const res = await apiAddExam(payload) as { exam_id: number };
         onSaved({
           id: `e${res.exam_id}`,
+          title: form.title.trim(),
           subjectCode: payload.subjects[0].subject_code,
           subjectName: payload.subjects[0].subject_name,
           department: form.department,
@@ -707,15 +940,9 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           room: form.room,
           totalMarks: form.total_marks,
           requiresFaceVerification: form.requires_face_verification,
-          invigilatorId: payload.invigilator_id,
-          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === payload.invigilator_id)?.name || null,
-          subjects: payload.subjects.map((s) => ({
-            subjectCode: s.subject_code,
-            subjectName: s.subject_name,
-            date: s.exam_date,
-            time: s.exam_time,
-            duration: s.duration,
-          })),
+          invigilatorId: primaryInvigilator,
+          invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === primaryInvigilator)?.name || null,
+          subjects: payload.subjects.map(mapSubject),
         });
       }
     } catch (e: any) { setErr(e.message); }
@@ -729,6 +956,13 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
         </div>
         <div className="p-6 space-y-3">
+          <Field label="Examination Title">
+            <TextInput
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="e.g. Mid-Semester Examination Nov 2026"
+            />
+          </Field>
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Subjects (shown on hall ticket)</p>
             <Button variant="secondary" onClick={addSubject}><Plus className="w-3.5 h-3.5" /> Add Subject</Button>
@@ -746,7 +980,18 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
                 <TextInput value={subj.subject_name} onChange={(e) => updateSubject(idx, "subject_name", e.target.value)} placeholder="Data Structures" />
                 <TextInput type="date" value={subj.exam_date} onChange={(e) => updateSubject(idx, "exam_date", e.target.value)} />
                 <TextInput value={subj.exam_time} onChange={(e) => updateSubject(idx, "exam_time", e.target.value)} placeholder="10:00 AM" />
-                <TextInput value={subj.duration} onChange={(e) => updateSubject(idx, "duration", e.target.value)} placeholder="3 hours" className="col-span-2" />
+                <TextInput value={subj.duration} onChange={(e) => updateSubject(idx, "duration", e.target.value)} placeholder="3 hours" />
+                <Select
+                  value={subj.invigilator_id}
+                  onChange={(e) => updateSubject(idx, "invigilator_id", e.target.value)}
+                >
+                  <option value="">Select invigilator…</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id.replace(/^t/, "")}>
+                      {t.name} ({t.empId}) — {t.department}
+                    </option>
+                  ))}
+                </Select>
               </div>
             </div>
           ))}
@@ -787,19 +1032,6 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
             </Field>
             <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
           </div>
-          <Field label="Invigilator (Face Verification)">
-            <Select
-              value={form.invigilator_id}
-              onChange={(e) => setForm({ ...form, invigilator_id: e.target.value })}
-            >
-              <option value="">Select invigilator…</option>
-              {teachers
-                .filter((t) => !form.department || t.department === form.department)
-                .map((t) => (
-                  <option key={t.id} value={t.id.replace(/^t/, "")}>{t.name} ({t.empId})</option>
-                ))}
-            </Select>
-          </Field>
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input
               type="checkbox"
@@ -995,7 +1227,7 @@ export function AdminEligibility() {
 
   return (
     <div>
-      <PageHeader title="Eligibility Verification" subtitle={`${list.length} students • 5-criteria check (live from MySQL)`} />
+      <PageHeader title="Eligibility Verification" subtitle={`${list.length} students • 3-criteria check (live from MySQL)`} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card className="p-5"><p className="text-xs text-slate-500 font-medium">Total Students</p><p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{list.length}</p></Card>
@@ -1012,12 +1244,10 @@ export function AdminEligibility() {
 
       <Card className="p-5 mb-6">
         <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Eligibility Criteria</h4>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <Criterion label="≥ 75% Attendance" icon="📊" />
           <Criterion label={`≥ 40% Internals (/${INTERNAL_MARKS_MAX})`} icon="📝" />
-          <Criterion label="Zero Backlogs" icon="✅" />
           <Criterion label="Fee Paid" icon="💳" />
-          <Criterion label="Previous SGPA ≥ 5" icon="🎓" />
         </div>
       </Card>
 
@@ -1038,9 +1268,7 @@ export function AdminEligibility() {
                 <th className="pb-3 font-medium">Student</th>
                 <th className="pb-3 font-medium">Attendance</th>
                 <th className="pb-3 font-medium">Internals</th>
-                <th className="pb-3 font-medium">Backlogs</th>
                 <th className="pb-3 font-medium">Fee</th>
-                <th className="pb-3 font-medium">SGPA</th>
                 <th className="pb-3 font-medium">Score</th>
                 <th className="pb-3 font-medium">Status</th>
               </tr>
@@ -1059,9 +1287,7 @@ export function AdminEligibility() {
                   </td>
                   <td className="py-3">{s.attendance >= 75 ? <Check /> : <XIcon />}{s.attendance}%</td>
                   <td className="py-3">{(s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40 ? <Check /> : <XIcon />}{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
-                  <td className="py-3">{s.backlogs === 0 ? <Check /> : <XIcon />}{s.backlogs}</td>
                   <td className="py-3">{s.feePaid ? <Check /> : <XIcon />}{s.feePaid ? "Paid" : "Due"}</td>
-                  <td className="py-3">{s.previousResult >= 5 ? <Check /> : <XIcon />}{s.previousResult}</td>
                   <td className="py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -1127,6 +1353,7 @@ export function AdminHallTickets() {
     seat_number: string;
     room: string;
     exam: string;
+    exam_title?: string;
     subject_code?: string;
     exam_date?: string;
     exam_time?: string;
@@ -1340,6 +1567,9 @@ export function AdminHallTickets() {
                         )}
                       </div>
                       <p className="text-xs text-slate-500">{t.roll_no} • {t.department} • {t.hall_ticket_no}</p>
+                      {(t.exam_title || t.exam) && (
+                        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{t.exam_title || t.exam}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -1358,6 +1588,7 @@ export function AdminHallTickets() {
                         <Button variant="secondary" onClick={() => {
                           const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
                           downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
+                            title: t.exam_title || t.exam,
                             subjectCode: t.subject_code || t.exam, subjectName: t.exam,
                             date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
                             duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
@@ -2074,10 +2305,6 @@ export function AdminSettings() {
             <Field label="Internal Marks Threshold (%)">
               <TextInput type="number" min={0} max={100} value={aiForm.internal_marks_threshold}
                 onChange={(e) => setAiForm({ ...aiForm, internal_marks_threshold: Number(e.target.value) })} />
-            </Field>
-            <Field label="Min SGPA">
-              <TextInput type="number" step="0.1" min={0} max={10} value={aiForm.min_sgpa}
-                onChange={(e) => setAiForm({ ...aiForm, min_sgpa: Number(e.target.value) })} />
             </Field>
             <Field label="ML Model">
               <Select value={aiForm.ml_model} onChange={(e) => setAiForm({ ...aiForm, ml_model: e.target.value as "rf" | "dt" })}>

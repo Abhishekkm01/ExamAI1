@@ -603,8 +603,16 @@ function ProgressRow({ label, value, threshold, unit = "%", raw }: { label: stri
 }
 
 export function TeacherFaceVerify() {
-  const [exams, setExams] = useState<{ id: number; subject_name: string; subject_code: string; exam_date: string }[]>([]);
-  const [selectedExamId, setSelectedExamId] = useState<number | "">("");
+  const [duties, setDuties] = useState<{
+    id: number;
+    exam_id: number;
+    subject_name: string;
+    subject_code: string;
+    exam_date: string;
+    exam_time: string;
+    room: string;
+  }[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<number | "">("");
   const [capturing, setCapturing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -613,6 +621,7 @@ export function TeacherFaceVerify() {
     confidence: number;
     name: string;
     rollNo?: string;
+    department?: string;
     photo?: string;
     message?: string;
   } | null>(null);
@@ -620,34 +629,33 @@ export function TeacherFaceVerify() {
   useEffect(() => {
     api.teacherInvigilatorExams()
       .then((list: any[]) => {
-        setExams(list || []);
-        if (list?.length === 1) setSelectedExamId(list[0].id);
+        setDuties(list || []);
+        if (list?.length === 1) setSelectedSubjectId(list[0].id);
       })
-      .catch(() => setExams([]));
+      .catch(() => setDuties([]));
   }, []);
 
   const verifyCapture = async (imageBase64: string) => {
-    if (!selectedExamId) {
-      setError("Select an exam you are assigned to invigilate.");
+    if (!selectedSubjectId) {
+      setError("Select a subject you are assigned to invigilate.");
       return;
     }
     setBusy(true);
     setError("");
     setResult(null);
     try {
-      const data = await api.teacherFaceVerify(imageBase64, Number(selectedExamId)) as any;
+      const data = await api.teacherFaceVerify(imageBase64, Number(selectedSubjectId)) as any;
       setResult({
         matched: !!data.verified,
         confidence: data.confidence || 0,
         name: data.student_name || "Unknown",
         rollNo: data.roll_no,
+        department: data.department,
         photo: data.photo,
         message: data.message,
       });
-      setCapturing(false);
     } catch (err: any) {
       setError(err.message || "Verification failed");
-      setCapturing(false);
     } finally {
       setBusy(false);
     }
@@ -660,21 +668,23 @@ export function TeacherFaceVerify() {
       <Card className="p-5 mb-6 bg-slate-50 dark:bg-slate-900/40">
         <h3 className="font-semibold mb-2">How it works</h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Admin assigns you as invigilator when scheduling an exam. Select that exam below, then capture the student&apos;s live face to verify their identity against enrolled students seated for the exam.
+          Select your subject duty, then capture the student&apos;s live face. Matching uses enrolled faces for this exam&apos;s department (including seated and hall-ticket students). Students must enroll their face in the student portal first.
         </p>
       </Card>
 
       <Card className="p-5 mb-6">
-        <Field label="Exam Session">
-          <Select value={selectedExamId} onChange={(e) => setSelectedExamId(e.target.value ? Number(e.target.value) : "")}>
-            <option value="">Select exam…</option>
-            {exams.map((e) => (
-              <option key={e.id} value={e.id}>{e.subject_code} — {e.subject_name} ({e.exam_date})</option>
+        <Field label="Subject Duty">
+          <Select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : "")}>
+            <option value="">Select subject…</option>
+            {duties.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.subject_code} — {d.subject_name} ({d.exam_date} {d.exam_time}, {d.room})
+              </option>
             ))}
           </Select>
         </Field>
-        {exams.length === 0 && (
-          <p className="text-sm text-amber-600 mt-2">No exams assigned to you as invigilator yet.</p>
+        {duties.length === 0 && (
+          <p className="text-sm text-amber-600 mt-2">No subject duties assigned to you as invigilator yet.</p>
         )}
       </Card>
 
@@ -734,11 +744,31 @@ export function TeacherFaceVerify() {
                   <p className={cn("text-2xl font-bold", result.matched ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300")}>
                     {result.matched ? "VERIFIED" : "NOT VERIFIED"}
                   </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
-                    {result.matched ? `${result.name}${result.rollNo ? ` • ${result.rollNo}` : ""}` : result.message || "No match found in your department"}
-                  </p>
+                  {!result.matched && (
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                      {result.message || "No match found"}
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {result.matched && (
+                <div className="space-y-2 mb-4 text-left">
+                  <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                    <span className="text-sm text-slate-500">Name</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{result.name}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                    <span className="text-sm text-slate-500">Roll No</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{result.rollNo || "—"}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 p-3 rounded-lg bg-white dark:bg-slate-900">
+                    <span className="text-sm text-slate-500">Department</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{result.department || "—"}</span>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-white dark:bg-slate-900">
                   <p className="text-xs text-slate-500">Confidence</p>

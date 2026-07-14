@@ -10,11 +10,13 @@ export function universityInitials(name: string): string {
     .toUpperCase();
 }
 
-export function examHeaderSubtitle(academicYear: string): string {
-  return `End Semester Examination • Academic Year ${academicYear}`;
+export function examHeaderSubtitle(academicYear: string, examTitle?: string): string {
+  const title = (examTitle || "").trim() || "End Semester Examination";
+  return `${title} • Academic Year ${academicYear}`;
 }
 
 type HallTicketExam = {
+  title?: string;
   subjectCode: string;
   subjectName: string;
   date: string;
@@ -38,35 +40,107 @@ type HallTicketSubject = {
   room?: string;
 };
 
-function subjectLabel(s: HallTicketSubject) {
-  const code = s.subject_code || s.subjectCode || "";
-  const name = s.subject_name || s.subjectName || "";
-  const date = s.exam_date || s.date || "";
-  const time = s.exam_time || s.time || "";
-  const duration = s.duration || "";
-  return `${name} (${code}) — ${date} at ${time}${duration ? ` • ${duration}` : ""}`;
+function esc(value: string) {
+  return String(value || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function subjectsHtml(subjects: HallTicketSubject[] | undefined, exam: HallTicketExam): string {
-  const list = subjects?.length ? subjects : [{ subject_code: exam.subjectCode, subject_name: exam.subjectName, exam_date: exam.date, exam_time: exam.time, duration: exam.duration }];
-  if (!list.length) return "";
-  const header = list.length > 1
-    ? `<div class="info-row"><span class="l">Subjects</span><span class="v">${list.length} papers</span></div>`
-    : "";
-  const rows = list.map((s, idx) => {
-    const label = list.length > 1 ? `Subject ${idx + 1}` : "Subject";
-    const seat = s.seat_number || s.seatNumber || "";
-    const room = s.room || "";
-    const detail = subjectLabel(s).replace(/</g, "&lt;");
-    const seating = (seat || room)
-      ? `<div class="info-row sub"><span class="l">Hall / Seat</span><span class="v">${room || "—"} • ${seat || "—"}</span></div>`
-      : "";
-    return `<div class="info-row"><span class="l">${label}</span><span class="v">${detail}</span></div>${seating}`;
-  }).join("");
-  return header + rows;
+function resolveSubjects(
+  subjects: HallTicketSubject[] | undefined,
+  exam: HallTicketExam,
+  fallbackRoom: string,
+  fallbackSeat: string,
+): HallTicketSubject[] {
+  const list = subjects?.length
+    ? subjects
+    : [{
+        subject_code: exam.subjectCode,
+        subject_name: exam.subjectName,
+        exam_date: exam.date,
+        exam_time: exam.time,
+        duration: exam.duration,
+        room: fallbackRoom,
+        seat_number: fallbackSeat,
+      }];
+  return list.map((s) => ({
+    ...s,
+    room: s.room || fallbackRoom,
+    seat_number: s.seat_number || s.seatNumber || fallbackSeat,
+  }));
 }
+
+function subjectsBlockHtml(
+  subjects: HallTicketSubject[],
+  fallbackRoom: string,
+  fallbackSeat: string,
+): string {
+  const cards = subjects.map((s, idx) => {
+    const code = s.subject_code || s.subjectCode || "";
+    const name = s.subject_name || s.subjectName || "";
+    const date = s.exam_date || s.date || "";
+    const time = s.exam_time || s.time || "";
+    const duration = s.duration || "";
+    const room = s.room || fallbackRoom || "—";
+    const seat = s.seat_number || s.seatNumber || fallbackSeat || "—";
+    const label = subjects.length > 1 ? `Subject ${idx + 1}` : "Subject";
+    return `
+      <div class="subj">
+        <div class="subj-top">
+          <span class="subj-label">${esc(label)}</span>
+          <span class="subj-code">${esc(code)}</span>
+        </div>
+        <p class="subj-name">${esc(name)}</p>
+        <div class="subj-meta">
+          <span>${esc(date)}${date && time ? " · " : ""}${esc(time)}</span>
+          ${duration ? `<span>${esc(duration)}</span>` : ""}
+        </div>
+        <div class="subj-seat">
+          <span><strong>Hall</strong> ${esc(room)}</span>
+          <span><strong>Seat</strong> ${esc(seat)}</span>
+        </div>
+      </div>`;
+  }).join("");
+  return `<div class="subj-list">${cards}</div>`;
+}
+
+const SHARED_STYLES = `
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;background:#f8fafc;color:#0f172a;margin:0}
+.card{border:2px solid #2563eb;border-radius:14px;overflow:hidden;max-width:820px;margin:0 auto;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+.header{background:linear-gradient(135deg,#2563eb,#7c3aed,#db2777);color:#fff;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.header h1{font-size:22px;margin:0;line-height:1.2}
+.header p{margin:6px 0 0;opacity:.92;font-size:13px;line-height:1.4}
+.logo{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+.body{padding:28px}
+.title{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:16px;margin-bottom:20px}
+.title small{display:block;text-transform:uppercase;letter-spacing:2px;color:#64748b;font-size:11px;font-weight:600}
+.title h2{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:24px;color:#2563eb;margin:8px 0 0}
+.exam-title{margin:10px 0 0;font-size:15px;font-weight:700;color:#1e293b}
+.grid{display:grid;grid-template-columns:minmax(0,1.7fr) 180px;gap:28px;align-items:start}
+.info{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin-bottom:18px}
+.info .l{color:#64748b;font-size:13px;padding:6px 0}
+.info .v{font-weight:600;font-size:14px;padding:6px 0;word-break:break-word}
+.info .v.em{color:#1d4ed8;font-weight:700}
+.section-label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:700;margin:4px 0 10px}
+.subj-list{display:flex;flex-direction:column;gap:10px}
+.subj{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;background:#f8fafc}
+.subj-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.subj-label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:700}
+.subj-code{font-size:12px;font-weight:700;color:#4f46e5;background:#eef2ff;padding:2px 8px;border-radius:999px}
+.subj-name{margin:0;font-size:14px;font-weight:700;color:#0f172a}
+.subj-meta{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px;font-size:12px;color:#64748b}
+.subj-seat{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:13px;color:#1e293b}
+.subj-seat strong{color:#64748b;font-weight:600;margin-right:6px}
+.side{text-align:center}
+.photo{width:140px;height:140px;object-fit:cover;border-radius:10px;border:2px solid #c7d2fe;background:#f1f5f9}
+.qr-box{margin-top:14px;padding:12px;border:1px solid #c7d2fe;border-radius:10px;background:#eff6ff}
+.qr-box img{width:120px;height:120px}
+.qr-box p{margin:8px 0 0;font-size:10px;color:#475569;font-weight:600}
+.footer{margin-top:22px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:12px;font-size:12px;color:#475569}
+@media print{@page{margin:12mm}body{padding:0;background:#fff}.card{box-shadow:none}}
+@media (max-width:700px){.grid{grid-template-columns:1fr}.info{grid-template-columns:1fr}.subj-seat{grid-template-columns:1fr}}
+`;
 
 export const DEFAULT_HALL_TICKET_EXAM = {
+  title: "End Semester Examination",
   subjectCode: "CS301",
   subjectName: "Data Structures & Algorithms",
   date: "2026-11-10",
@@ -105,53 +179,44 @@ export function openHallTicketPrintWindow(
   const qrDataUrl = qrValue
     ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`
     : "";
-  const subtitle = examHeaderSubtitle(academicYear);
+  const examTitle = (exam.title || exam.subjectName || "Examination").trim();
+  const subtitle = examHeaderSubtitle(academicYear, examTitle);
   const logo = universityInitials(universityName);
+  const resolved = resolveSubjects(subjects, exam, exam.room, seat);
 
-  const html = `<!DOCTYPE html><html><head><title>Hall Ticket ${hallTicketNo}</title>
-<style>
-body{font-family:system-ui,-apple-system,sans-serif;padding:40px;background:#fff;color:#0f172a}
-.card{border:3px solid #2563eb;border-radius:12px;overflow:hidden;max-width:800px;margin:0 auto}
-.header{background:linear-gradient(135deg,#2563eb,#7c3aed,#db2777);color:#fff;padding:20px;display:flex;justify-content:space-between;align-items:center}
-.header h1{font-size:22px;margin:0}
-.header p{margin:4px 0 0;opacity:.9;font-size:13px}
-.logo{width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:bold}
-.body{padding:30px}
-.title{text-align:center;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:20px}
-.title small{text-transform:uppercase;letter-spacing:2px;color:#64748b}
-.title h2{font-family:monospace;font-size:24px;color:#2563eb;margin:6px 0 0}
-.grid{display:grid;grid-template-columns:2fr 1fr;gap:30px}
-.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
-.info-row .l{color:#64748b}
-.info-row .v{font-weight:600}
-.info-row.bold .v{color:#2563eb;font-weight:700}
-.photo{width:140px;height:140px;border-radius:8px;border:2px solid #c7d2fe;background:#f1f5f9}
-.qr-box{margin-top:16px;padding:12px;border:2px solid #c7d2fe;border-radius:8px;background:#eff6ff;text-align:center}
-.qr-box img{width:140px;height:140px}
-.qr-box p{margin:6px 0 0;font-size:10px;color:#475569;font-weight:600}
-.footer{margin-top:20px;padding-top:16px;border-top:2px solid #e2e8f0;display:flex;justify-content:space-between;font-size:12px;color:#475569}
-@media print{@page{margin:15mm}body{padding:0}}
-</style></head><body>
+  const html = `<!DOCTYPE html><html><head><title>Hall Ticket ${esc(hallTicketNo)}</title>
+<style>${SHARED_STYLES}</style></head><body>
 <div class="card">
   <div class="header">
-    <div><h1>${universityName}</h1><p>${subtitle}</p></div>
-    <div class="logo">${logo}</div>
+    <div>
+      <h1>${esc(universityName)}</h1>
+      <p>${esc(subtitle)}</p>
+    </div>
+    <div class="logo">${esc(logo)}</div>
   </div>
   <div class="body">
-    <div class="title"><small>Official Hall Ticket</small><h2>${hallTicketNo}</h2></div>
+    <div class="title">
+      <small>Official Hall Ticket</small>
+      <h2>${esc(hallTicketNo)}</h2>
+      <p class="exam-title">${esc(examTitle)}</p>
+    </div>
     <div class="grid">
       <div>
-        <div class="info-row"><span class="l">Candidate Name</span><span class="v">${student.name}</span></div>
-        <div class="info-row"><span class="l">Roll Number</span><span class="v">${student.rollNo}</span></div>
-        <div class="info-row"><span class="l">Department</span><span class="v">${student.department}</span></div>
-        <div class="info-row"><span class="l">Semester</span><span class="v">Semester ${student.semester}</span></div>
-        ${subjectsHtml(subjects, exam)}
-        <div class="info-row bold"><span class="l">Exam Hall</span><span class="v">${exam.room}</span></div>
-        <div class="info-row bold"><span class="l">Seat Number</span><span class="v">${seat}</span></div>
+        <div class="info">
+          <span class="l">Examination</span><span class="v em">${esc(examTitle)}</span>
+          <span class="l">Candidate Name</span><span class="v">${esc(student.name)}</span>
+          <span class="l">Roll Number</span><span class="v">${esc(student.rollNo)}</span>
+          <span class="l">Department</span><span class="v">${esc(student.department)}</span>
+          <span class="l">Semester</span><span class="v">Semester ${esc(String(student.semester))}</span>
+        </div>
+        <p class="section-label">Examination Subjects</p>
+        ${subjectsBlockHtml(resolved, exam.room, seat)}
       </div>
-      <div style="text-align:center">
-        <img class="photo" src="${student.photo}" alt="photo"/>
-        <div class="qr-box">${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : `<p style="font-size:11px;color:#64748b">Generate hall ticket to get official QR</p>`}<p>Scan to verify</p></div>
+      <div class="side">
+        <img class="photo" src="${esc(student.photo)}" alt="photo"/>
+        <div class="qr-box">${qrDataUrl
+          ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
+          : `<p style="font-size:11px;color:#64748b;margin:0">Generate hall ticket to get official QR</p>`}</div>
       </div>
     </div>
     <div class="footer">
@@ -186,28 +251,69 @@ export function buildSimpleHallTicketHtml(
   seat: string,
   qrContent: string,
   subjects?: HallTicketSubject[],
+  examTitle?: string,
+  semester?: number | string,
+  photo?: string,
 ) {
-  const subtitle = examHeaderSubtitle(academicYear);
-  const subjectRows = (subjects?.length ? subjects : [{ subject_name: examName, subject_code: examCode, exam_date: date, exam_time: time, duration, room, seat_number: seat }])
-    .map((s, idx) => {
-      const subjSeat = s.seat_number || s.seatNumber || seat;
-      const subjRoom = s.room || room;
-      const label = (subjects?.length || 0) > 1 ? `Subject ${idx + 1}` : "Subject";
-      return `<div class="r"><span class="l">${label}</span><span class="v">${subjectLabel({ ...s, seat_number: subjSeat, room: subjRoom }).replace(/</g, "&lt;")}</span></div>`
-        + `<div class="r"><span class="l">Hall / Seat</span><span class="v">${subjRoom} • ${subjSeat}</span></div>`;
-    })
-    .join("");
-  return `<!DOCTYPE html><html><head><title>Hall Ticket</title>
-<style>body{font-family:sans-serif;padding:30px}.card{border:3px solid #2563eb;border-radius:12px;max-width:700px;margin:0 auto;overflow:hidden}.h{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;padding:20px}.b{padding:25px}.r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}.r .l{color:#64748b}.r .v{font-weight:600}</style></head><body>
-<div class="card"><div class="h"><h2>${universityName}</h2><p>${subtitle}</p></div>
-<div class="b">
-<div class="r"><span class="l">Hall Ticket No</span><span class="v">${hallTicketNo}</span></div>
-<div class="r"><span class="l">Student</span><span class="v">${studentName}</span></div>
-<div class="r"><span class="l">Roll No</span><span class="v">${rollNo}</span></div>
-<div class="r"><span class="l">Department</span><span class="v">${department}</span></div>
-${subjectRows}
-<div class="r"><span class="l">Exam Hall</span><span class="v">${room}</span></div>
-<div class="r"><span class="l">Seat Number</span><span class="v">${seat}</span></div>
-<p style="text-align:center;margin-top:20px;color:#475569">QR Code: ${qrContent}</p>
-</div></div><script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`;
+  const title = (examTitle || examName || "").trim() || "Examination";
+  const exam: HallTicketExam = {
+    title,
+    subjectCode: examCode,
+    subjectName: examName,
+    date,
+    time,
+    duration,
+    room,
+  };
+  const qrValue = qrContent?.trim();
+  const qrDataUrl = qrValue
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`
+    : "";
+  const subtitle = examHeaderSubtitle(academicYear, title);
+  const logo = universityInitials(universityName);
+  const resolved = resolveSubjects(subjects, exam, room, seat);
+
+  return `<!DOCTYPE html><html><head><title>Hall Ticket ${esc(hallTicketNo)}</title>
+<style>${SHARED_STYLES}</style></head><body>
+<div class="card">
+  <div class="header">
+    <div>
+      <h1>${esc(universityName)}</h1>
+      <p>${esc(subtitle)}</p>
+    </div>
+    <div class="logo">${esc(logo)}</div>
+  </div>
+  <div class="body">
+    <div class="title">
+      <small>Official Hall Ticket</small>
+      <h2>${esc(hallTicketNo)}</h2>
+      <p class="exam-title">${esc(title)}</p>
+    </div>
+    <div class="grid">
+      <div>
+        <div class="info">
+          <span class="l">Examination</span><span class="v em">${esc(title)}</span>
+          <span class="l">Candidate Name</span><span class="v">${esc(studentName)}</span>
+          <span class="l">Roll Number</span><span class="v">${esc(rollNo)}</span>
+          <span class="l">Department</span><span class="v">${esc(department)}</span>
+          ${semester ? `<span class="l">Semester</span><span class="v">Semester ${esc(String(semester))}</span>` : ""}
+        </div>
+        <p class="section-label">Examination Subjects</p>
+        ${subjectsBlockHtml(resolved, room, seat)}
+      </div>
+      <div class="side">
+        ${photo ? `<img class="photo" src="${esc(photo)}" alt="photo"/>` : ""}
+        <div class="qr-box">${qrDataUrl
+          ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
+          : `<p style="font-size:11px;color:#64748b;margin:0">${esc(qrContent || "QR pending")}</p>`}</div>
+      </div>
+    </div>
+    <div class="footer">
+      <span>Issued: ${new Date().toLocaleDateString()}</span>
+      <span>Controller of Examinations (Digitally Signed)</span>
+    </div>
+  </div>
+</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
+</body></html>`;
 }

@@ -30,6 +30,7 @@ backend/.env
 backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
+backend/media
 
 # Node / React
 node_modules/

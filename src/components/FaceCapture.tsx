@@ -20,6 +20,7 @@ export function FaceCapture({
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -31,7 +32,11 @@ export function FaceCapture({
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
           audio: false,
         });
         if (!active) {
@@ -39,11 +44,22 @@ export function FaceCapture({
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+          // Wait until we have a real frame (avoids blank / black captures after remount)
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            if (video.readyState >= 2 && video.videoWidth > 0) {
+              done();
+              return;
+            }
+            video.onloadeddata = () => done();
+            setTimeout(done, 800);
+          });
         }
-        setReady(true);
+        if (active) setReady(true);
       } catch {
         setError("Camera access denied. Allow camera permission in your browser and reload.");
       }
@@ -56,16 +72,34 @@ export function FaceCapture({
     };
   }, []);
 
-  const capture = () => {
+  const capture = async () => {
     const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    onCapture(canvas.toDataURL("image/jpeg", 0.9));
+    if (!video || !video.videoWidth || capturing) return;
+    setCapturing(true);
+    try {
+      // Grab the next painted frame so we don't reuse a stale buffer
+      await new Promise<void>((resolve) => {
+        if ("requestVideoFrameCallback" in video) {
+          (video as HTMLVideoElement & {
+            requestVideoFrameCallback: (cb: () => void) => void;
+          }).requestVideoFrameCallback(() => resolve());
+        } else {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      // Capture the raw camera frame (preview is mirrored for UX only).
+      // Keep this consistent with enrolled face templates.
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      onCapture(canvas.toDataURL("image/jpeg", 0.92));
+    } finally {
+      setCapturing(false);
+    }
   };
 
   return (
@@ -96,10 +130,13 @@ export function FaceCapture({
         variant="primary"
         className="w-full"
         onClick={capture}
-        disabled={disabled || !ready || !!error}
+        disabled={disabled || capturing || !ready || !!error}
       >
-        <Camera className="w-4 h-4" /> {captureLabel}
+        <Camera className="w-4 h-4" /> {capturing ? "Capturing…" : captureLabel}
       </Button>
+      <p className="text-xs text-center text-slate-500">
+        Face the camera directly with even lighting. Keep still while capturing.
+      </p>
       <style>{`.mirror { transform: scaleX(-1); }`}</style>
     </div>
   );

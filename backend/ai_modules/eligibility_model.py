@@ -57,7 +57,7 @@ class EligibilityModel:
         risk_score = float(prob[0] * 100.0)
         if attendance < attendance_threshold:
             risk_score = min(100.0, risk_score + ((attendance_threshold - attendance) * 2.0))
-        is_eligible = success_probability >= 0.5 and attendance >= attendance_threshold and previous_sgpa >= min_sgpa
+        is_eligible = success_probability >= 0.5 and attendance >= attendance_threshold
         return {"is_eligible": bool(is_eligible), "probability": round(success_probability, 4), "risk_score": round(risk_score, 1)}
 
 

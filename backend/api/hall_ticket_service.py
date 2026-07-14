@@ -189,6 +189,7 @@ def get_occupied_seats(exam_id, subject_code, exam_date, exam_time, room, exclud
         exam_id=exam_id,
         subject_code=subject_code,
         hall_ticket__is_active=True,
+        hall_ticket__exam__is_deleted=False,
     ).select_related('hall_ticket__student__user')
     if exclude_hall_ticket_id:
         qs = qs.exclude(hall_ticket_id=exclude_hall_ticket_id)
