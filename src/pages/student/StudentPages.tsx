@@ -204,7 +204,10 @@ export function StudentDashboard() {
           <div className="space-y-3">
             {upcoming.slice(0, 4).map((ex) => (
               <div key={ex.id} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                <p className="text-sm font-semibold">{ex.subjectName}</p>
+                <p className="text-sm font-semibold">{ex.title || ex.subjectName}</p>
+                {ex.title && ex.title !== ex.subjectName && (
+                  <p className="text-xs text-slate-500">{ex.subjectName}</p>
+                )}
                 <p className="text-xs text-slate-500 mt-0.5">{ex.date} • {ex.time}</p>
                 <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-medium">{ex.room}</p>
               </div>
@@ -675,7 +678,26 @@ export function StudentExams() {
         const res = await fetch(`${API_BASE}/api/student/exams`, { headers: { Authorization: `Bearer ${token()}` } });
         if (res.ok) {
           const data = await res.json();
-          setList(data.map((e: any) => ({ id: `e${e.id}`, subjectCode: e.subject_code, subjectName: e.subject_name, department: e.department, semester: e.semester, date: e.exam_date, time: e.exam_time, duration: e.duration, room: e.room, totalMarks: e.total_marks })));
+          setList(data.map((e: any) => ({
+            id: `e${e.id}`,
+            title: e.title || e.subject_name,
+            subjectCode: e.subject_code,
+            subjectName: e.subject_name,
+            department: e.department,
+            semester: e.semester,
+            date: e.exam_date,
+            time: e.exam_time,
+            duration: e.duration,
+            room: e.room,
+            totalMarks: e.total_marks,
+            subjects: (e.subjects || []).map((s: any) => ({
+              subjectCode: s.subject_code,
+              subjectName: s.subject_name,
+              date: s.exam_date,
+              time: s.exam_time,
+              duration: s.duration,
+            })),
+          })));
         }
       } catch {}
       setLoading(false);
@@ -686,23 +708,47 @@ export function StudentExams() {
     <div>
       <PageHeader title="My Exams" subtitle={`${list.length} scheduled examinations (live from MySQL)`} />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {list.map((e) => (
+        {list.map((e) => {
+          const subjects = e.subjects?.length
+            ? e.subjects
+            : [{ subjectCode: e.subjectCode, subjectName: e.subjectName, date: e.date, time: e.time, duration: e.duration }];
+          return (
           <Card key={e.id} className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-3">
-              <div><Badge variant="indigo">{e.subjectCode}</Badge><h3 className="font-bold mt-2">{e.subjectName}</h3></div>
-              <div className="text-right">
-                <p className="text-3xl font-bold text-indigo-600">{e.date.split("-")[2]}</p>
-                <p className="text-xs text-slate-500 uppercase">{new Date(e.date).toLocaleString("en", { month: "short" })}</p>
+              <div className="min-w-0 flex-1 pr-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {subjects.map((s) => (
+                    <Badge key={s.subjectCode} variant="indigo">{s.subjectCode}</Badge>
+                  ))}
+                </div>
+                <h3 className="font-bold mt-2">{e.title || e.subjectName}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {subjects.length} subject{subjects.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-3xl font-bold text-indigo-600">{(subjects[0]?.date || e.date).split("-")[2]}</p>
+                <p className="text-xs text-slate-500 uppercase">{new Date(subjects[0]?.date || e.date).toLocaleString("en", { month: "short" })}</p>
               </div>
             </div>
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-3">
+              {subjects.map((s) => (
+                <div key={`${s.subjectCode}-${s.date}`} className="rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2">
+                  <p className="font-medium text-slate-800 dark:text-slate-100">{s.subjectName}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {s.subjectCode} · {s.date || e.date} at {s.time || e.time}
+                    {s.duration ? ` · ${s.duration}` : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
             <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
-              <p>📅 {e.date} at {e.time}</p>
-              <p>⏱️ Duration: {e.duration}</p>
               <p>🏛️ {e.room}</p>
               <p>📊 Total Marks: {e.totalMarks}</p>
             </div>
           </Card>
-        ))}
+          );
+        })}
         {list.length === 0 && <div className="col-span-2 p-10 text-center text-slate-500">No exams scheduled for your department</div>}
       </div>
     </div>

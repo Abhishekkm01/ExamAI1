@@ -419,20 +419,37 @@ def exams(request):
     except Student.DoesNotExist:
         return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    exams = Exam.objects.filter(department=s.department, is_deleted=False)
+    from .exam_service import get_exam_subjects
+
+    exams = Exam.objects.filter(department=s.department, is_deleted=False).prefetch_related(
+        'subjects__invigilator__user',
+    )
     data = []
     for e in exams:
+        subjects = get_exam_subjects(e)
+        primary = subjects[0] if subjects else {}
         data.append({
             'id': e.id,
-            'subject_code': e.subject_code,
-            'subject_name': e.subject_name,
+            'title': e.title or e.subject_name,
+            'subject_code': primary.get('subject_code') or e.subject_code,
+            'subject_name': primary.get('subject_name') or e.subject_name,
             'department': e.department,
             'semester': e.semester,
             'exam_date': e.exam_date,
             'exam_time': e.exam_time,
             'duration': e.duration,
             'room': e.room,
-            'total_marks': e.total_marks
+            'total_marks': e.total_marks,
+            'subjects': [
+                {
+                    'subject_code': sub.get('subject_code'),
+                    'subject_name': sub.get('subject_name'),
+                    'exam_date': sub.get('exam_date'),
+                    'exam_time': sub.get('exam_time'),
+                    'duration': sub.get('duration'),
+                }
+                for sub in subjects
+            ],
         })
     return Response(data)
 
