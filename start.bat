@@ -31,6 +31,20 @@ if errorlevel 1 (
   echo.
 )
 
+python -c "import cv2" >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo ERROR: OpenCV ^(cv2^) is not installed in this virtual environment.
+  echo        Run manually:
+  echo          cd backend
+  echo          venv\Scripts\activate
+  echo          pip install -r requirements.txt
+  echo          pip install opencv-python-headless
+  echo.
+  pause
+  exit /b 1
+)
+
 echo [3/4] Testing MySQL connection...
 python test_mysql.py >nul 2>&1
 if errorlevel 1 (
