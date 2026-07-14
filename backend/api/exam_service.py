@@ -1,4 +1,4 @@
-from .models import Exam, ExamSubject, Teacher, SeatingArrangement
+from .models import Exam, ExamSubject, Teacher, SeatingArrangement, SeatingRoom
 
 
 def get_exam_subjects(exam):
@@ -26,6 +26,18 @@ def get_exam_subjects(exam):
 
 def subjects_subject_codes(subjects):
     return ','.join(s['subject_code'] for s in subjects)
+
+
+def resolve_exam_room_label(value):
+    """Map exam room input to a label from an active SeatingRoom."""
+    value = (value or '').strip()
+    if not value:
+        raise ValueError('Exam hall/room is required. Create halls under Seating first.')
+    for room in SeatingRoom.objects.filter(is_active=True):
+        label = f"{room.room_name} ({room.room_code})"
+        if value in (label, room.room_code, room.room_name):
+            return label
+    raise ValueError('Select a valid exam hall from halls created under Seating.')
 
 
 def resolve_hall_ticket_exam(student, hall_ticket=None):
@@ -115,6 +127,8 @@ def create_exam_record(validated_data, subjects=None):
     data = dict(validated_data)
     invigilator_id = data.pop('invigilator_id', None)
     subjects_data = subjects if subjects is not None else data.pop('subjects', None)
+    if 'room' in data:
+        data['room'] = resolve_exam_room_label(data['room'])
 
     invigilator = resolve_invigilator(invigilator_id)
     exam = Exam.objects.create(**data, invigilator=invigilator)
@@ -132,6 +146,9 @@ def update_exam_record(exam, validated_data, subjects=None):
         sync_exam_subjects(exam, subjects)
     elif 'subjects' in data:
         sync_exam_subjects(exam, data.pop('subjects'))
+
+    if 'room' in data:
+        data['room'] = resolve_exam_room_label(data['room'])
 
     for field, value in data.items():
         setattr(exam, field, value)

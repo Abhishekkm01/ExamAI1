@@ -4,10 +4,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from .models import User, Student, Exam, Notification, ChatbotLog, HallTicket, SeatingArrangement
-from .seating_service import build_qr_content, room_display_name
-from .exam_service import get_exam_subjects, subjects_subject_codes, resolve_hall_ticket_exam
+from .seating_service import room_display_name
+from .exam_service import get_exam_subjects, resolve_hall_ticket_exam
 from .marks_constants import INTERNAL_MARKS_MAX
-from .hall_ticket_service import merge_hall_ticket_subjects, sync_hall_ticket_subjects, refresh_hall_ticket_qr
+from .hall_ticket_service import merge_hall_ticket_subjects, sync_hall_ticket_subjects, refresh_hall_ticket_qr, build_hall_ticket_qr
 from .serializers import FaceVerifyRequestSerializer, ChatbotRequestSerializer, StudentProfileUpdateSerializer, PayFeeSerializer
 from .permissions import IsStudent
 from .auth_utils import verify_password, get_password_hash
@@ -46,13 +46,11 @@ def _hall_ticket_payload(student, user):
             subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
         else:
             subjects = merge_hall_ticket_subjects(ht, exam)
-        subject_codes = subjects_subject_codes(subjects)
-        qr = build_qr_content(
-            ht.hall_ticket_no, student.roll_no, exam.subject_code,
-            subjects[0]['seat_number'] if subjects else seat_number,
-            subjects[0]['room'] if subjects else room,
-            subject_codes=subject_codes,
-        )
+        if not ht.qr_code_content or not ht.qr_code_content.startswith('{'):
+            refresh_hall_ticket_qr(ht, exam, student)
+        qr = ht.qr_code_content
+        room = subjects[0]['room'] if subjects else ht.room
+        seat_number = subjects[0]['seat_number'] if subjects else ht.seat_number
         return {
             'is_eligible': True,
             'hall_ticket_no': ht.hall_ticket_no,
@@ -95,11 +93,9 @@ def _hall_ticket_payload(student, user):
         {**subj, 'seat_number': seat_number, 'room': room}
         for subj in get_exam_subjects(exam)
     ]
-    subject_codes = subjects_subject_codes(subjects)
-    qr = build_qr_content(
-        hall_ticket_no, student.roll_no, exam.subject_code,
-        seat_number, room, subject_codes=subject_codes,
-    )
+    from types import SimpleNamespace
+    ht_stub = SimpleNamespace(hall_ticket_no=hall_ticket_no)
+    qr = build_hall_ticket_qr(ht_stub, exam, student, subjects)
 
     return {
         'is_eligible': True,

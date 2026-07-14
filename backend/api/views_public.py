@@ -2,60 +2,58 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Student, Exam, HallTicket
+from .models import HallTicket
 from .department_service import get_department_names
 from .settings_service import get_system_settings
+from .exam_service import resolve_hall_ticket_exam
+from .hall_ticket_service import extract_ht_no, verify_hall_ticket_record
+
+
+def _lookup_and_verify(ht_no, scanned_content=None):
+    ht_no = (ht_no or '').strip().upper()
+    if not ht_no:
+        return None, Response({'valid': False, 'detail': 'Hall ticket number is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        ht = HallTicket.objects.select_related('student__user', 'exam').get(
+            hall_ticket_no=ht_no, is_active=True,
+        )
+    except HallTicket.DoesNotExist:
+        return None, Response({'valid': False, 'detail': 'Invalid Hall Ticket'}, status=status.HTTP_404_NOT_FOUND)
+
+    exam = resolve_hall_ticket_exam(ht.student, ht) or ht.exam
+    result = verify_hall_ticket_record(ht, exam, scanned_content=scanned_content)
+    if not result.get('valid'):
+        return None, Response(result, status=status.HTTP_400_BAD_REQUEST)
+    return result, None
 
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def verify_hallticket(request, ht_no):
-    """Public endpoint to verify hall ticket"""
-    try:
-        ht = HallTicket.objects.get(hall_ticket_no=ht_no, is_active=True)
-        return Response({
-            'valid': True,
-            'student': {
-                'name': ht.student.user.name,
-                'roll_no': ht.student.roll_no,
-                'department': ht.student.department,
-                'photo': ht.student.photo
-            },
-            'hall_ticket_no': ht.hall_ticket_no,
-            'exam': ht.exam.subject_name,
-            'subject_code': ht.exam.subject_code,
-            'date': ht.exam.exam_date,
-            'time': ht.exam.exam_time,
-            'room': ht.room,
-            'seat_number': ht.seat_number
-        })
-    except HallTicket.DoesNotExist:
-        clean = ht_no.replace("HT2026", "")
-        try:
-            s = Student.objects.get(roll_no=clean, is_deleted=False)
-            if s.is_eligible:
-                exam = Exam.objects.filter(department=s.department).first() or Exam.objects.first()
-                if exam:
-                    return Response({
-                        'valid': True,
-                        'student': {
-                            'name': s.user.name,
-                            'roll_no': s.roll_no,
-                            'department': s.department,
-                            'photo': s.photo
-                        },
-                        'hall_ticket_no': ht_no,
-                        'exam': exam.subject_name,
-                        'subject_code': exam.subject_code,
-                        'date': exam.exam_date,
-                        'time': exam.exam_time,
-                        'room': exam.room,
-                        'seat_number': f"S{100 + s.id}"
-                    })
-        except Student.DoesNotExist:
-            pass
-        
-        return Response({'detail': 'Invalid Hall Ticket'}, status=status.HTTP_404_NOT_FOUND)
+    """Public endpoint to verify hall ticket by number (manual lookup)."""
+    result, error = _lookup_and_verify(ht_no)
+    if error:
+        return error
+    return Response(result)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_hallticket_scan(request):
+    """Verify hall ticket from scanned QR content (full JSON or legacy pipe format)."""
+    scanned = (request.data.get('code') or '').strip()
+    if not scanned:
+        return Response({'valid': False, 'detail': 'QR code content is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    ht_no = extract_ht_no(scanned)
+    if not ht_no:
+        return Response({'valid': False, 'detail': 'Invalid QR code format'}, status=status.HTTP_400_BAD_REQUEST)
+
+    result, error = _lookup_and_verify(ht_no, scanned_content=scanned)
+    if error:
+        return error
+    return Response(result)
 
 
 @api_view(['GET'])
@@ -63,7 +61,8 @@ def verify_hallticket(request, ht_no):
 def meta(request):
     """Public endpoint: returns departments, subjects, and semesters for UI dropdowns"""
     depts = get_department_names()
-    
+
+    from .models import Exam
     exams = Exam.objects.filter(is_deleted=False)
     subjects = []
     for e in exams:
@@ -73,7 +72,7 @@ def meta(request):
             'dept': e.department,
             'sem': e.semester
         })
-    
+
     cfg = get_system_settings()
     return Response({
         'departments': depts,

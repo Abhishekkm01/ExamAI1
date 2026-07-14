@@ -5,7 +5,7 @@ from rest_framework import status
 from django.db.models import Q, Sum, Avg
 from django.db import transaction
 from .models import User, Student, Teacher, Exam, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
-from .seating_service import SeatingArrangementService, build_qr_content, room_display_name
+from .seating_service import SeatingArrangementService, room_display_name
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
                           NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
@@ -536,8 +536,6 @@ def generate_halltickets(request):
             count += 1
             continue
 
-        subjects = get_exam_subjects(exam)
-        subject_codes = subjects_subject_codes(subjects)
         hall_ticket_no = f"HT2026{s.roll_no}"
         seat_number = f"S{100 + s.id}"
         room = exam.room
@@ -558,10 +556,7 @@ def generate_halltickets(request):
             exam=exam,
             seat_number=seat_number,
             room=room,
-            qr_code_content=build_qr_content(
-                hall_ticket_no, s.roll_no, exam.subject_code,
-                seat_number, room, subject_codes=subject_codes,
-            ),
+            qr_code_content='',
         )
         sync_hall_ticket_subjects(ht, exam, seat_number, room)
         refresh_hall_ticket_qr(ht, exam, s)
@@ -650,6 +645,8 @@ def list_halltickets(request):
             if not h.subject_assignments.exists():
                 sync_hall_ticket_subjects(h, exam, h.seat_number, h.room)
                 subjects = merge_hall_ticket_subjects(h, exam)
+            if not h.qr_code_content or not h.qr_code_content.startswith('{'):
+                refresh_hall_ticket_qr(h, exam, h.student)
             seat_conflicts = detect_ticket_seat_conflicts(h, exam)
         else:
             subjects = []

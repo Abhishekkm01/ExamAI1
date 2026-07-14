@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
+import RoomSeatMap, { type RoomLayout } from "../../components/RoomSeatMap";
 import { fetchAdminExams } from "../../data/apiData";
 import type { Exam } from "../../data/types";
-import { Armchair, RefreshCw, Save, MapPin, Users, CheckCircle2, TicketCheck } from "lucide-react";
+import { Armchair, RefreshCw, Save, MapPin, Users, CheckCircle2, TicketCheck, LayoutGrid } from "lucide-react";
 import { cn } from "../../utils/cn";
 
 import { API_BASE } from "../../data/api";
@@ -65,6 +66,12 @@ export default function AdminSeating() {
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<number, { seat_number: string; room_id: number }>>({});
   const [newRoom, setNewRoom] = useState({ room_code: "", room_name: "", rows: 8, columns: 6 });
+  const [viewRoomId, setViewRoomId] = useState<number | null>(null);
+
+  const fetchRoomLayout = useCallback(async (roomId: number, forExamId?: string): Promise<RoomLayout> => {
+    const qs = forExamId ? `?exam_id=${forExamId}` : "";
+    return apiFetch(`/api/admin/seating/rooms/${roomId}/layout${qs}`);
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -100,6 +107,27 @@ export default function AdminSeating() {
 
   useEffect(() => { load(); }, []);
   useEffect(() => { if (examId) loadArrangements(examId); }, [examId]);
+  useEffect(() => {
+    if (rooms.length && viewRoomId === null) setViewRoomId(rooms[0].id);
+    if (rooms.length && viewRoomId !== null && !rooms.some((r) => r.id === viewRoomId)) {
+      setViewRoomId(rooms[0]?.id ?? null);
+    }
+  }, [rooms, viewRoomId]);
+
+  const roomStats = useMemo(() => {
+    const stats: Record<number, { occupied: number; total: number; available: number }> = {};
+    rooms.forEach((r) => {
+      const total = r.rows * r.columns;
+      stats[r.id] = { occupied: 0, total, available: total };
+    });
+    arrangements.forEach((a) => {
+      if (stats[a.room_id]) {
+        stats[a.room_id].occupied++;
+        stats[a.room_id].available = stats[a.room_id].total - stats[a.room_id].occupied;
+      }
+    });
+    return stats;
+  }, [rooms, arrangements]);
 
   const selectedExam = useMemo(
     () => exams.find((e) => String(parseInt(e.id.replace(/\D/g, ""), 10) || e.id) === examId),
@@ -242,8 +270,20 @@ export default function AdminSeating() {
               <label key={r.id} className={cn("flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm",
                 selectedRooms.includes(r.id) ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20" : "border-slate-200 dark:border-slate-700")}>
                 <input type="checkbox" checked={selectedRooms.includes(r.id)} onChange={() => toggleRoom(r.id)} />
-                <span className="font-medium">{r.room_name}</span>
-                <span className="text-xs text-slate-500">({r.room_code}) • {r.rows}×{r.columns}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="font-medium">{r.room_name}</span>
+                  <span className="text-xs text-slate-500 block">
+                    ({r.room_code}) • {r.rows}×{r.columns}
+                    {roomStats[r.id] && (
+                      <span className={cn(
+                        " ml-1 font-medium",
+                        roomStats[r.id].available === 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400"
+                      )}>
+                        • {roomStats[r.id].available}/{roomStats[r.id].total} free
+                      </span>
+                    )}
+                  </span>
+                </span>
               </label>
             ))}
             {rooms.length === 0 && <p className="text-sm text-slate-500">Add a hall/room below first.</p>}
@@ -272,6 +312,35 @@ export default function AdminSeating() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-5 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="font-semibold flex items-center gap-2">
+            <LayoutGrid className="w-4 h-4" /> Seat Availability Map
+          </h3>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-500">View hall:</label>
+            <Select
+              value={viewRoomId ? String(viewRoomId) : ""}
+              onChange={(e) => setViewRoomId(e.target.value ? +e.target.value : null)}
+              className="min-w-[200px]"
+            >
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.room_name} ({r.room_code})
+                  {roomStats[r.id] ? ` — ${roomStats[r.id].available} free` : ""}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <RoomSeatMap
+          roomId={viewRoomId}
+          examId={examId || undefined}
+          fetchLayout={fetchRoomLayout}
+          refreshKey={arrangements.length}
+        />
+      </Card>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">

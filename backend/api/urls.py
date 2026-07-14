@@ -89,6 +89,7 @@ urlpatterns = [
     path('student/chatbot', views_student.chatbot, name='student_chatbot'),
     
     # Public endpoints
+    path('public/verify-hallticket/scan', views_public.verify_hallticket_scan, name='public_verify_hallticket_scan'),
     path('public/verify-hallticket/<str:ht_no>', views_public.verify_hallticket, name='public_verify_hallticket'),
     path('public/meta', views_public.meta, name='public_meta'),
 ]

@@ -1,14 +1,161 @@
+import json
 import re
 
 from .models import HallTicketSubject
 from .exam_service import get_exam_subjects, subjects_subject_codes
-from .seating_service import build_qr_content
 
 
 class SeatConflictError(Exception):
     def __init__(self, message, conflicts=None):
         super().__init__(message)
         self.conflicts = conflicts or []
+
+
+def build_hall_ticket_qr(hall_ticket, exam, student, subjects=None):
+    """Build signed JSON QR payload with all subject hall/seat details."""
+    subjects = subjects or merge_hall_ticket_subjects(hall_ticket, exam)
+    payload = {
+        'v': 1,
+        'htNo': hall_ticket.hall_ticket_no,
+        'rollNo': student.roll_no,
+        'name': student.user.name,
+        'department': student.department,
+        'examId': exam.id,
+        'examName': exam.subject_name,
+        'subjects': [
+            {
+                'subjectCode': s['subject_code'],
+                'subjectName': s.get('subject_name', s['subject_code']),
+                'examDate': s.get('exam_date', exam.exam_date),
+                'examTime': s.get('exam_time', exam.exam_time),
+                'duration': s.get('duration', exam.duration),
+                'room': s['room'],
+                'seatNumber': s['seat_number'],
+            }
+            for s in subjects
+        ],
+    }
+    if subjects:
+        payload['room'] = subjects[0]['room']
+        payload['seatNumber'] = subjects[0]['seat_number']
+    return json.dumps(payload, separators=(',', ':'), sort_keys=True)
+
+
+def parse_qr_content(content):
+    """Parse JSON or legacy pipe-format QR content."""
+    content = (content or '').strip()
+    if not content:
+        return None
+    if content.startswith('{'):
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return None
+    parts = {}
+    for segment in content.split('|'):
+        if ':' in segment:
+            key, value = segment.split(':', 1)
+            parts[key.strip()] = value.strip()
+    ht_no = parts.get('HT')
+    if not ht_no:
+        return None
+    return {
+        'v': 0,
+        'htNo': ht_no,
+        'rollNo': parts.get('Roll'),
+        'legacy': True,
+        'raw': content,
+    }
+
+
+def extract_ht_no(content):
+    """Extract hall ticket number from QR content or plain entry."""
+    parsed = parse_qr_content(content)
+    if parsed and parsed.get('htNo'):
+        return parsed['htNo'].strip().upper()
+    trimmed = (content or '').strip().upper()
+    if trimmed.startswith('HT'):
+        return trimmed
+    return None
+
+
+def qr_content_matches(stored, scanned):
+    """Return True when scanned QR matches the official stored content."""
+    if not stored or not scanned:
+        return False
+    stored = stored.strip()
+    scanned = scanned.strip()
+    if stored == scanned:
+        return True
+    stored_data = parse_qr_content(stored)
+    scanned_data = parse_qr_content(scanned)
+    if not stored_data or not scanned_data:
+        return False
+    if stored_data.get('htNo', '').upper() != scanned_data.get('htNo', '').upper():
+        return False
+    if stored_data.get('rollNo', '').upper() != scanned_data.get('rollNo', '').upper():
+        return False
+    return stored_data.get('v') == 1 and scanned_data.get('v') == 1
+
+
+def build_verify_response(hall_ticket, exam, *, qr_matched=False, method='manual'):
+    """Standard verification payload for public QR / manual lookup."""
+    subjects = merge_hall_ticket_subjects(hall_ticket, exam)
+    primary = subjects[0] if subjects else {}
+    return {
+        'valid': True,
+        'verified': qr_matched,
+        'verification_method': method,
+        'student': {
+            'name': hall_ticket.student.user.name,
+            'roll_no': hall_ticket.student.roll_no,
+            'department': hall_ticket.student.department,
+            'photo': hall_ticket.student.photo,
+        },
+        'hall_ticket_no': hall_ticket.hall_ticket_no,
+        'exam': exam.subject_name,
+        'subject_code': exam.subject_code,
+        'date': primary.get('exam_date', exam.exam_date),
+        'time': primary.get('exam_time', exam.exam_time),
+        'duration': primary.get('duration', exam.duration),
+        'room': primary.get('room', hall_ticket.room),
+        'seat_number': primary.get('seat_number', hall_ticket.seat_number),
+        'subjects': [
+            {
+                'subject_code': s['subject_code'],
+                'subject_name': s.get('subject_name', s['subject_code']),
+                'exam_date': s.get('exam_date', exam.exam_date),
+                'exam_time': s.get('exam_time', exam.exam_time),
+                'duration': s.get('duration', exam.duration),
+                'room': s['room'],
+                'seat_number': s['seat_number'],
+            }
+            for s in subjects
+        ],
+    }
+
+
+def verify_hall_ticket_record(hall_ticket, exam, scanned_content=None):
+    """
+    Verify hall ticket against DB. When scanned_content is provided,
+    ensure it matches the official qr_code_content (anti-tamper).
+    """
+    student = hall_ticket.student
+    if student.is_deleted or not student.is_eligible:
+        return {'valid': False, 'detail': 'Student is not eligible for examination'}
+
+    if not hall_ticket.qr_code_content or not hall_ticket.qr_code_content.startswith('{'):
+        refresh_hall_ticket_qr(hall_ticket, exam, student)
+
+    if scanned_content:
+        if not qr_content_matches(hall_ticket.qr_code_content, scanned_content):
+            return {
+                'valid': False,
+                'detail': 'QR code does not match official hall ticket record',
+            }
+        return build_verify_response(hall_ticket, exam, qr_matched=True, method='qr_scan')
+
+    return build_verify_response(hall_ticket, exam, qr_matched=True, method='manual')
 
 
 def normalize_room(room):
@@ -283,20 +430,10 @@ def update_hall_ticket_subjects(hall_ticket, exam, subjects_data, auto_resolve=F
 def refresh_hall_ticket_qr(hall_ticket, exam, student):
     """Rebuild QR content after subject seat/hall changes."""
     subjects = merge_hall_ticket_subjects(hall_ticket, exam)
-    subject_codes = subjects_subject_codes(subjects)
     if subjects:
         hall_ticket.seat_number = subjects[0]['seat_number']
         hall_ticket.room = subjects[0]['room']
-    primary_seat = hall_ticket.seat_number
-    primary_room = hall_ticket.room
-    hall_ticket.qr_code_content = build_qr_content(
-        hall_ticket.hall_ticket_no,
-        student.roll_no,
-        exam.subject_code,
-        primary_seat,
-        primary_room,
-        subject_codes=subject_codes,
-    )
+    hall_ticket.qr_code_content = build_hall_ticket_qr(hall_ticket, exam, student, subjects)
     hall_ticket.save(update_fields=['qr_code_content', 'seat_number', 'room', 'updated_at'])
     return subjects
 

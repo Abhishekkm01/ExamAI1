@@ -568,6 +568,8 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
   const isEdit = !!exam;
   const { departments, loading: deptsLoading } = useDepartments();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [seatingRooms, setSeatingRooms] = useState<{ id: number; room_code: string; room_name: string; rows: number; columns: number }[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const initialSubjects = exam?.subjects?.length
     ? exam.subjects.map((s) => ({
         subject_code: s.subjectCode,
@@ -602,6 +604,13 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
 
   useEffect(() => {
     fetchTeachers().then(setTeachers).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.adminSeatingRooms()
+      .then((rooms) => setSeatingRooms(rooms || []))
+      .catch(() => setSeatingRooms([]))
+      .finally(() => setRoomsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -650,6 +659,11 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     }
     if (!payload.subjects.length) {
       setErr("Add at least one subject for the hall ticket.");
+      setSaving(false);
+      return;
+    }
+    if (!form.room) {
+      setErr("Select an exam hall/room from halls created under Seating.");
       setSaving(false);
       return;
     }
@@ -748,7 +762,29 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
             <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => setForm({ ...form, semester: +e.target.value })} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Exam Hall / Room"><TextInput value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="Hall A-101" /></Field>
+            <Field label="Exam Hall / Room">
+              <Select
+                value={form.room}
+                onChange={(e) => setForm({ ...form, room: e.target.value })}
+                disabled={roomsLoading}
+              >
+                <option value="">{roomsLoading ? "Loading halls…" : "Select hall / room…"}</option>
+                {seatingRooms.map((r) => {
+                  const label = `${r.room_name} (${r.room_code})`;
+                  return (
+                    <option key={r.id} value={label}>
+                      {label} — {r.rows}×{r.columns}
+                    </option>
+                  );
+                })}
+                {form.room && !seatingRooms.some((r) => `${r.room_name} (${r.room_code})` === form.room) && (
+                  <option value={form.room}>{form.room} (current)</option>
+                )}
+              </Select>
+              {!roomsLoading && seatingRooms.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">No halls found. Add halls under Admin → Seating first.</p>
+              )}
+            </Field>
             <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
           </div>
           <Field label="Invigilator (Face Verification)">

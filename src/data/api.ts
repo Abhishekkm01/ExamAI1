@@ -100,9 +100,17 @@ export const api = {
   },
 
   // -------- Public --------
-  verifyHallTicket(htNo: string) {
-    return tryFetch(`/api/public/verify-hallticket/${encodeURIComponent(htNo)}`);
+  verifyHallTicket(code: string) {
+    const trimmed = code.trim();
+    if (trimmed.includes("|") || trimmed.startsWith("{")) {
+      return tryFetch("/api/public/verify-hallticket/scan", {
+        method: "POST",
+        body: JSON.stringify({ code: trimmed }),
+      });
+    }
+    return tryFetch(`/api/public/verify-hallticket/${encodeURIComponent(trimmed.toUpperCase())}`);
   },
+  adminSeatingRooms: () => tryFetch("/api/admin/seating/rooms"),
   publicMeta: () => tryFetch("/api/public/meta"),
 
   // -------- Admin --------

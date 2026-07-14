@@ -8,14 +8,18 @@ import { api } from "../../data/api";
 function mapVerification(data: any) {
   return {
     valid: data.valid,
+    verified: data.verified,
+    verificationMethod: data.verification_method,
     student: data.student,
     hallTicketNo: data.hall_ticket_no,
     exam: data.exam,
     subjectCode: data.subject_code,
     date: data.date,
     time: data.time,
+    duration: data.duration,
     room: data.room,
     seatNumber: data.seat_number,
+    subjects: data.subjects || [],
   };
 }
 
@@ -60,7 +64,7 @@ export function QRVerify() {
         </button>
         <div>
           <h2 className="text-2xl font-bold">QR Hall Ticket Verification</h2>
-          <p className="text-sm text-slate-500">Scan or enter hall ticket number to verify</p>
+          <p className="text-sm text-slate-500">Scan QR code or enter hall ticket number to verify</p>
         </div>
       </div>
 
@@ -105,7 +109,7 @@ export function QRVerify() {
           </div>
 
           <div className="flex gap-2">
-            <TextInput value={manual} onChange={(e) => setManual(e.target.value)} placeholder="HT2026..." />
+            <TextInput value={manual} onChange={(e) => setManual(e.target.value)} placeholder="HT2026… or paste QR JSON" />
             <Button variant="secondary" onClick={lookup}>Lookup</Button>
           </div>
         </Card>
@@ -122,7 +126,9 @@ export function QRVerify() {
                 <CheckCircle2 className="w-16 h-16 text-emerald-600" />
                 <div>
                   <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">VALID HALL TICKET</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">Authenticity verified successfully</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                    {result.verified ? "QR authenticity verified against official record" : "Verified by hall ticket lookup"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-4 mb-4 pb-4 border-b border-emerald-200 dark:border-emerald-800">
@@ -143,6 +149,19 @@ export function QRVerify() {
                 <Info label="Room" value={result.room} />
                 <Info label="Seat Number" value={result.seatNumber} bold />
               </div>
+              {result.subjects?.length > 1 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">All Subjects</p>
+                  {result.subjects.map((s: any, idx: number) => (
+                    <div key={idx} className="p-3 rounded-lg bg-white dark:bg-slate-900 text-sm">
+                      <p className="font-semibold">{s.subject_name} ({s.subject_code})</p>
+                      <p className="text-slate-500 text-xs mt-1">
+                        {s.exam_date} at {s.exam_time} • {s.room} • Seat {s.seat_number}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 p-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-sm text-emerald-800 dark:text-emerald-300 font-medium text-center">
                 ✓ Admit this candidate to the examination hall
               </div>

@@ -5,6 +5,7 @@ import random
 
 
 def build_qr_content(hall_ticket_no, roll_no, subject_code, seat_number, room_label, subject_codes=None):
+    """Legacy pipe-format QR (prefer build_hall_ticket_qr via refresh_hall_ticket_qr)."""
     codes = subject_codes or subject_code
     return f"HT:{hall_ticket_no}|Roll:{roll_no}|Exam:{codes}|Seat:{seat_number}|Room:{room_label}"
 
@@ -427,17 +428,10 @@ class SeatingArrangementService:
             raise ValueError("No seating arrangements found for this exam")
 
         synced = 0
-        subjects = get_exam_subjects(exam)
-        subject_codes = subjects_subject_codes(subjects)
         for arr in arrangements:
             student = arr.student
             hall_ticket_no = f"HT2026{student.roll_no}"
             room_label = room_display_name(arr.room)
-            qr = build_qr_content(
-                hall_ticket_no, student.roll_no, exam.subject_code,
-                arr.seat_number, arr.room.room_code,
-                subject_codes=subject_codes,
-            )
             ht, _ = HallTicket.objects.update_or_create(
                 student=student,
                 defaults={
@@ -445,12 +439,13 @@ class SeatingArrangementService:
                     'hall_ticket_no': hall_ticket_no,
                     'seat_number': arr.seat_number,
                     'room': room_label,
-                    'qr_code_content': qr,
+                    'qr_code_content': '',
                     'is_active': True,
                 },
             )
-            from .hall_ticket_service import sync_hall_ticket_subjects
+            from .hall_ticket_service import sync_hall_ticket_subjects, refresh_hall_ticket_qr
             sync_hall_ticket_subjects(ht, exam, default_seat=arr.seat_number, default_room=room_label)
+            refresh_hall_ticket_qr(ht, exam, student)
             synced += 1
 
         SeatingArrangement.objects.filter(exam=exam).update(is_confirmed=True)
@@ -463,13 +458,6 @@ class SeatingArrangementService:
         exam = arrangement.exam
         hall_ticket_no = f"HT2026{student.roll_no}"
         room_label = room_display_name(arrangement.room)
-        subjects = get_exam_subjects(exam)
-        subject_codes = subjects_subject_codes(subjects)
-        qr = build_qr_content(
-            hall_ticket_no, student.roll_no, exam.subject_code,
-            arrangement.seat_number, arrangement.room.room_code,
-            subject_codes=subject_codes,
-        )
         ht, _ = HallTicket.objects.update_or_create(
             student=student,
             defaults={
@@ -477,9 +465,10 @@ class SeatingArrangementService:
                 'hall_ticket_no': hall_ticket_no,
                 'seat_number': arrangement.seat_number,
                 'room': room_label,
-                'qr_code_content': qr,
+                'qr_code_content': '',
                 'is_active': True,
             },
         )
-        from .hall_ticket_service import sync_hall_ticket_subjects
+        from .hall_ticket_service import sync_hall_ticket_subjects, refresh_hall_ticket_qr
         sync_hall_ticket_subjects(ht, exam, default_seat=arrangement.seat_number, default_room=room_label)
+        refresh_hall_ticket_qr(ht, exam, student)

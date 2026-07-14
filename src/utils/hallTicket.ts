@@ -101,15 +101,10 @@ export function openHallTicketPrintWindow(
   qrContent?: string,
   subjects?: HallTicketSubject[],
 ) {
-  const qrValue = qrContent || JSON.stringify({
-    htNo: hallTicketNo,
-    name: student.name,
-    roll: student.rollNo,
-    seat,
-    room: exam.room,
-    verified: true,
-  });
-  const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`;
+  const qrValue = qrContent?.trim();
+  const qrDataUrl = qrValue
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`
+    : "";
   const subtitle = examHeaderSubtitle(academicYear);
   const logo = universityInitials(universityName);
 
@@ -156,7 +151,7 @@ body{font-family:system-ui,-apple-system,sans-serif;padding:40px;background:#fff
       </div>
       <div style="text-align:center">
         <img class="photo" src="${student.photo}" alt="photo"/>
-        <div class="qr-box"><img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p></div>
+        <div class="qr-box">${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : `<p style="font-size:11px;color:#64748b">Generate hall ticket to get official QR</p>`}<p>Scan to verify</p></div>
       </div>
     </div>
     <div class="footer">
