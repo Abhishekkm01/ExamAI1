@@ -5,6 +5,7 @@ from django.utils import timezone
 
 class RoleEnum(models.TextChoices):
     ADMIN = 'admin'
+    HOD = 'hod'
     TEACHER = 'teacher'
     STUDENT = 'student'
 
@@ -96,6 +97,25 @@ class Teacher(models.Model):
 
     class Meta:
         db_table = 'teachers'
+        indexes = [
+            models.Index(fields=['emp_id']),
+            models.Index(fields=['department']),
+            models.Index(fields=['is_deleted']),
+        ]
+
+
+class HOD(models.Model):
+    """Head of Department — one active HOD per department (Indian college pattern)."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='hod_profile')
+    emp_id = models.CharField(max_length=50, unique=True, db_index=True)
+    department = models.CharField(max_length=100, db_index=True)
+    photo = models.URLField(max_length=512, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        db_table = 'hods'
         indexes = [
             models.Index(fields=['emp_id']),
             models.Index(fields=['department']),

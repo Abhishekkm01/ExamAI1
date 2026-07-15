@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import { cn } from "../utils/cn";
 import { useSystemSettings } from "../hooks/useSystemSettings";
+import { formatNotificationAudience } from "../utils/notifications";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean };
 
@@ -15,6 +16,7 @@ const adminNav: NavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/students", label: "Students", icon: GraduationCap },
   { to: "/admin/teachers", label: "Teachers", icon: Users },
+  { to: "/admin/hods", label: "HODs", icon: School },
   { to: "/admin/exams", label: "Examinations", icon: BookOpen },
   { to: "/admin/marks", label: "Internal Marks", icon: ClipboardList },
   { to: "/admin/eligibility", label: "Eligibility", icon: TicketCheck },
@@ -36,6 +38,21 @@ const teacherNav: NavItem[] = [
   { to: "/teacher/students", label: "Student Monitoring", icon: GraduationCap },
   { to: "/teacher/face-verify", label: "Face Verification", icon: Camera },
   { to: "/teacher/profile", label: "My Profile", icon: UserIcon },
+];
+
+const hodNav: NavItem[] = [
+  { to: "/hod", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/hod/students", label: "Students", icon: GraduationCap },
+  { to: "/hod/teachers", label: "Faculty", icon: Users },
+  { to: "/hod/exams", label: "Examinations", icon: BookOpen },
+  { to: "/hod/marks", label: "Internal Marks", icon: ClipboardList },
+  { to: "/hod/eligibility", label: "Eligibility", icon: TicketCheck },
+  { to: "/hod/backlogs", label: "Backlogs", icon: AlertTriangle },
+  { to: "/hod/fees", label: "Fee Status", icon: Wallet },
+  { to: "/hod/notifications", label: "Notifications", icon: Bell },
+  { to: "/hod/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/hod/reports", label: "Reports", icon: FileText },
+  { to: "/hod/profile", label: "My Profile", icon: UserIcon },
 ];
 
 const studentNav: NavItem[] = [
@@ -65,11 +82,27 @@ export default function Layout() {
 
   if (!user) return null;
 
-  const nav = user.role === "admin" ? adminNav : user.role === "teacher" ? teacherNav : studentNav;
-  const unread = notifications.filter((n) => !n.read && (n.audience === "all" || n.audience === user.role + "s" || n.audience === user.role)).length;
+  const nav =
+    user.role === "admin" ? adminNav
+    : user.role === "hod" ? hodNav
+    : user.role === "teacher" ? teacherNav
+    : studentNav;
+  // Admin/HOD lists are already role-scoped from the API; students/teachers filter by audience.
+  const visibleNotifs = (user.role === "admin" || user.role === "hod")
+    ? notifications
+    : notifications.filter((n) => n.audience === "all" || n.audience === `${user.role}s` || n.audience === user.role);
+  const unread = visibleNotifs.filter((n) => !n.read).length;
+
+  const roleLabel: Record<string, string> = {
+    admin: "Admin",
+    hod: "HOD",
+    teacher: "Teacher",
+    student: "Student",
+  };
 
   const roleBadge: Record<string, string> = {
     admin: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
+    hod: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
     teacher: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
     student: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   };
@@ -121,7 +154,7 @@ export default function Layout() {
             <img src={user.avatar} alt="" className="w-9 h-9 rounded-full bg-slate-200" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate text-slate-800 dark:text-white">{user.name}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate capitalize">{user.role}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{roleLabel[user.role] || user.role}</p>
             </div>
             <button
               onClick={logout}
@@ -192,7 +225,7 @@ export default function Layout() {
               <img src={user.avatar} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
               <div className="hidden md:block text-left">
                 <p className="text-sm font-medium leading-tight">{user.name}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{user.role}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{roleLabel[user.role] || user.role}</p>
               </div>
               <ChevronDown className="w-4 h-4 text-slate-400 hidden md:block" />
             </button>
@@ -204,8 +237,8 @@ export default function Layout() {
                     <div>
                       <p className="font-medium">{user.name}</p>
                       <p className="text-xs text-slate-500">{user.email}</p>
-                      <span className={cn("inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium capitalize", roleBadge[user.role])}>
-                        {user.role}
+                      <span className={cn("inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium", roleBadge[user.role])}>
+                        {roleLabel[user.role] || user.role}
                       </span>
                     </div>
                   </div>
@@ -239,10 +272,12 @@ export default function Layout() {
 
 function NotifPopover({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
-  const { notifications, markRead, markAllRead } = useNotifications();
-  const filtered = notifications.filter(
-    (n) => n.audience === "all" || n.audience === user!.role + "s" || n.audience === user!.role
-  );
+  const { notifications, markRead, markAllRead, loading } = useNotifications();
+  const filtered = (user?.role === "admin" || user?.role === "hod")
+    ? notifications
+    : notifications.filter(
+        (n) => n.audience === "all" || n.audience === `${user!.role}s` || n.audience === user!.role
+      );
   return (
     <div className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl overflow-hidden animate-fade-in">
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
@@ -250,7 +285,8 @@ function NotifPopover({ onClose }: { onClose: () => void }) {
         <button onClick={markAllRead} className="text-xs text-indigo-600 hover:underline">Mark all read</button>
       </div>
       <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-        {filtered.length === 0 && <p className="p-6 text-sm text-slate-500 text-center">No notifications</p>}
+        {loading && filtered.length === 0 && <p className="p-6 text-sm text-slate-500 text-center">Loading…</p>}
+        {!loading && filtered.length === 0 && <p className="p-6 text-sm text-slate-500 text-center">No notifications</p>}
         {filtered.map((n) => (
           <button
             key={n.id}
@@ -260,9 +296,19 @@ function NotifPopover({ onClose }: { onClose: () => void }) {
             <div className="flex items-start gap-3">
               <div className={cn("mt-1 w-2 h-2 rounded-full", n.read ? "bg-transparent" : "bg-indigo-500 pulse-ring")} />
               <div className="flex-1 min-w-0">
-                <p className={cn("text-sm font-medium", !n.read && "text-slate-900 dark:text-white")}>{n.title}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{n.message}</p>
-                <p className="text-xs text-slate-400 mt-1">{n.createdAt}</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className={cn("text-sm font-medium", !n.read && "text-slate-900 dark:text-white")}>{n.title}</p>
+                  {n.department && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-medium">
+                      {n.department}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">{n.message}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {formatNotificationAudience(n.audience)}
+                  {n.createdAt ? ` · ${n.createdAt}` : ""}
+                </p>
               </div>
             </div>
           </button>

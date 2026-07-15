@@ -38,6 +38,7 @@ export default function LoginPage() {
 
   const demo = [
     { label: "Admin", email: "admin@examshield.ai", password: "admin123", color: "from-rose-500 to-pink-600" },
+    { label: "HOD", email: "hod@examshield.ai", password: "hod123", color: "from-amber-500 to-orange-600" },
     { label: "Teacher", email: "teacher@examshield.ai", password: "teacher123", color: "from-indigo-500 to-violet-600" },
     { label: "Student", email: "student@examshield.ai", password: "student123", color: "from-emerald-500 to-teal-600" },
   ];

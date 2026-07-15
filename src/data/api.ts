@@ -128,6 +128,8 @@ export const api = {
     tryFetch("/api/auth/setup-student", { method: "POST", body: JSON.stringify(data) }),
   setupTeacher: (data: Record<string, unknown>) =>
     tryFetch("/api/auth/setup-teacher", { method: "POST", body: JSON.stringify(data) }),
+  setupHod: (data: Record<string, unknown>) =>
+    tryFetch("/api/auth/setup-hod", { method: "POST", body: JSON.stringify(data) }),
   setupExam: (data: Record<string, unknown>) =>
     tryFetch("/api/auth/setup-exam", { method: "POST", body: JSON.stringify(data) }),
   adminTeachers: () => tryFetch("/api/admin/teachers"),
@@ -136,6 +138,12 @@ export const api = {
     tryFetch(`/api/admin/teachers/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTeacher: (id: number) =>
     tryFetch(`/api/admin/teachers/${id}/delete`, { method: "DELETE" }),
+  adminHods: () => tryFetch("/api/admin/hods"),
+  adminGetHod: (id: number) => tryFetch(`/api/admin/hods/${id}`),
+  updateHod: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/hods/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteHod: (id: number) =>
+    tryFetch(`/api/admin/hods/${id}/delete`, { method: "DELETE" }),
   adminExams: () => tryFetch("/api/admin/exams"),
   updateExam: (id: number, data: Record<string, unknown>) =>
     tryFetch(`/api/admin/exams/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
@@ -166,6 +174,7 @@ export const api = {
     tryFetch(`/api/admin/fees/${studentId}/mark-paid`, { method: "PUT" }),
   sendNotification: (data: { title: string; message: string; audience: string }) =>
     tryFetch("/api/admin/notifications/create", { method: "POST", body: JSON.stringify(data) }),
+  adminNotifications: () => tryFetch("/api/admin/notifications"),
 
   // -------- Teacher --------
   teacherProfile: () => tryFetch("/api/teacher/profile"),
@@ -182,6 +191,35 @@ export const api = {
     tryFetch("/api/teacher/attendance/mark", { method: "POST", body: JSON.stringify(data) }),
   updateMarks: (data: any) =>
     tryFetch("/api/teacher/marks/update", { method: "POST", body: JSON.stringify(data) }),
+
+  // -------- HOD --------
+  hodDashboard: () => tryFetch("/api/hod/dashboard"),
+  hodProfile: () => tryFetch("/api/hod/profile"),
+  hodUpdateProfile: (data: Record<string, unknown>) =>
+    tryFetch("/api/hod/profile/update", { method: "PUT", body: JSON.stringify(data) }),
+  hodStudents: (params: Record<string, any> = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return tryFetch(`/api/hod/students${q ? `?${q}` : ""}`);
+  },
+  hodGetStudent: (id: number) => tryFetch(`/api/hod/students/${id}`),
+  hodUpdateStudent: (id: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/hod/students/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
+  hodTeachers: () => tryFetch("/api/hod/teachers"),
+  hodUpdateTeacherSubjects: (id: number, assigned_subjects: string) =>
+    tryFetch(`/api/hod/teachers/${id}/subjects`, {
+      method: "PUT",
+      body: JSON.stringify({ assigned_subjects }),
+    }),
+  hodExams: () => tryFetch("/api/hod/exams"),
+  hodMarks: () => tryFetch("/api/hod/marks"),
+  hodEligibility: () => tryFetch("/api/hod/eligibility"),
+  hodVerifyEligibility: () => tryFetch("/api/hod/eligibility/verify", { method: "POST" }),
+  hodBacklogs: () => tryFetch("/api/hod/backlogs"),
+  hodFees: () => tryFetch("/api/hod/fees"),
+  hodAnalytics: () => tryFetch("/api/hod/analytics"),
+  hodNotifications: () => tryFetch("/api/hod/notifications"),
+  hodSendNotification: (data: { title: string; message: string; audience: string }) =>
+    tryFetch("/api/hod/notifications/create", { method: "POST", body: JSON.stringify(data) }),
 
   // -------- Student --------
   studentDashboard: () => tryFetch("/api/student/dashboard"),
@@ -211,6 +249,7 @@ export const api = {
       body: JSON.stringify({ image_base64: imageBase64, exam_subject_id: examSubjectId }),
     }),
   teacherInvigilatorExams: () => tryFetch("/api/teacher/invigilator-exams"),
+  teacherNotifications: () => tryFetch("/api/teacher/notifications"),
   askChatbot: (query: string) =>
     tryFetch("/api/student/chatbot", { method: "POST", body: JSON.stringify({ user_query: query }) }),
 };
@@ -227,6 +266,49 @@ export async function downloadAdminReport(reportType: string, format: "pdf" | "e
       `${API_BASE}/api/admin/reports/export?report_type=${encodeURIComponent(reportType)}&export_format=${format}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
+  } catch {
+    backendOnline = false;
+    throw new Error(`Cannot reach backend at ${API_BASE}. Run start.bat or: python manage.py runserver 0.0.0.0:8000`);
+  }
+
+  if (!res.ok) {
+    let detail = `Failed to generate report (HTTP ${res.status})`;
+    try {
+      const j = await res.json();
+      if (j?.detail) detail = j.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+
+  backendOnline = true;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${reportType}.${format === "excel" ? "xlsx" : "pdf"}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadHodReport(reportType: string, format: "pdf" | "excel"): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    throw new Error("Not logged in. Please sign in again as HOD.");
+  }
+
+  // Never use ?format= — DRF reserves it for content negotiation and returns 404.
+  const qs = new URLSearchParams({
+    report_type: reportType,
+    export_format: format,
+  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/hod/reports/export?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   } catch {
     backendOnline = false;
     throw new Error(`Cannot reach backend at ${API_BASE}. Run start.bat or: python manage.py runserver 0.0.0.0:8000`);

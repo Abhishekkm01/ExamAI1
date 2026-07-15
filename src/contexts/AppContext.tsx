@@ -1,12 +1,32 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { User, Notification as Notif } from "../data/types";
-
-const seedNotifs: Notif[] = [
-  { id: "n1", title: "Welcome to ExamShield AI", message: "Your examination management system is ready.", audience: "all", createdAt: "2026-10-28 09:00", read: false },
-];
 import { api, isBackendOnline } from "../data/api";
+import { cleanNotificationMessage, parseNotificationTitle } from "../utils/notifications";
 
-const ROLE_MAP: Record<string, User["role"]> = { admin: "admin", teacher: "teacher", student: "student" };
+const ROLE_MAP: Record<string, User["role"]> = { admin: "admin", hod: "hod", teacher: "teacher", student: "student" };
+
+function mapApiNotif(n: any): Notif {
+  const created = n.created_at || n.createdAt || "";
+  const parsed = parseNotificationTitle(n.title || "");
+  return {
+    id: String(n.id),
+    title: parsed.title,
+    department: parsed.department,
+    message: cleanNotificationMessage(n.message || ""),
+    audience: (n.audience || "all") as Notif["audience"],
+    createdAt: String(created).replace("T", " ").slice(0, 16),
+    read: Boolean(n.is_read ?? n.read ?? false),
+  };
+}
+
+async function fetchNotificationsForRole(role: User["role"]): Promise<Notif[]> {
+  let data: any[] = [];
+  if (role === "student") data = await api.studentNotifications();
+  else if (role === "teacher") data = await api.teacherNotifications();
+  else if (role === "hod") data = await api.hodNotifications();
+  else if (role === "admin") data = await api.adminNotifications();
+  return (Array.isArray(data) ? data : []).map(mapApiNotif);
+}
 
 // ---- Auth ----
 interface AuthState {
@@ -30,7 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [backendOnline, setBackendOnline] = useState(false);
 
   useEffect(() => {
-    // Ping backend on mount
     api.ping().then(setBackendOnline);
     const interval = setInterval(() => api.ping().then(setBackendOnline), 10_000);
     return () => clearInterval(interval);
@@ -42,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const login: AuthState["login"] = async (email, password) => {
-    // Call the backend directly - no fallback to mock users
     try {
       const data = await api.login(email, password);
       const role = ROLE_MAP[data.user.role] || "student";
@@ -52,12 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: data.user.name,
         role,
         avatar: data.user.avatar || undefined,
-        password: "",  // never store the password client-side
+        password: "",
       });
       setBackendOnline(true);
       return { ok: true };
     } catch (err: any) {
-      // Return the actual error from the backend so the user knows what's wrong
       const msg = err?.message || "Login failed. Is the backend running?";
       setBackendOnline(false);
       return { ok: false, message: msg };
@@ -118,18 +135,54 @@ export function useTheme() {
   return ctx;
 }
 
-// ---- Notifications ----
+// ---- Notifications (live from MySQL via role APIs) ----
 interface NotifState {
   notifications: Notif[];
+  loading: boolean;
   markRead: (id: string) => void;
   markAllRead: () => void;
   add: (n: Omit<Notif, "id" | "createdAt" | "read">) => void;
+  refresh: () => Promise<void>;
 }
 
 const NotifContext = createContext<NotifState | null>(null);
 
+export const NOTIFICATIONS_UPDATED = "examshield:notifications-updated";
+
+export function notifyNotificationsUpdated() {
+  window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED));
+}
+
 export function NotifProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<Notif[]>(seedNotifs);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notif[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const list = await fetchNotificationsForRole(user.role);
+      setNotifications(list);
+    } catch {
+      // Keep previous list on transient errors
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const onUpdate = () => { refresh(); };
+    window.addEventListener(NOTIFICATIONS_UPDATED, onUpdate);
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED, onUpdate);
+  }, [refresh]);
 
   const markRead = (id: string) =>
     setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -142,7 +195,10 @@ export function NotifProvider({ children }: { children: ReactNode }) {
       ...ns,
     ]);
 
-  const value = useMemo(() => ({ notifications, markRead, markAllRead, add }), [notifications]);
+  const value = useMemo(
+    () => ({ notifications, loading, markRead, markAllRead, add, refresh }),
+    [notifications, loading, refresh],
+  );
   return <NotifContext.Provider value={value}>{children}</NotifContext.Provider>;
 }
 

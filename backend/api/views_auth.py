@@ -3,9 +3,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction, IntegrityError
-from .models import User, Student, Teacher, Exam, Notification, RoleEnum
+from .models import User, Student, Teacher, HOD, Exam, Notification, RoleEnum
 from .serializers import (UserSerializer, TokenSerializer, BootstrapAdminSerializer, 
-                          SetupTeacherSerializer, SetupStudentSerializer, RegisterStudentSerializer,
+                          SetupTeacherSerializer, SetupHodSerializer, SetupStudentSerializer, RegisterStudentSerializer,
                           SetupExamSerializer, SendNotificationSerializer, LoginSerializer)
 from .auth_utils import get_password_hash, verify_password, create_access_token
 import sys
@@ -232,6 +232,71 @@ def setup_teacher(request):
         return Response({'message': f"Teacher {user.name} created", 'teacher_id': teacher.id}, 
                        status=status.HTTP_201_CREATED)
     
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def setup_hod(request):
+    """Admin-only: create a Head of Department account (one active HOD per department)."""
+    serializer = SetupHodSerializer(data=request.data)
+    if serializer.is_valid():
+        current_user = getattr(request, '_jwt_user', request.user)
+        if not current_user or not hasattr(current_user, 'role') or current_user.role != RoleEnum.ADMIN:
+            return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+        data = serializer.validated_data
+        email = data['email']
+        emp_id = data['emp_id']
+        department = data['department']
+        avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={emp_id or email}"
+
+        existing_user = User.objects.filter(email=email).first()
+        existing_hod = HOD.objects.filter(emp_id=emp_id).first()
+        dept_hod = HOD.objects.filter(department=department, is_deleted=False).first()
+
+        if dept_hod and (not existing_hod or existing_hod.id != dept_hod.id or existing_hod.is_deleted):
+            return Response(
+                {'detail': f'An active HOD already exists for {department}. Only one HOD per department is allowed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if existing_user and not existing_user.is_deleted:
+            return Response({'detail': f"A user with email {email} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_hod and not existing_hod.is_deleted:
+            return Response({'detail': f"An HOD with employee ID {emp_id} already exists."},
+                          status=status.HTTP_400_BAD_REQUEST)
+        if existing_user and existing_hod and existing_user.id != existing_hod.user_id:
+            return Response({'detail': "This email and employee ID belong to different deleted records. Use unique values."},
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                user = existing_user or User(username=None, email=email)
+                user.username = None
+                user.email = email
+                user.hashed_password = get_password_hash(data.get('password', 'hod123'))
+                user.name = data['name']
+                user.role = RoleEnum.HOD
+                user.avatar = avatar
+                user.is_deleted = False
+                user.save()
+
+                hod = HOD.objects.filter(user=user).first() or HOD(user=user)
+                hod.emp_id = emp_id
+                hod.department = department
+                hod.photo = avatar
+                hod.is_deleted = False
+                hod.save()
+        except IntegrityError:
+            return Response({'detail': "Could not create HOD: the email or employee ID is already in use."},
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'message': f"HOD {user.name} created", 'hod_id': hod.id},
+                       status=status.HTTP_201_CREATED)
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

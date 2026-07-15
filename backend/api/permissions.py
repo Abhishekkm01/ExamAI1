@@ -10,6 +10,14 @@ class IsAdmin(permissions.BasePermission):
         return user.role == 'admin'
 
 
+class IsHod(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = getattr(request, '_jwt_user', request.user)
+        if not user or not hasattr(user, 'role'):
+            return False
+        return user.role == 'hod'
+
+
 class IsTeacher(permissions.BasePermission):
     def has_permission(self, request, view):
         # Check if user is authenticated via JWT middleware
@@ -40,7 +48,7 @@ class IsOwner(permissions.BasePermission):
         user = getattr(request, '_jwt_user', request.user)
         if not user or not hasattr(user, 'role'):
             return False
-        return user.role in ['admin', 'teacher', 'student']
+        return user.role in ['admin', 'hod', 'teacher', 'student']
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -49,7 +57,7 @@ class IsOwnerOrAdmin(permissions.BasePermission):
         user = getattr(request, '_jwt_user', request.user)
         if not user or not hasattr(user, 'role'):
             return False
-        return user.role in ['admin', 'teacher', 'student']
+        return user.role in ['admin', 'hod', 'teacher', 'student']
     
     def has_object_permission(self, request, view, obj):
         user = getattr(request, '_jwt_user', request.user)

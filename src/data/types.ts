@@ -1,4 +1,13 @@
-export type Role = "admin" | "teacher" | "student";
+export type Role = "admin" | "hod" | "teacher" | "student";
+
+export interface Hod {
+  id: string;
+  empId: string;
+  name: string;
+  email: string;
+  department: string;
+  photo: string;
+}
 
 export interface User {
   id: string;
@@ -75,4 +84,6 @@ export interface Notification {
   audience: "all" | "students" | "teachers" | "admin";
   createdAt: string;
   read: boolean;
+  /** Present when notice was sent by an HOD (parsed from [DEPT] title prefix). */
+  department?: string;
 }

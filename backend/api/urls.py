@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views_auth, views_admin, views_teacher, views_student, views_public, views_seating
+from . import views_auth, views_admin, views_teacher, views_student, views_public, views_seating, views_hod
 
 urlpatterns = [
     # Auth endpoints
@@ -7,6 +7,7 @@ urlpatterns = [
     path('auth/bootstrap-admin', views_auth.bootstrap_admin, name='bootstrap_admin'),
     path('auth/register-student', views_auth.register_student, name='register_student'),
     path('auth/setup-teacher', views_auth.setup_teacher, name='setup_teacher'),
+    path('auth/setup-hod', views_auth.setup_hod, name='setup_hod'),
     path('auth/setup-student', views_auth.setup_student, name='setup_student'),
     path('auth/setup-exam', views_auth.setup_exam, name='setup_exam'),
     path('auth/send-notification', views_auth.send_notification, name='send_notification'),
@@ -25,6 +26,10 @@ urlpatterns = [
     path('admin/teachers/<int:tid>', views_admin.get_teacher, name='admin_get_teacher'),
     path('admin/teachers/<int:tid>/update', views_admin.update_teacher, name='admin_update_teacher'),
     path('admin/teachers/<int:tid>/delete', views_admin.delete_teacher, name='admin_delete_teacher'),
+    path('admin/hods', views_admin.list_hods, name='admin_list_hods'),
+    path('admin/hods/<int:hid>', views_admin.get_hod, name='admin_get_hod'),
+    path('admin/hods/<int:hid>/update', views_admin.update_hod, name='admin_update_hod'),
+    path('admin/hods/<int:hid>/delete', views_admin.delete_hod, name='admin_delete_hod'),
     path('admin/exams', views_admin.list_exams, name='admin_list_exams'),
     path('admin/exams/create', views_admin.create_exam, name='admin_create_exam'),
     path('admin/exams/<int:eid>/update', views_admin.update_exam, name='admin_update_exam'),
@@ -60,6 +65,27 @@ urlpatterns = [
     path('admin/seating/confirm', views_seating.confirm_arrangements, name='seating_confirm'),
     path('admin/seating/sync-halltickets', views_seating.sync_halltickets, name='seating_sync_halltickets'),
     
+    # HOD endpoints (department-scoped)
+    path('hod/dashboard', views_hod.dashboard, name='hod_dashboard'),
+    path('hod/profile', views_hod.profile, name='hod_profile'),
+    path('hod/profile/update', views_hod.update_profile, name='hod_update_profile'),
+    path('hod/profile/photo', views_hod.upload_profile_photo, name='hod_upload_photo'),
+    path('hod/students', views_hod.list_students, name='hod_list_students'),
+    path('hod/students/<int:sid>', views_hod.get_student, name='hod_get_student'),
+    path('hod/students/<int:sid>/update', views_hod.update_student_academic, name='hod_update_student'),
+    path('hod/teachers', views_hod.list_teachers, name='hod_list_teachers'),
+    path('hod/teachers/<int:tid>/subjects', views_hod.update_teacher_subjects, name='hod_update_teacher_subjects'),
+    path('hod/exams', views_hod.list_exams, name='hod_list_exams'),
+    path('hod/marks', views_hod.list_marks, name='hod_list_marks'),
+    path('hod/eligibility', views_hod.list_eligibility, name='hod_list_eligibility'),
+    path('hod/eligibility/verify', views_hod.verify_department, name='hod_verify_eligibility'),
+    path('hod/backlogs', views_hod.list_backlogs, name='hod_backlogs'),
+    path('hod/fees', views_hod.list_fees, name='hod_fees'),
+    path('hod/analytics', views_hod.analytics, name='hod_analytics'),
+    path('hod/notifications', views_hod.list_notifications, name='hod_list_notifications'),
+    path('hod/notifications/create', views_hod.send_notification, name='hod_send_notification'),
+    path('hod/reports/export', views_hod.export_report, name='hod_export_report'),
+
     # Teacher endpoints
     path('teacher/dashboard', views_teacher.dashboard, name='teacher_dashboard'),
     path('teacher/profile', views_teacher.profile, name='teacher_profile'),
@@ -72,6 +98,7 @@ urlpatterns = [
     path('teacher/students', views_teacher.monitor_students, name='teacher_monitor_students'),
     path('teacher/face-verify', views_teacher.face_verify, name='teacher_face_verify'),
     path('teacher/invigilator-exams', views_teacher.invigilator_exams, name='teacher_invigilator_exams'),
+    path('teacher/notifications', views_teacher.notifications, name='teacher_notifications'),
     
     # Student endpoints
     path('student/dashboard', views_student.dashboard, name='student_dashboard'),

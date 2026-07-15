@@ -226,17 +226,29 @@ export function StudentDashboard() {
 }
 
 function RecentNotifications() {
-  const { user } = useAuth();
-  const { notifications } = useNotifications();
+  const { notifications, loading } = useNotifications();
   const filtered = notifications.filter((n) => n.audience === "all" || n.audience === "students");
+  if (loading && !filtered.length) {
+    return <p className="text-sm text-slate-500">Loading notifications…</p>;
+  }
+  if (!filtered.length) {
+    return <p className="text-sm text-slate-500">No notifications yet</p>;
+  }
   return (
     <div className="space-y-2">
       {filtered.slice(0, 4).map((n) => (
         <div key={n.id} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 flex items-start gap-3">
           <div className={cn("w-2 h-2 rounded-full mt-1.5", n.read ? "bg-slate-300" : "bg-indigo-500 pulse-ring")} />
           <div className="flex-1">
-            <p className="text-sm font-medium">{n.title}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className="text-sm font-medium">{n.title}</p>
+              {n.department && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-medium">
+                  {n.department}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{n.message}</p>
           </div>
           <p className="text-xs text-slate-400">{(n.createdAt || "").split(" ")[0]}</p>
         </div>
@@ -964,14 +976,23 @@ export function StudentFaceVerify() {
 
 // ============ NOTIFICATIONS ============
 export function StudentNotifications() {
-  const { notifications, markRead, markAllRead } = useNotifications();
+  const { notifications, markRead, markAllRead, loading, refresh } = useNotifications();
   const filtered = notifications.filter((n) => n.audience === "all" || n.audience === "students");
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   return (
     <div>
-      <PageHeader title="My Notifications" subtitle={`${filtered.filter(n => !n.read).length} unread (live from MySQL)`}
-        actions={<Button variant="secondary" onClick={markAllRead}>Mark all read</Button>} />
+      <PageHeader
+        title="My Notifications"
+        subtitle={`${filtered.filter((n) => !n.read).length} unread (live from MySQL)`}
+        actions={<Button variant="secondary" onClick={markAllRead}>Mark all read</Button>}
+      />
       <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-        {filtered.length === 0 && <div className="p-10 text-center text-slate-500">No notifications</div>}
+        {loading && !filtered.length && <div className="p-10 text-center text-slate-500">Loading…</div>}
+        {!loading && filtered.length === 0 && <div className="p-10 text-center text-slate-500">No notifications</div>}
         {filtered.map((n) => (
           <div key={n.id} className="p-5 flex items-start gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <div className={cn("w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
@@ -980,10 +1001,17 @@ export function StudentNotifications() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <p className={cn("font-semibold", n.read ? "text-slate-600 dark:text-slate-300" : "text-slate-900 dark:text-white")}>{n.title}</p>
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <p className={cn("font-semibold", n.read ? "text-slate-600 dark:text-slate-300" : "text-slate-900 dark:text-white")}>{n.title}</p>
+                  {n.department && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-medium">
+                      {n.department}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400 flex-shrink-0">{n.createdAt}</p>
               </div>
-              <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{n.message}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">{n.message}</p>
               {!n.read && <button onClick={() => markRead(n.id)} className="text-xs text-indigo-600 hover:underline mt-1">Mark as read</button>}
             </div>
           </div>

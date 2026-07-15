@@ -109,4 +109,30 @@ export async function fetchAttendanceTrends(): Promise<
   return data?.attendance_trends || [];
 }
 
+export async function fetchHodStudents(): Promise<Student[]> {
+  const data = await api.hodStudents();
+  return (data || []).map(mapApiStudent);
+}
+
+export async function fetchHodTeachers(): Promise<Teacher[]> {
+  const data = await api.hodTeachers();
+  return (data || []).map((t: any) => ({
+    id: `t${t.id}`, empId: t.emp_id, name: t.name, email: t.email,
+    department: t.department, subjects: t.assigned_subjects || [], photo: t.photo,
+  }));
+}
+
+export async function fetchHodExams(): Promise<Exam[]> {
+  const data = await api.hodExams();
+  return (data || []).map(mapExam);
+}
+
+export async function fetchHods(): Promise<import("./types").Hod[]> {
+  const data = await api.adminHods();
+  return (data || []).map((h: any) => ({
+    id: `h${h.id}`, empId: h.emp_id, name: h.name, email: h.email,
+    department: h.department, photo: h.photo || "",
+  }));
+}
+
 export { getStudentEligibilityLocal as getStudentEligibility, isBackendOnline };

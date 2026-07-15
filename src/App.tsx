@@ -3,10 +3,15 @@ import { AuthProvider, ThemeProvider, NotifProvider, useAuth } from "./contexts/
 import LoginPage from "./pages/LoginPage";
 import Layout from "./components/Layout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
-import { AdminStudents, AdminTeachers, AdminExams, AdminMarks, AdminEligibility, AdminHallTickets, AdminBacklogs, AdminFees, AdminNotifications, AdminAnalytics, AdminReports, AdminSettings } from "./pages/admin/AdminModules";
+import { AdminStudents, AdminTeachers, AdminHods, AdminExams, AdminMarks, AdminEligibility, AdminHallTickets, AdminBacklogs, AdminFees, AdminNotifications, AdminAnalytics, AdminReports, AdminSettings } from "./pages/admin/AdminModules";
 import { AdminProfileSettings } from "./pages/admin/AdminProfile";
 import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, TeacherFaceVerify } from "./pages/teacher/TeacherPages";
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
+import {
+  HodDashboard, HodStudents, HodTeachers, HodExams, HodMarks, HodEligibility,
+  HodBacklogs, HodFees, HodNotifications, HodAnalytics, HodReports,
+} from "./pages/hod/HodPages";
+import { HodProfile } from "./pages/hod/HodProfile";
 import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot, StudentPayments } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
 import AdminSeating from "./pages/admin/AdminSeating";
@@ -23,13 +28,10 @@ function ProtectedRoute({ role, children }: { role: Role; children: React.ReactN
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const location = useLocation();
   if (user) return <Navigate to={`/${user.role}`} replace />;
   return <>{children}</>;
 }
 
-// Used for /login. Renders the login page but auto-redirects to /setup
-// if the user explicitly visited /setup or /first-time from anywhere.
 function LoginOrRedirect() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
@@ -42,23 +44,20 @@ function LoginOrRedirect() {
 function Router() {
   return (
     <Routes>
-      {/* /setup is the first-time admin creation page. Accessible even when logged in (lets a fresh setup happen if needed) */}
       <Route path="/setup" element={<FirstTimeSetup />} />
       <Route path="/first-time" element={<Navigate to="/setup" replace />} />
       <Route path="/register" element={<PublicRoute><StudentRegister /></PublicRoute>} />
 
-      {/* Login page - redirects to dashboard if already logged in */}
       <Route path="/login" element={<PublicRoute><LoginOrRedirect /></PublicRoute>} />
       <Route path="/" element={<Navigate to="/login" replace />} />
 
-      {/* Public QR verification - no auth */}
       <Route path="/verify" element={<QRVerify />} />
 
-      {/* Admin routes */}
       <Route element={<ProtectedRoute role="admin"><Layout /></ProtectedRoute>}>
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/students" element={<AdminStudents />} />
         <Route path="/admin/teachers" element={<AdminTeachers />} />
+        <Route path="/admin/hods" element={<AdminHods />} />
         <Route path="/admin/exams" element={<AdminExams />} />
         <Route path="/admin/marks" element={<AdminMarks />} />
         <Route path="/admin/eligibility" element={<AdminEligibility />} />
@@ -73,7 +72,21 @@ function Router() {
         <Route path="/admin/profile" element={<AdminProfileSettings />} />
       </Route>
 
-      {/* Teacher routes */}
+      <Route element={<ProtectedRoute role="hod"><Layout /></ProtectedRoute>}>
+        <Route path="/hod" element={<HodDashboard />} />
+        <Route path="/hod/students" element={<HodStudents />} />
+        <Route path="/hod/teachers" element={<HodTeachers />} />
+        <Route path="/hod/exams" element={<HodExams />} />
+        <Route path="/hod/marks" element={<HodMarks />} />
+        <Route path="/hod/eligibility" element={<HodEligibility />} />
+        <Route path="/hod/backlogs" element={<HodBacklogs />} />
+        <Route path="/hod/fees" element={<HodFees />} />
+        <Route path="/hod/notifications" element={<HodNotifications />} />
+        <Route path="/hod/analytics" element={<HodAnalytics />} />
+        <Route path="/hod/reports" element={<HodReports />} />
+        <Route path="/hod/profile" element={<HodProfile />} />
+      </Route>
+
       <Route element={<ProtectedRoute role="teacher"><Layout /></ProtectedRoute>}>
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/teacher/attendance" element={<TeacherAttendance />} />
@@ -83,7 +96,6 @@ function Router() {
         <Route path="/teacher/profile" element={<TeacherProfile />} />
       </Route>
 
-      {/* Student routes */}
       <Route element={<ProtectedRoute role="student"><Layout /></ProtectedRoute>}>
         <Route path="/student" element={<StudentDashboard />} />
         <Route path="/student/payments" element={<StudentPayments />} />
@@ -96,7 +108,6 @@ function Router() {
         <Route path="/student/chatbot" element={<StudentChatbot />} />
       </Route>
 
-      {/* Catch-all: any unknown route goes to login */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

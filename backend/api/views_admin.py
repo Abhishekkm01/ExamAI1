@@ -4,13 +4,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q, Sum, Avg
 from django.db import transaction
-from .models import User, Student, Teacher, Exam, ExamSubject, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
+from .models import User, Student, Teacher, HOD, Exam, ExamSubject, HallTicket, Notification, EligibilityPrediction, RoleEnum, SeatingArrangement, SeatingRoom, FeePayment
 from .seating_service import SeatingArrangementService, room_display_name
 from .serializers import (StudentSerializer, TeacherSerializer, ExamSerializer,
                           StudentCreateSerializer, StudentUpdateSerializer, ExamCreateSerializer,
                           NotificationCreateSerializer, NotificationSerializer, AdminProfileUpdateSerializer,
                           HallTicketUpdateSerializer, FeePaymentReviewSerializer,
-                          TeacherUpdateSerializer, ExamUpdateSerializer, SystemSettingsUpdateSerializer)
+                          TeacherUpdateSerializer, HodUpdateSerializer, ExamUpdateSerializer, SystemSettingsUpdateSerializer)
 from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
@@ -445,6 +445,111 @@ def delete_teacher(request, tid):
     t.user.is_deleted = True
     t.save()
     t.user.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def list_hods(request):
+    """List all Heads of Department."""
+    hods = HOD.objects.filter(is_deleted=False).select_related('user')
+    data = []
+    for h in hods:
+        data.append({
+            'id': h.id,
+            'name': h.user.name,
+            'email': h.user.email,
+            'emp_id': h.emp_id,
+            'department': h.department,
+            'photo': h.photo,
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def get_hod(request, hid):
+    try:
+        h = HOD.objects.select_related('user').get(id=hid, is_deleted=False)
+    except HOD.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+    return Response({
+        'id': h.id,
+        'name': h.user.name,
+        'email': h.user.email,
+        'emp_id': h.emp_id,
+        'department': h.department,
+        'photo': h.photo,
+    })
+
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def update_hod(request, hid):
+    try:
+        h = HOD.objects.select_related('user').get(id=hid, is_deleted=False)
+    except HOD.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = HodUpdateSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    user = h.user
+
+    if 'email' in data and User.objects.filter(email=data['email'], is_deleted=False).exclude(id=user.id).exists():
+        return Response({'detail': 'Email already in use'}, status=status.HTTP_400_BAD_REQUEST)
+    if 'emp_id' in data and HOD.objects.filter(emp_id=data['emp_id'], is_deleted=False).exclude(id=h.id).exists():
+        return Response({'detail': 'Employee ID already in use'}, status=status.HTTP_400_BAD_REQUEST)
+    if 'department' in data:
+        clash = HOD.objects.filter(department=data['department'], is_deleted=False).exclude(id=h.id).first()
+        if clash:
+            return Response(
+                {'detail': f'An active HOD already exists for {data["department"]}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if 'name' in data:
+        user.name = data['name']
+    if 'email' in data:
+        user.email = data['email']
+    if 'password' in data:
+        user.hashed_password = get_password_hash(data['password'])
+    if 'department' in data:
+        h.department = data['department']
+    if 'emp_id' in data:
+        h.emp_id = data['emp_id']
+
+    user.save()
+    h.save()
+
+    return Response({
+        'message': 'HOD updated',
+        'id': h.id,
+        'name': user.name,
+        'email': user.email,
+        'emp_id': h.emp_id,
+        'department': h.department,
+    })
+
+
+@api_view(['DELETE'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def delete_hod(request, hid):
+    try:
+        h = HOD.objects.select_related('user').get(id=hid, is_deleted=False)
+    except HOD.DoesNotExist:
+        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    h.is_deleted = True
+    h.user.is_deleted = True
+    h.save()
+    h.user.save()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 

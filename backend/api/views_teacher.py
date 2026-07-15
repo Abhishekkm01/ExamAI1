@@ -3,7 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Q
-from .models import User, Student, Teacher, Attendance, InternalMark, Exam, ExamSubject, SeatingArrangement, HallTicket
+from .models import User, Student, Teacher, Attendance, InternalMark, Exam, ExamSubject, SeatingArrangement, HallTicket, Notification
 from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSerializer,
                           TeacherProfileUpdateSerializer, MarksUpdateSerializer)
 from .permissions import IsTeacher, IsOwner
@@ -18,6 +18,39 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from .face_service import match_student_face
 from .exam_service import exam_to_dict
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def notifications(request):
+    """Teacher notifications — college-wide plus own department HOD notices."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'teacher':
+        return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        teacher = Teacher.objects.get(user_id=user.id, is_deleted=False)
+        dept = teacher.department
+    except Teacher.DoesNotExist:
+        dept = None
+
+    qs = Notification.objects.filter(audience__in=['all', 'teachers'])
+    if dept:
+        prefix = f'[{dept}]'
+        qs = qs.filter(Q(title__startswith=prefix) | ~Q(title__startswith='['))
+
+    return Response([
+        {
+            'id': n.id,
+            'title': n.title,
+            'message': n.message,
+            'audience': n.audience,
+            'is_read': n.is_read,
+            'created_at': n.created_at.isoformat() if n.created_at else None,
+        }
+        for n in qs.order_by('-created_at')[:50]
+    ])
 
 
 @api_view(['GET'])

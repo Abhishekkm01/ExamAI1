@@ -8,7 +8,7 @@ def validate_department_name(value):
         allowed = ', '.join(get_department_names())
         raise serializers.ValidationError(f'Invalid department. Choose from: {allowed}')
     return canonical
-from .models import User, Student, Teacher, Exam, Attendance, InternalMark, HallTicket, Notification, ChatbotLog, EligibilityPrediction
+from .models import User, Student, Teacher, HOD, Exam, Attendance, InternalMark, HallTicket, Notification, ChatbotLog, EligibilityPrediction
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -34,6 +34,15 @@ class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teacher
         fields = ['id', 'user', 'emp_id', 'department', 'photo', 'assigned_subjects', 
+                  'created_at', 'updated_at', 'is_deleted']
+
+
+class HODSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = HOD
+        fields = ['id', 'user', 'emp_id', 'department', 'photo',
                   'created_at', 'updated_at', 'is_deleted']
 
 
@@ -110,6 +119,17 @@ class SetupTeacherSerializer(serializers.Serializer):
     emp_id = serializers.CharField()
     department = serializers.CharField()
     assigned_subjects = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_department(self, value):
+        return validate_department_name(value)
+
+
+class SetupHodSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(required=False)
+    name = serializers.CharField()
+    emp_id = serializers.CharField()
+    department = serializers.CharField()
 
     def validate_department(self, value):
         return validate_department_name(value)
@@ -404,6 +424,31 @@ class TeacherUpdateSerializer(serializers.Serializer):
         return validate_department_name(value)
 
 
+class HodUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
+    emp_id = serializers.CharField(required=False)
+    department = serializers.CharField(required=False)
+    password = serializers.CharField(required=False, min_length=6)
+
+    def validate_department(self, value):
+        if not value:
+            return value
+        return validate_department_name(value)
+
+
+class HodTeacherSubjectsSerializer(serializers.Serializer):
+    assigned_subjects = serializers.CharField(allow_blank=True)
+
+
+class HodStudentAcademicUpdateSerializer(serializers.Serializer):
+    attendance_percentage = serializers.FloatField(required=False, min_value=0, max_value=100)
+    internal_marks = serializers.FloatField(required=False, min_value=0)
+    assignment_marks = serializers.FloatField(required=False, min_value=0)
+    previous_result = serializers.FloatField(required=False, min_value=0)
+    backlogs = serializers.IntegerField(required=False, min_value=0)
+
+
 class NotificationCreateSerializer(serializers.Serializer):
     title = serializers.CharField()
     message = serializers.CharField()
@@ -432,6 +477,18 @@ class ChatbotResponseSerializer(serializers.Serializer):
 
 
 class TeacherProfileUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+    current_password = serializers.CharField(required=False)
+    new_password = serializers.CharField(required=False, min_length=6)
+
+    def validate(self, data):
+        new_pw = data.get('new_password')
+        if new_pw and not data.get('current_password'):
+            raise serializers.ValidationError({'current_password': 'Current password is required to set a new password.'})
+        return data
+
+
+class HodProfileUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     current_password = serializers.CharField(required=False)
     new_password = serializers.CharField(required=False, min_length=6)

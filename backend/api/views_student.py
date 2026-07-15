@@ -517,14 +517,22 @@ def face_verify(request):
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def notifications(request):
-    """Student notifications"""
+    """Student notifications — college-wide plus own department HOD notices."""
     user = getattr(request, '_jwt_user', request.user)
     if not user or not hasattr(user, 'role') or user.role != 'student':
         return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
-    
-    notifications = Notification.objects.filter(
-        audience__in=['all', 'students']
-    ).order_by('-created_at')
+
+    try:
+        student = Student.objects.get(user_id=user.id, is_deleted=False)
+        dept = student.department
+    except Student.DoesNotExist:
+        dept = None
+
+    qs = Notification.objects.filter(audience__in=['all', 'students'])
+    if dept:
+        prefix = f'[{dept}]'
+        qs = qs.filter(Q(title__startswith=prefix) | ~Q(title__startswith='['))
+    notifications = qs.order_by('-created_at')
     
     data = []
     for n in notifications:

@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
-import { fetchStudents, fetchTeachers, fetchAdminExams, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
+import { fetchStudents, fetchTeachers, fetchHods, fetchAdminExams, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
 import { downloadAdminReport, api } from "../../data/api";
 import { apiDelete, apiPost, apiPut } from "../../data/http";
-import type { Student, Teacher, Exam } from "../../data/types";
+import type { Student, Teacher, Exam, Hod } from "../../data/types";
 import { useNotifications } from "../../contexts/AppContext";
 import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, XCircle, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database, User, GraduationCap, BookOpen } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell, Legend } from "recharts";
@@ -14,12 +14,16 @@ import { notifySystemSettingsUpdated, useSystemSettings } from "../../hooks/useS
 import { DepartmentSelect } from "../../components/DepartmentSelect";
 import { examHeaderSubtitle, downloadHallTicket, universityInitials, DEFAULT_HALL_TICKET_EXAM } from "../../utils/hallTicket";
 import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX, INTERNAL_ASSIGNMENT_TOTAL } from "../../data/marksConstants";
+import { formatNotificationAudience } from "../../utils/notifications";
 
 async function apiAddStudent(form: any) {
   return apiPost("/api/auth/setup-student", form, "Failed to add student");
 }
 async function apiAddTeacher(form: any) {
   return apiPost("/api/auth/setup-teacher", form, "Failed to add teacher");
+}
+async function apiAddHod(form: any) {
+  return apiPost("/api/auth/setup-hod", form, "Failed to add HOD");
 }
 async function apiAddExam(form: any) {
   return apiPost("/api/auth/setup-exam", form, "Failed to add exam");
@@ -610,6 +614,171 @@ export function AdminTeachers() {
       {adding && <TeacherModal onClose={() => setAdding(false)} onSaved={(t) => { setList((l) => [t, ...l]); setAdding(false); }} />}
       {editing && <TeacherModal teacher={editing} onClose={() => setEditing(null)} onSaved={(t) => { setList((l) => l.map((x) => x.id === t.id ? t : x)); setEditing(null); }} />}
       {viewing && <TeacherDetailModal teacher={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+// ==================== HODS ====================
+export function AdminHods() {
+  const [list, setList] = useState<Hod[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Hod | null>(null);
+
+  const reload = () => fetchHods().then((h) => { setList(h); setLoading(false); });
+  useEffect(() => { reload(); }, []);
+
+  const onDelete = async (hod: Hod) => {
+    if (!confirm(`Delete HOD ${hod.name}?`)) return;
+    try {
+      const hid = hod.id.replace(/^h/, "");
+      await apiDelete(`/api/admin/hods/${hid}/delete`, "Failed to delete HOD");
+      setList((l) => l.filter((h) => h.id !== hod.id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete HOD");
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading HODs from MySQL…</div>;
+  return (
+    <div>
+      <PageHeader
+        title="HOD Management"
+        subtitle={`${list.length} Heads of Department (one per department)`}
+        actions={<Button variant="primary" onClick={() => setAdding(true)}><Plus className="w-4 h-4" /> Add HOD</Button>}
+      />
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+          {list.map((h) => (
+            <div key={h.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3 mb-3">
+                <img src={h.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.empId}`} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-800 dark:text-white">{h.name}</p>
+                  <p className="text-xs text-slate-500">{h.empId} • {h.department}</p>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditing(h)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
+                    <Edit2 className="w-4 h-4 text-slate-500" />
+                  </button>
+                  <button onClick={() => onDelete(h)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Delete">
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mb-2">{h.email}</p>
+              <Badge variant="amber">HOD</Badge>
+            </div>
+          ))}
+          {list.length === 0 && (
+            <div className="col-span-3 p-10 text-center text-slate-500">No HODs yet — click "Add HOD" to appoint one per department</div>
+          )}
+        </div>
+      </Card>
+      {adding && <HodModal onClose={() => setAdding(false)} onSaved={(h) => { setList((l) => [h, ...l]); setAdding(false); }} />}
+      {editing && <HodModal hod={editing} onClose={() => setEditing(null)} onSaved={(h) => { setList((l) => l.map((x) => x.id === h.id ? h : x)); setEditing(null); }} />}
+    </div>
+  );
+}
+
+function HodModal({ hod, onClose, onSaved }: { hod?: Hod; onClose: () => void; onSaved: (h: Hod) => void }) {
+  const isEdit = !!hod;
+  const { departments, loading: deptsLoading } = useDepartments();
+  const [form, setForm] = useState({
+    email: hod?.email || "",
+    password: "",
+    name: hod?.name || "",
+    emp_id: hod?.empId || "",
+    department: hod?.department || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEdit && departments.length && !form.department) {
+      setForm((f) => ({ ...f, department: departments[0] }));
+    }
+  }, [departments, isEdit, form.department]);
+
+  const save = async () => {
+    setSaving(true); setErr(null);
+    try {
+      const payload: Record<string, string> = {
+        name: form.name,
+        email: form.email,
+        emp_id: form.emp_id,
+        department: form.department,
+      };
+      if (form.password) payload.password = form.password;
+
+      if (isEdit && hod) {
+        const hid = hod.id.replace(/^h/, "");
+        await apiPut(`/api/admin/hods/${hid}/update`, payload, "Failed to update HOD");
+        onSaved({
+          ...hod,
+          name: form.name,
+          email: form.email,
+          empId: form.emp_id,
+          department: form.department,
+        });
+      } else {
+        const res = await apiAddHod({ ...payload, password: form.password || "hod123" }) as { hod_id: number };
+        onSaved({
+          id: `h${res.hod_id}`,
+          empId: form.emp_id,
+          name: form.name,
+          email: form.email,
+          department: form.department,
+          photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${form.emp_id}`,
+        });
+      }
+    } catch (e: any) {
+      setErr(e.message || "Failed to save HOD");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <Card className="w-full max-w-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">{isEdit ? "Edit HOD" : "Add HOD"}</h3>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Only one active HOD is allowed per department (Indian college pattern).</p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <TextInput value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Employee ID</label>
+            <TextInput value={form.emp_id} onChange={(e) => setForm({ ...form, emp_id: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Department</label>
+            <DepartmentSelect
+              value={form.department}
+              onChange={(v) => setForm({ ...form, department: v })}
+              departments={departments}
+              loading={deptsLoading}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">{isEdit ? "New Password (optional)" : "Password"}</label>
+            <TextInput type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={isEdit ? "Leave blank to keep" : "Default: hod123"} />
+          </div>
+        </div>
+        {err && <p className="mt-3 text-sm text-rose-600">{err}</p>}
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1973,23 +2142,33 @@ export function AdminFees() {
 }
 // ==================== NOTIFICATIONS ====================
 export function AdminNotifications() {
-  const { notifications, add, markAllRead } = useNotifications();
+  const { notifications, add, markAllRead, refresh } = useNotifications();
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [audience, setAudience] = useState<"all" | "students" | "teachers" | "admin">("all");
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const send = async () => {
     if (!title || !message) return;
+    setSending(true);
+    setErr(null);
     try {
       await api.sendNotification({ title, message, audience });
-    } catch {}
-    add({ title, message, audience });
-    setTitle(""); setMessage("");
+      add({ title, message, audience });
+      setTitle(""); setMessage("");
+      await refresh();
+    } catch (e: any) {
+      setErr(e.message || "Failed to send notification");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
     <div>
       <PageHeader title="Notifications" subtitle="Send announcements to students, teachers, or everyone" />
+      {err && <div className="mb-4 p-3 rounded-lg text-sm bg-rose-50 text-rose-700">{err}</div>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h3 className="font-bold text-slate-900 dark:text-white mb-4">Compose Notification</h3>
@@ -2013,7 +2192,7 @@ export function AdminNotifications() {
               </Select>
             </div>
             <div className="flex gap-2">
-              <Button variant="primary" onClick={send}><Mail className="w-4 h-4" /> Send Notification</Button>
+              <Button variant="primary" onClick={send} disabled={sending}><Mail className="w-4 h-4" /> {sending ? "Sending…" : "Send Notification"}</Button>
               <Button variant="secondary" onClick={markAllRead}>Mark all read</Button>
             </div>
           </div>
@@ -2023,14 +2202,18 @@ export function AdminNotifications() {
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {notifications.map((n) => (
               <div key={n.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                <div className="flex items-start justify-between">
-                  <p className="font-semibold text-sm">{n.title}</p>
-                  <Badge variant="sky">{n.audience}</Badge>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-semibold text-sm text-slate-900 dark:text-white">{n.title}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {n.department && <Badge variant="amber">{n.department}</Badge>}
+                    <Badge variant="sky">{formatNotificationAudience(n.audience)}</Badge>
+                  </div>
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{n.message}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{n.message}</p>
                 <p className="text-xs text-slate-400 mt-1">{n.createdAt}</p>
               </div>
             ))}
+            {!notifications.length && <p className="text-sm text-slate-500">No notifications yet</p>}
           </div>
         </Card>
       </div>

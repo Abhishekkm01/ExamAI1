@@ -13,7 +13,7 @@ from django.db import connection
 from api.auth_utils import get_password_hash
 from api.department_service import ensure_default_departments, normalize_legacy_department_data
 from api.settings_service import ensure_default_settings
-from api.models import RoleEnum, Student, Teacher, User
+from api.models import RoleEnum, Student, Teacher, HOD, User
 
 
 DEMO_ACCOUNTS = (
@@ -22,6 +22,14 @@ DEMO_ACCOUNTS = (
         'email': 'admin@examshield.ai',
         'password': 'admin123',
         'name': 'Dr. Arjun Mehta',
+    },
+    {
+        'role': RoleEnum.HOD,
+        'email': 'hod@examshield.ai',
+        'password': 'hod123',
+        'name': 'Dr. Kavita Sharma',
+        'emp_id': 'HOD001',
+        'department': 'COMPUTER SCIENCE',
     },
     {
         'role': RoleEnum.TEACHER,
@@ -84,7 +92,14 @@ def seed_demo_accounts():
             avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={item['email']}",
         )
 
-        if item['role'] == RoleEnum.TEACHER:
+        if item['role'] == RoleEnum.HOD:
+            HOD.objects.create(
+                user=user,
+                emp_id=item['emp_id'],
+                department=item['department'],
+                photo=user.avatar,
+            )
+        elif item['role'] == RoleEnum.TEACHER:
             Teacher.objects.create(
                 user=user,
                 emp_id=item['emp_id'],
@@ -160,5 +175,6 @@ class Command(BaseCommand):
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS('Setup complete. You can run start.bat or: python manage.py runserver'))
         self.stdout.write('  admin@examshield.ai / admin123')
+        self.stdout.write('  hod@examshield.ai / hod123')
         self.stdout.write('  teacher@examshield.ai / teacher123')
         self.stdout.write('  student@examshield.ai / student123')
