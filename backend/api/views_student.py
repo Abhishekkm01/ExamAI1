@@ -15,6 +15,7 @@ from .photo_utils import save_profile_photo
 from .face_service import try_enroll_student_face, is_face_enrolled, enroll_face_from_base64, verify_student_face
 from .fee_service import get_fee_summary, process_fee_payment
 from .settings_service import get_system_settings
+from .marks_service import get_student_subject_performance
 import sys
 import os
 import io
@@ -158,15 +159,17 @@ def dashboard(request):
         }
     
     return Response({
-        'name': request.user.name,
+        'name': user.name,
         'roll_no': s.roll_no,
         'department': s.department,
         'attendance': s.attendance_percentage,
         'internal_marks': s.internal_marks,
+        'assignment_marks': s.assignment_marks,
         'is_eligible': s.is_eligible,
         'ai_risk_score': s.ai_risk_score,
         'eligibility_percentage': s.eligibility_percentage,
-        'next_exam': next_exam_data
+        'next_exam': next_exam_data,
+        'subject_performance': get_student_subject_performance(s),
     })
 
 
@@ -205,8 +208,24 @@ def profile(request):
         'face_enrolled': is_face_enrolled(s),
         'is_eligible': s.is_eligible,
         'eligibility_percentage': s.eligibility_percentage,
-        'ai_risk_score': s.ai_risk_score
+        'ai_risk_score': s.ai_risk_score,
+        'subject_performance': get_student_subject_performance(s),
     })
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def subject_performance(request):
+    """Per-subject internal/assignment/attendance for the logged-in student."""
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        s = Student.objects.get(user_id=user.id, is_deleted=False)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(get_student_subject_performance(s))
 
 
 @api_view(['PUT'])

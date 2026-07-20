@@ -201,7 +201,9 @@ def get_marks(request):
     if not user or not hasattr(user, 'role') or user.role != 'teacher':
         return Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
 
-    subject_code = request.query_params.get('subject_code', 'CS301')
+    from .marks_service import normalize_subject_code
+
+    subject_code = normalize_subject_code(request.query_params.get('subject_code', 'CS301')) or 'CS301'
 
     try:
         t = Teacher.objects.get(user_id=user.id)
@@ -210,20 +212,25 @@ def get_marks(request):
         subjects = ["CS301", "CS302"]
     else:
         dept = t.department
-        subjects = [s.strip() for s in t.assigned_subjects.split(',') if s.strip()] or ["CS301", "CS302"]
+        subjects = [
+            normalize_subject_code(s) for s in t.assigned_subjects.split(',') if s.strip()
+        ] or ["CS301", "CS302"]
 
     students = Student.objects.filter(department=dept, is_deleted=False).select_related('user')
     data = []
     for s in students:
-        subject_mark = InternalMark.objects.filter(student=s, subject_code=subject_code).first()
+        subject_mark = InternalMark.objects.filter(
+            student=s, subject_code__iexact=subject_code
+        ).order_by('-updated_at').first()
         data.append({
             'id': s.id,
             'name': s.user.name,
             'roll_no': s.roll_no,
             'photo': s.photo,
             'department': s.department,
-            'internal_marks': subject_mark.internal_score if subject_mark else s.internal_marks,
-            'assignment_marks': subject_mark.assignment_score if subject_mark else s.assignment_marks,
+            # Never fall back to aggregate marks — that shows the wrong subject.
+            'internal_marks': subject_mark.internal_score if subject_mark else 0.0,
+            'assignment_marks': subject_mark.assignment_score if subject_mark else 0.0,
         })
 
     return Response({

@@ -17,18 +17,26 @@ import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX } from "../../data/marksConsta
 
 const token = () => localStorage.getItem("examshield_token") || "";
 
-async function fetchMe(): Promise<Student | null> {
+async function fetchMe(): Promise<(Student & { subjectPerformance?: { name: string; code: string; internal: number; assign: number; attendance: number | null; hasMarks?: boolean }[] }) | null> {
   try {
     const res = await fetch(`${API_BASE}/api/student/profile`, { headers: { Authorization: `Bearer ${token()}` } });
     if (!res.ok) return null;
     const p = await res.json();
-    // Map the API response to Student type
+    const subjectPerformance = (p.subject_performance || []).map((row: any) => ({
+      name: row.subject_name || row.subject_code,
+      code: row.subject_code,
+      internal: Number(row.internal_marks) || 0,
+      assign: Number(row.assignment_marks) || 0,
+      attendance: row.attendance == null ? null : Number(row.attendance),
+      hasMarks: !!row.has_marks,
+    }));
     return {
       id: `s${p.id}`, rollNo: p.roll_no, name: p.name, email: p.email, mobile: p.mobile || "",
       department: p.department, semester: p.semester, section: p.section, photo: p.photo,
       attendance: p.attendance, internalMarks: p.internal_marks, assignmentMarks: p.assignment_marks,
       previousResult: p.previous_result, backlogs: p.backlogs, feePaid: p.fee_paid,
       feeAmount: p.fee_amount, feeDueDate: p.fee_due_date, createdAt: "2023-08-12",
+      subjectPerformance,
     };
   } catch { return null; }
 }
@@ -81,7 +89,7 @@ async function payStudentFee(method: "online" | "bank_transfer" | "college", ref
 // ============ STUDENT DASHBOARD ============
 export function StudentDashboard() {
   const { user } = useAuth();
-  const [student, setStudent] = useState<Student | null>(null);
+  const [student, setStudent] = useState<(Student & { subjectPerformance?: { name: string; code: string; internal: number; assign: number; attendance: number | null; hasMarks?: boolean }[] }) | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
   const [paymentPending, setPaymentPending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -100,11 +108,14 @@ export function StudentDashboard() {
   const e = getStudentEligibility(student);
   const upcoming = exams.filter(ex => ex.department === student.department);
 
-  const performanceData = [
-    { name: "DSA", internal: Math.min(INTERNAL_MARKS_MAX, student.internalMarks + 1), assign: student.assignmentMarks },
-    { name: "DBMS", internal: Math.max(20, student.internalMarks - 2), assign: Math.max(4, student.assignmentMarks - 1) },
-    { name: "OS", internal: Math.max(15, student.internalMarks - 4), assign: Math.max(3, student.assignmentMarks - 2) },
-  ];
+  const performanceData = (student.subjectPerformance || [])
+    .filter((row) => row.hasMarks || row.internal > 0 || row.assign > 0)
+    .map((row) => ({
+      name: row.code || row.name,
+      fullName: row.name,
+      internal: row.internal,
+      assign: row.assign,
+    }));
 
   return (
     <div>
@@ -185,18 +196,32 @@ export function StudentDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <Card className="p-5 lg:col-span-2">
-          <h3 className="font-semibold mb-4">Subject Performance (live from MySQL)</h3>
+          <h3 className="font-semibold mb-1">Subject Performance</h3>
+          <p className="text-xs text-slate-500 mb-4">Per-subject internals & assignments from MySQL</p>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.3)" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
-                <Tooltip contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }} />
-                <Bar dataKey="internal" fill="#2563eb" name={`Internal /${INTERNAL_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="assign" fill="#7c3aed" name={`Assignment /${ASSIGNMENT_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {performanceData.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.3)" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                  <YAxis stroke="#94a3b8" fontSize={12} domain={[0, INTERNAL_MARKS_MAX]} />
+                  <Tooltip
+                    contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }}
+                    formatter={(value: any, key: any, item: any) => {
+                      const label = key === "internal" ? `Internal /${INTERNAL_MARKS_MAX}` : `Assignment /${ASSIGNMENT_MARKS_MAX}`;
+                      return [value, label];
+                    }}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName || _}
+                  />
+                  <Bar dataKey="internal" fill="#2563eb" name={`Internal /${INTERNAL_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="assign" fill="#7c3aed" name={`Assignment /${ASSIGNMENT_MARKS_MAX}`} radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-slate-500">
+                No subject marks entered yet. Ask your teacher to update internals.
+              </div>
+            )}
           </div>
         </Card>
         <Card className="p-5">

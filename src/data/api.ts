@@ -224,6 +224,7 @@ export const api = {
   // -------- Student --------
   studentDashboard: () => tryFetch("/api/student/dashboard"),
   studentProfile: () => tryFetch("/api/student/profile"),
+  studentSubjectPerformance: () => tryFetch("/api/student/subject-performance"),
   studentEligibility: () => tryFetch("/api/student/eligibility"),
   studentExams: () => tryFetch("/api/student/exams"),
   studentNotifications: () => tryFetch("/api/student/notifications"),

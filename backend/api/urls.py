@@ -114,6 +114,7 @@ urlpatterns = [
     path('student/notifications', views_student.notifications, name='student_notifications'),
     path('student/fees', views_student.get_fees, name='student_fees'),
     path('student/fees/pay', views_student.pay_fee, name='student_pay_fee'),
+    path('student/subject-performance', views_student.subject_performance, name='student_subject_performance'),
     path('student/chatbot', views_student.chatbot, name='student_chatbot'),
     
     # Public endpoints
