@@ -108,7 +108,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
       {/* Sidebar */}
       <aside
         className={cn(
@@ -172,9 +172,9 @@ export default function Layout() {
       )}
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
-        <header className="sticky top-0 z-20 h-16 glass border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 px-4 lg:px-8">
+        <header className="shrink-0 z-20 h-16 glass border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 px-4 lg:px-8">
           <button
             className="lg:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={() => setSidebarOpen(true)}
@@ -258,11 +258,11 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8 animate-fade-in">
+        <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 lg:p-8">
           <Outlet />
         </main>
 
-        <footer className="px-8 py-4 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800">
+        <footer className="shrink-0 px-8 py-4 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800">
           © 2026 ExamShield AI • Built with React, FastAPI, MySQL, and ML/AI • All rights reserved
         </footer>
       </div>

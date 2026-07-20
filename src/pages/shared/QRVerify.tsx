@@ -149,17 +149,37 @@ export function QRVerify() {
                 <Info label="Room" value={result.room} />
                 <Info label="Seat Number" value={result.seatNumber} bold />
               </div>
-              {result.subjects?.length > 1 && (
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">All Subjects</p>
-                  {result.subjects.map((s: any, idx: number) => (
-                    <div key={idx} className="p-3 rounded-lg bg-white dark:bg-slate-900 text-sm">
-                      <p className="font-semibold">{s.subject_name} ({s.subject_code})</p>
-                      <p className="text-slate-500 text-xs mt-1">
-                        {s.exam_date} at {s.exam_time} • {s.room} • Seat {s.seat_number}
-                      </p>
-                    </div>
-                  ))}
+              {result.subjects?.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">All Subjects</p>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <table className="w-full text-sm table-fixed">
+                      <thead className="bg-slate-50 dark:bg-slate-800">
+                        <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2 w-10">#</th>
+                          <th className="px-3 py-2 w-20">Code</th>
+                          <th className="px-3 py-2">Subject</th>
+                          <th className="px-3 py-2 w-28">Date</th>
+                          <th className="px-3 py-2 w-24">Time</th>
+                          <th className="px-3 py-2 w-28">Hall</th>
+                          <th className="px-3 py-2 w-16 text-center">Seat</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {result.subjects.map((s: any, idx: number) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
+                            <td className="px-3 py-2 font-mono font-semibold text-indigo-600">{s.subject_code}</td>
+                            <td className="px-3 py-2 font-medium">{s.subject_name}</td>
+                            <td className="px-3 py-2">{s.exam_date || "—"}</td>
+                            <td className="px-3 py-2">{s.exam_time || "—"}</td>
+                            <td className="px-3 py-2 font-medium">{s.room || "—"}</td>
+                            <td className="px-3 py-2 text-center font-bold text-indigo-700">{s.seat_number || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
               <div className="mt-4 p-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-sm text-emerald-800 dark:text-emerald-300 font-medium text-center">

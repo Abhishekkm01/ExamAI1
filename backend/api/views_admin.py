@@ -739,6 +739,8 @@ def update_hallticket(request, ht_id):
             'detail': str(e),
             'conflicts': e.conflicts,
         }, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     refresh_hall_ticket_qr(ht, exam, ht.student)
 
@@ -780,10 +782,18 @@ def update_hallticket(request, ht_id):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def list_halltickets(request):
-    """List all hall tickets for active (non-deleted) exams."""
+    """List active hall tickets for eligible students only."""
+    # Deactivate any leftover tickets for students who are no longer eligible
+    HallTicket.objects.filter(
+        is_active=True,
+        student__is_eligible=False,
+    ).update(is_active=False)
+
     hts = HallTicket.objects.filter(
         is_active=True,
         exam__is_deleted=False,
+        student__is_deleted=False,
+        student__is_eligible=True,
     ).select_related(
         'student', 'student__user', 'exam',
     ).prefetch_related('subject_assignments')
@@ -820,6 +830,7 @@ def list_halltickets(request):
             'seat_conflicts': seat_conflicts,
             'has_seat_conflict': len(seat_conflicts) > 0,
             'qr_code_content': h.qr_code_content,
+            'is_eligible': True,
         })
     return Response(data)
 

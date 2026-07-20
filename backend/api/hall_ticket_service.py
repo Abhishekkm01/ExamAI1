@@ -237,7 +237,12 @@ def find_seat_conflict(exam_id, hall_ticket_id, subject_code, exam_date, exam_ti
 
 
 def build_proposed_subjects(hall_ticket, exam, subjects_data):
-    """Merge current subject rows with incoming edits."""
+    """Merge current subject rows with incoming edits.
+
+    Room values must match an active SeatingRoom (code, name, or display label).
+    """
+    from .seating_service import SeatingArrangementService, room_display_name
+
     current = merge_hall_ticket_subjects(hall_ticket, exam)
     by_code = {s['subject_code']: dict(s) for s in current}
     proposed = []
@@ -246,6 +251,15 @@ def build_proposed_subjects(hall_ticket, exam, subjects_data):
         if not code:
             continue
         base = by_code.get(code, {})
+        raw_room = str(item.get('room', base.get('room', ''))).strip()
+        if not raw_room:
+            raise ValueError(f'Exam hall is required for subject {code}.')
+        room_obj = SeatingArrangementService.find_room_by_label(raw_room)
+        if not room_obj:
+            raise ValueError(
+                f'Hall "{raw_room}" is not in the database. '
+                f'Select a hall created under Seating for subject {code}.'
+            )
         proposed.append({
             'subject_code': code,
             'subject_name': base.get('subject_name', code),
@@ -253,7 +267,7 @@ def build_proposed_subjects(hall_ticket, exam, subjects_data):
             'exam_time': base.get('exam_time') or exam.exam_time,
             'duration': base.get('duration', ''),
             'seat_number': str(item.get('seat_number', base.get('seat_number', ''))).strip(),
-            'room': str(item.get('room', base.get('room', ''))).strip(),
+            'room': room_display_name(room_obj),
         })
     return proposed
 
@@ -334,8 +348,13 @@ def merge_hall_ticket_subjects(hall_ticket, exam):
     return merged
 
 
-def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room=None):
-    """Ensure HallTicketSubject rows exist for every exam subject."""
+def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room=None, force_defaults=False):
+    """Ensure HallTicketSubject rows exist for every exam subject.
+
+    When force_defaults=True (e.g. after seating arrangement changes), overwrite
+    each subject's hall/seat with default_seat / default_room. Otherwise keep
+    any existing per-subject overrides.
+    """
     seat = default_seat or hall_ticket.seat_number
     room = default_room or hall_ticket.room
     exam_subjects = get_exam_subjects(exam)
@@ -351,8 +370,14 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
         codes.add(code)
         exam_date = subj.get('exam_date') or exam.exam_date
         exam_time = subj.get('exam_time') or exam.exam_time
+        target_room = room if (force_defaults or not (code in existing and existing[code].room)) else (
+            existing[code].room or room
+        )
+        preferred_seat = seat if force_defaults else (
+            (existing[code].seat_number if code in existing else None) or seat
+        )
         assigned_seat = assign_available_seat(
-            exam.id, hall_ticket, code, exam_date, exam_time, room, seat,
+            exam.id, hall_ticket, code, exam_date, exam_time, target_room, preferred_seat,
         )
         if code in existing:
             row = existing[code]
@@ -362,12 +387,9 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
             row.exam_time = exam_time
             row.duration = subj.get('duration', '')
             row.sort_order = idx
-            preferred = row.seat_number or assigned_seat
-            row.seat_number = assign_available_seat(
-                exam.id, hall_ticket, code, exam_date, exam_time, row.room or room, preferred,
-            )
-            if not row.room:
-                row.room = room
+            row.seat_number = assigned_seat
+            if force_defaults or not row.room:
+                row.room = target_room
             row.save()
         else:
             HallTicketSubject.objects.create(
@@ -379,7 +401,7 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
                 exam_time=exam_time,
                 duration=subj.get('duration', ''),
                 seat_number=assigned_seat,
-                room=room,
+                room=target_room,
                 sort_order=idx,
             )
 

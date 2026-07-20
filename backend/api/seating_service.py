@@ -568,7 +568,7 @@ class SeatingArrangementService:
     @staticmethod
     @transaction.atomic
     def sync_hall_tickets(exam_id):
-        """Push seating arrangements into hall ticket records."""
+        """Push seating arrangements into hall ticket records (eligible students only)."""
         try:
             exam = Exam.objects.get(id=exam_id, is_deleted=False)
         except Exam.DoesNotExist:
@@ -584,6 +584,11 @@ class SeatingArrangementService:
         synced = 0
         for arr in arrangements:
             student = arr.student
+            if student.is_deleted or not student.is_eligible:
+                # Never issue / keep active tickets for ineligible students
+                HallTicket.objects.filter(student=student).update(is_active=False)
+                continue
+
             hall_ticket_no = f"HT2026{student.roll_no}"
             room_label = room_display_name(arr.room)
             ht, _ = HallTicket.objects.update_or_create(
@@ -598,7 +603,12 @@ class SeatingArrangementService:
                 },
             )
             from .hall_ticket_service import sync_hall_ticket_subjects, refresh_hall_ticket_qr
-            sync_hall_ticket_subjects(ht, exam, default_seat=arr.seat_number, default_room=room_label)
+            sync_hall_ticket_subjects(
+                ht, exam,
+                default_seat=arr.seat_number,
+                default_room=room_label,
+                force_defaults=True,
+            )
             refresh_hall_ticket_qr(ht, exam, student)
             synced += 1
 
@@ -607,9 +617,13 @@ class SeatingArrangementService:
 
     @staticmethod
     def sync_arrangement_to_hall_ticket(arrangement):
-        """Update a single hall ticket from one seating arrangement."""
+        """Update a single hall ticket from one seating arrangement (eligible only)."""
         student = arrangement.student
         exam = arrangement.exam
+        if student.is_deleted or not student.is_eligible:
+            HallTicket.objects.filter(student=student).update(is_active=False)
+            return None
+
         hall_ticket_no = f"HT2026{student.roll_no}"
         room_label = room_display_name(arrangement.room)
         ht, _ = HallTicket.objects.update_or_create(
@@ -624,5 +638,11 @@ class SeatingArrangementService:
             },
         )
         from .hall_ticket_service import sync_hall_ticket_subjects, refresh_hall_ticket_qr
-        sync_hall_ticket_subjects(ht, exam, default_seat=arrangement.seat_number, default_room=room_label)
+        sync_hall_ticket_subjects(
+            ht, exam,
+            default_seat=arrangement.seat_number,
+            default_room=room_label,
+            force_defaults=True,
+        )
         refresh_hall_ticket_qr(ht, exam, student)
+        return ht

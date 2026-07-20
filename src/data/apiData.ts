@@ -6,6 +6,8 @@ import type { Student, Teacher, Exam } from "./types";
 import { INTERNAL_MARKS_MAX } from "./marksConstants";
 
 export function getStudentEligibilityLocal(s: Student) {
+  // Eligible only if ALL 3 checks pass.
+  // eligibilityPct = share of checks passed (0/33/67/100) — not "% of students eligible".
   const checks = {
     attendance: s.attendance >= 75,
     internals:  (s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40,

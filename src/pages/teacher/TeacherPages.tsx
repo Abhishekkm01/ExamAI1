@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
+import { Pagination } from "../../components/Pagination";
+import { useClientPagination } from "../../hooks/useClientPagination";
 import { fetchTeacherStudents, getStudentEligibility } from "../../data/apiData";
 import type { Student, Exam } from "../../data/types";
 import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle } from "lucide-react";
@@ -202,6 +204,8 @@ export function TeacherAttendance() {
 
   useEffect(() => { loadRoll(subject, date); }, [subject, date]);
 
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(students, 10);
+
   if (loading && students.length === 0) return <div className="p-10 text-center text-slate-500">Loading attendance roll…</div>;
 
   const present = Object.values(records).filter(Boolean).length;
@@ -247,11 +251,11 @@ export function TeacherAttendance() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Date</label>
-            <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <TextInput type="date" value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Subject</label>
-            <Select value={subject} onChange={(e) => setSubject(e.target.value)}>
+            <Select value={subject} onChange={(e) => { setSubject(e.target.value); setPage(1); }}>
               {subjects.map((code) => (
                 <option key={code} value={code}>{code}</option>
               ))}
@@ -277,7 +281,7 @@ export function TeacherAttendance() {
           <p className="text-xs text-slate-500">{students.length} students</p>
         </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {students.map((s) => {
+          {paged.map((s) => {
             const isPresent = records[s.id];
             return (
               <div key={s.id} className="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40">
@@ -306,6 +310,7 @@ export function TeacherAttendance() {
             <div className="p-10 text-center text-slate-500">No students found for your department</div>
           )}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -374,10 +379,11 @@ export function TeacherMarks() {
 
   useEffect(() => { loadMarks(subject); }, [subject]);
 
-  const filtered = students.filter((s) =>
+  const filtered = useMemo(() => students.filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.rollNo.toLowerCase().includes(search.toLowerCase())
-  );
+  ), [students, search]);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
   const saveMarks = async (studentId: string) => {
     const m = marks[studentId];
@@ -436,9 +442,9 @@ export function TeacherMarks() {
       <Card className="p-5 mb-6">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
-            <TextInput placeholder="Search student..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <TextInput placeholder="Search student..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <Select value={subject} onChange={(e) => setSubject(e.target.value)} className="md:w-56">
+          <Select value={subject} onChange={(e) => { setSubject(e.target.value); setPage(1); }} className="md:w-56">
             {subjects.map((code) => (
               <option key={code} value={code}>{code}</option>
             ))}
@@ -459,7 +465,7 @@ export function TeacherMarks() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((s) => {
+              {paged.map((s) => {
                 const m = marks[s.id] || { internal: 0, assignment: 0 };
                 return (
                   <tr key={s.id}>
@@ -506,6 +512,7 @@ export function TeacherMarks() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -532,10 +539,11 @@ export function TeacherStudents() {
     });
   }, []);
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+  const list = useMemo(() => students.map((s) => ({ s, e: getStudentEligibility(s) })), [students]);
+  const filtered = useMemo(() => list.filter(({ e }) => filter === "all" || !e.eligible), [list, filter]);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 9);
 
-  const list = students.map((s) => ({ s, e: getStudentEligibility(s) }));
-  const filtered = list.filter(({ e }) => filter === "all" || !e.eligible);
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
 
   return (
     <div>
@@ -543,7 +551,7 @@ export function TeacherStudents() {
         actions={
           <div className="flex gap-2">
             {(["all", "at-risk"] as const).map((f) => (
-              <button key={f} onClick={() => setFilter(f)}
+              <button key={f} onClick={() => { setFilter(f); setPage(1); }}
                 className={cn("px-4 py-2 rounded-lg text-sm font-medium capitalize",
                   filter === f ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-800")}>{f}</button>
             ))}
@@ -555,32 +563,35 @@ export function TeacherStudents() {
         <div className="mb-4 p-3 rounded-lg text-sm bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.length === 0 ? (
-          <Card className="p-10 text-center text-slate-500 col-span-full">
-            {students.length === 0 ? "No students found in your department." : "No students match this filter."}
-          </Card>
-        ) : filtered.map(({ s, e }) => (
-          <Card key={s.id} className="p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3 mb-4">
-              <img src={s.photo} alt="" className="w-14 h-14 rounded-full bg-slate-200" />
-              <div>
-                <p className="font-bold">{s.name}</p>
-                <p className="text-xs text-slate-500">{s.rollNo}</p>
-                {e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">At Risk</Badge>}
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+          {filtered.length === 0 ? (
+            <div className="p-10 text-center text-slate-500 col-span-full">
+              {students.length === 0 ? "No students found in your department." : "No students match this filter."}
+            </div>
+          ) : paged.map(({ s, e }) => (
+            <div key={s.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3 mb-4">
+                <img src={s.photo} alt="" className="w-14 h-14 rounded-full bg-slate-200" />
+                <div>
+                  <p className="font-bold">{s.name}</p>
+                  <p className="text-xs text-slate-500">{s.rollNo}</p>
+                  {e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">At Risk</Badge>}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <ProgressRow label="Attendance" value={s.attendance} threshold={75} />
+                <ProgressRow label="Internals" value={(s.internalMarks / INTERNAL_MARKS_MAX) * 100} threshold={40} unit={`/${INTERNAL_MARKS_MAX}`} raw={s.internalMarks} />
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">SGPA</p><p className="font-bold">{s.previousResult}</p></div>
+                  <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">Backlogs</p><p className={cn("font-bold", s.backlogs > 0 ? "text-rose-600" : "text-emerald-600")}>{s.backlogs}</p></div>
+                </div>
               </div>
             </div>
-            <div className="space-y-3">
-              <ProgressRow label="Attendance" value={s.attendance} threshold={75} />
-              <ProgressRow label="Internals" value={(s.internalMarks / INTERNAL_MARKS_MAX) * 100} threshold={40} unit={`/${INTERNAL_MARKS_MAX}`} raw={s.internalMarks} />
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">SGPA</p><p className="font-bold">{s.previousResult}</p></div>
-                <div className="p-2 rounded bg-slate-50 dark:bg-slate-800"><p className="text-slate-500">Backlogs</p><p className={cn("font-bold", s.backlogs > 0 ? "text-rose-600" : "text-emerald-600")}>{s.backlogs}</p></div>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+          ))}
+        </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      </Card>
     </div>
   );
 }

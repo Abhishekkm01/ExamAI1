@@ -1,11 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, Button, Badge, TextInput, Select } from "../../components/Layout";
+import { Pagination } from "../../components/Pagination";
+import { Modal } from "../../components/Modal";
+import { useClientPagination } from "../../hooks/useClientPagination";
 import { fetchStudents, fetchTeachers, fetchHods, fetchAdminExams, getStudentEligibility, fetchAttendanceTrends } from "../../data/apiData";
 import { downloadAdminReport, api } from "../../data/api";
 import { apiDelete, apiPost, apiPut } from "../../data/http";
 import type { Student, Teacher, Exam, Hod } from "../../data/types";
 import { useNotifications } from "../../contexts/AppContext";
-import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, XCircle, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, Clock, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database, User, GraduationCap, BookOpen } from "lucide-react";
+import { Search, Plus, Edit2, Trash2, Eye, Download, Upload, Printer, QrCode, Mail, CheckCircle2, XCircle, FileText, Wallet, AlertTriangle, Settings as SettingsIcon, Save, Calendar, MapPin, ClipboardList, TicketCheck, BrainCircuit, X, Database, User, GraduationCap, BookOpen } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell, Legend } from "recharts";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../../utils/cn";
@@ -34,12 +37,10 @@ export function AdminStudents() {
   const [list, setList] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState<string>("all");
-  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Student | null>(null);
   const [viewing, setViewing] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const { departments: depts, loading: deptsLoading } = useDepartments();
-  const pageSize = 5;
 
   useEffect(() => { fetchStudents().then((s) => { setList(s); setLoading(false); }); }, []);
 
@@ -52,8 +53,7 @@ export function AdminStudents() {
     );
   }, [list, search, dept]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
   const onDelete = async (id: string) => {
     if (!confirm("Delete this student?")) return;
@@ -92,7 +92,6 @@ export function AdminStudents() {
             <option value="all">All Departments</option>
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
-          {/* <Button variant="secondary"><Upload className="w-4 h-4" /> Bulk Upload</Button> */}
         </div>
       </Card>
 
@@ -152,20 +151,14 @@ export function AdminStudents() {
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between p-4 border-t border-slate-200 dark:border-slate-800">
-          <p className="text-sm text-slate-500">Showing {(page-1)*pageSize+1}–{Math.min(page*pageSize, filtered.length)} of {filtered.length}</p>
-          <div className="flex items-center gap-1">
-            <Button variant="secondary" disabled={page === 1} onClick={() => setPage(page - 1)}>Prev</Button>
-            {Array.from({ length: totalPages }).map((_, i) => (
-              <button key={i} onClick={() => setPage(i + 1)}
-                className={cn("w-8 h-8 rounded-md text-sm font-medium",
-                  page === i + 1 ? "bg-indigo-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800")}>
-                {i + 1}
-              </button>
-            ))}
-            <Button variant="secondary" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next</Button>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Card>
 
       {editing && (
@@ -246,55 +239,53 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
   }, [departments, student?.id, form.department]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">{student?.id ? "Edit Student" : "Add Student"}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
-        </div>
-        <div className="p-6 grid grid-cols-2 gap-4">
-          <Field label="Roll No"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
-          <Field label="Name"><TextInput value={form.name} onChange={(e) => update("name", e.target.value)} /></Field>
-          <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => update("email", e.target.value)} /></Field>
-          <Field label={student?.id ? "New Password (optional)" : "Password"}>
-            <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={student?.id ? "Leave blank to keep current" : "Student login password (min 6 chars)"} />
-          </Field>
-          <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
-          <Field label="Department">
-            <DepartmentSelect
-              value={form.department}
-              onChange={(v) => update("department", v)}
-              departments={departments}
-              loading={deptsLoading}
-            />
-          </Field>
-          <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => update("semester", +e.target.value)} /></Field>
-          <Field label="Section"><TextInput value={form.section} onChange={(e) => update("section", e.target.value)} /></Field>
-          <Field label="Attendance %"><TextInput type="number" value={form.attendance} onChange={(e) => update("attendance", +e.target.value)} /></Field>
-          <Field label={`Internal Marks /${INTERNAL_MARKS_MAX}`}><TextInput type="number" min={0} max={INTERNAL_MARKS_MAX} value={form.internalMarks} onChange={(e) => update("internalMarks", +e.target.value)} /></Field>
-          <Field label={`Assignment Marks /${ASSIGNMENT_MARKS_MAX}`}><TextInput type="number" min={0} max={ASSIGNMENT_MARKS_MAX} value={form.assignmentMarks} onChange={(e) => update("assignmentMarks", +e.target.value)} /></Field>
-          <Field label="Previous SGPA"><TextInput type="number" step="0.1" value={form.previousResult} onChange={(e) => update("previousResult", +e.target.value)} /></Field>
-          <Field label="Backlogs"><TextInput type="number" value={form.backlogs} onChange={(e) => update("backlogs", +e.target.value)} /></Field>
-          <Field label="Fee Paid">
-            <Select value={form.feePaid ? "yes" : "no"} onChange={(e) => update("feePaid", e.target.value === "yes")}>
-              <option value="yes">Yes</option><option value="no">No</option>
-            </Select>
-          </Field>
-          <Field label="Fee Amount"><TextInput type="number" value={form.feeAmount} onChange={(e) => update("feeAmount", +e.target.value)} /></Field>
-          <Field label="Photo URL"><TextInput value={form.photo} onChange={(e) => update("photo", e.target.value)} placeholder="https://..." /></Field>
-        </div>
-        <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => {
-            if (!student?.id && password && password.length < 6) {
-              alert("Password must be at least 6 characters");
-              return;
-            }
-            onSave(form, password ? { password } : undefined);
-          }}><Save className="w-4 h-4" /> Save Student</Button>
-        </div>
+    <Modal onClose={onClose} panelClassName="max-w-2xl">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white">{student?.id ? "Edit Student" : "Add Student"}</h3>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
       </div>
-    </div>
+      <div className="p-6 grid grid-cols-2 gap-4">
+        <Field label="Roll No"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
+        <Field label="Name"><TextInput value={form.name} onChange={(e) => update("name", e.target.value)} /></Field>
+        <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => update("email", e.target.value)} /></Field>
+        <Field label={student?.id ? "New Password (optional)" : "Password"}>
+          <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={student?.id ? "Leave blank to keep current" : "Student login password (min 6 chars)"} />
+        </Field>
+        <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
+        <Field label="Department">
+          <DepartmentSelect
+            value={form.department}
+            onChange={(v) => update("department", v)}
+            departments={departments}
+            loading={deptsLoading}
+          />
+        </Field>
+        <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => update("semester", +e.target.value)} /></Field>
+        <Field label="Section"><TextInput value={form.section} onChange={(e) => update("section", e.target.value)} /></Field>
+        <Field label="Attendance %"><TextInput type="number" value={form.attendance} onChange={(e) => update("attendance", +e.target.value)} /></Field>
+        <Field label={`Internal Marks /${INTERNAL_MARKS_MAX}`}><TextInput type="number" min={0} max={INTERNAL_MARKS_MAX} value={form.internalMarks} onChange={(e) => update("internalMarks", +e.target.value)} /></Field>
+        <Field label={`Assignment Marks /${ASSIGNMENT_MARKS_MAX}`}><TextInput type="number" min={0} max={ASSIGNMENT_MARKS_MAX} value={form.assignmentMarks} onChange={(e) => update("assignmentMarks", +e.target.value)} /></Field>
+        <Field label="Previous SGPA"><TextInput type="number" step="0.1" value={form.previousResult} onChange={(e) => update("previousResult", +e.target.value)} /></Field>
+        <Field label="Backlogs"><TextInput type="number" value={form.backlogs} onChange={(e) => update("backlogs", +e.target.value)} /></Field>
+        <Field label="Fee Paid">
+          <Select value={form.feePaid ? "yes" : "no"} onChange={(e) => update("feePaid", e.target.value === "yes")}>
+            <option value="yes">Yes</option><option value="no">No</option>
+          </Select>
+        </Field>
+        <Field label="Fee Amount"><TextInput type="number" value={form.feeAmount} onChange={(e) => update("feeAmount", +e.target.value)} /></Field>
+        <Field label="Photo URL"><TextInput value={form.photo} onChange={(e) => update("photo", e.target.value)} placeholder="https://..." /></Field>
+      </div>
+      <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button onClick={() => {
+          if (!student?.id && password && password.length < 6) {
+            alert("Password must be at least 6 characters");
+            return;
+          }
+          onSave(form, password ? { password } : undefined);
+        }}><Save className="w-4 h-4" /> Save Student</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -337,90 +328,88 @@ function StudentDetailModal({ student, onClose }: { student: Student; onClose: (
   const totalInternal = s.internalMarks + (s.assignmentMarks || 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <GraduationCap className="w-5 h-5 text-indigo-600" /> Student Details
-          </h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
-        </div>
+    <Modal onClose={onClose} panelClassName="max-w-3xl">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <GraduationCap className="w-5 h-5 text-indigo-600" /> Student Details
+        </h3>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
+      </div>
 
-        {loading ? (
-          <div className="p-12 text-center text-slate-500">Loading full profile from MySQL…</div>
-        ) : error ? (
-          <div className="p-8 text-center text-rose-600">{error}</div>
-        ) : (
-          <div className="p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row items-start gap-5 p-5 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40 border border-indigo-100 dark:border-indigo-900/50">
-              <img src={s.photo} alt="" className="w-24 h-24 rounded-2xl bg-slate-200 border-4 border-white dark:border-slate-800 shadow-md object-cover" />
-              <div className="flex-1">
-                <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{s.name}</h4>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{s.rollNo} • {s.department}</p>
-                <p className="text-sm text-slate-500">Semester {s.semester} • Section {s.section}</p>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {e.eligible || detail?.is_eligible ? (
-                    <Badge variant="green">Eligible for Exam</Badge>
-                  ) : (
-                    <Badge variant="red">Not Eligible</Badge>
-                  )}
-                  {detail?.eligibility_percentage != null && (
-                    <Badge variant="indigo">AI Score: {Math.round(detail.eligibility_percentage)}%</Badge>
-                  )}
-                </div>
+      {loading ? (
+        <div className="p-12 text-center text-slate-500">Loading full profile from MySQL…</div>
+      ) : error ? (
+        <div className="p-8 text-center text-rose-600">{error}</div>
+      ) : (
+        <div className="p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row items-start gap-5 p-5 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40 border border-indigo-100 dark:border-indigo-900/50">
+            <img src={s.photo} alt="" className="w-24 h-24 rounded-2xl bg-slate-200 border-4 border-white dark:border-slate-800 shadow-md object-cover" />
+            <div className="flex-1">
+              <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{s.name}</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{s.rollNo} • {s.department}</p>
+              <p className="text-sm text-slate-500">Semester {s.semester} • Section {s.section}</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {e.eligible || detail?.is_eligible ? (
+                  <Badge variant="green">Eligible for Exam</Badge>
+                ) : (
+                  <Badge variant="red">Not Eligible</Badge>
+                )}
+                {detail?.eligibility_percentage != null && (
+                  <Badge variant="indigo">AI Score: {Math.round(detail.eligibility_percentage)}%</Badge>
+                )}
               </div>
             </div>
-
-            <section>
-              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><User className="w-3.5 h-3.5" /> Contact</h5>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Info label="Email" value={s.email} />
-                <Info label="Mobile" value={s.mobile || "—"} />
-              </div>
-            </section>
-
-            <section>
-              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><ClipboardList className="w-3.5 h-3.5" /> Academic Record</h5>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <Info label="Attendance" value={`${s.attendance}%`} ok={s.attendance >= 75} />
-                <Info label="Internal Marks" value={`${s.internalMarks}/${INTERNAL_MARKS_MAX} (${internalPct}%)`} ok={internalPct >= 40} />
-                <Info label="Assignment Marks" value={`${s.assignmentMarks}/${ASSIGNMENT_MARKS_MAX}`} />
-                <Info label="Total Internal" value={`${totalInternal}/${INTERNAL_ASSIGNMENT_TOTAL}`} />
-                <Info label="Active Backlogs" value={String(s.backlogs)} />
-                <Info label="Previous SGPA" value={s.previousResult.toFixed(2)} />
-              </div>
-              <div className="mt-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Attendance</span><span>{s.attendance}%</span></div>
-                <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div className={cn("h-full rounded-full", s.attendance >= 75 ? "bg-emerald-500" : "bg-rose-500")} style={{ width: `${Math.min(100, s.attendance)}%` }} />
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Wallet className="w-3.5 h-3.5" /> Fee Status</h5>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <Info label="Fee Paid" value={s.feePaid ? "Yes" : "No"} ok={s.feePaid} />
-                <Info label="Fee Amount" value={`₹${s.feeAmount?.toLocaleString?.() ?? s.feeAmount}`} />
-                <Info label="Due Date" value={s.feeDueDate || "—"} ok={s.feePaid} />
-              </div>
-            </section>
-
-            <section>
-              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><BrainCircuit className="w-3.5 h-3.5" /> Eligibility Breakdown</h5>
-              <div className="space-y-2">
-                <EligibilityRow label="Attendance ≥ 75%" ok={e.checks.attendance} detail={`${s.attendance}%`} />
-                <EligibilityRow label="Internal marks ≥ 40%" ok={e.checks.internals} detail={`${internalPct}%`} />
-                <EligibilityRow label="Exam fee paid" ok={e.checks.fee} detail={s.feePaid ? "Paid" : "Pending"} />
-              </div>
-              {detail?.ai_risk_score != null && (
-                <p className="text-xs text-slate-500 mt-3">AI risk score: <span className="font-semibold">{Math.round(detail.ai_risk_score)}</span> (lower is better)</p>
-              )}
-            </section>
           </div>
-        )}
-      </div>
-    </div>
+
+          <section>
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><User className="w-3.5 h-3.5" /> Contact</h5>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Info label="Email" value={s.email} />
+              <Info label="Mobile" value={s.mobile || "—"} />
+            </div>
+          </section>
+
+          <section>
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><ClipboardList className="w-3.5 h-3.5" /> Academic Record</h5>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Info label="Attendance" value={`${s.attendance}%`} ok={s.attendance >= 75} />
+              <Info label="Internal Marks" value={`${s.internalMarks}/${INTERNAL_MARKS_MAX} (${internalPct}%)`} ok={internalPct >= 40} />
+              <Info label="Assignment Marks" value={`${s.assignmentMarks}/${ASSIGNMENT_MARKS_MAX}`} />
+              <Info label="Total Internal" value={`${totalInternal}/${INTERNAL_ASSIGNMENT_TOTAL}`} />
+              <Info label="Active Backlogs" value={String(s.backlogs)} />
+              <Info label="Previous SGPA" value={s.previousResult.toFixed(2)} />
+            </div>
+            <div className="mt-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+              <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Attendance</span><span>{s.attendance}%</span></div>
+              <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className={cn("h-full rounded-full", s.attendance >= 75 ? "bg-emerald-500" : "bg-rose-500")} style={{ width: `${Math.min(100, s.attendance)}%` }} />
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Wallet className="w-3.5 h-3.5" /> Fee Status</h5>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Info label="Fee Paid" value={s.feePaid ? "Yes" : "No"} ok={s.feePaid} />
+              <Info label="Fee Amount" value={`₹${s.feeAmount?.toLocaleString?.() ?? s.feeAmount}`} />
+              <Info label="Due Date" value={s.feeDueDate || "—"} ok={s.feePaid} />
+            </div>
+          </section>
+
+          <section>
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><BrainCircuit className="w-3.5 h-3.5" /> Eligibility Breakdown</h5>
+            <div className="space-y-2">
+              <EligibilityRow label="Attendance ≥ 75%" ok={e.checks.attendance} detail={`${s.attendance}%`} />
+              <EligibilityRow label="Internal marks ≥ 40%" ok={e.checks.internals} detail={`${internalPct}%`} />
+              <EligibilityRow label="Exam fee paid" ok={e.checks.fee} detail={s.feePaid ? "Paid" : "Pending"} />
+            </div>
+            {detail?.ai_risk_score != null && (
+              <p className="text-xs text-slate-500 mt-3">AI risk score: <span className="font-semibold">{Math.round(detail.ai_risk_score)}</span> (lower is better)</p>
+            )}
+          </section>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -455,14 +444,13 @@ function TeacherDetailModal({ teacher, onClose }: { teacher: Teacher; onClose: (
   const exams: any[] = detail?.invigilator_exams || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <User className="w-5 h-5 text-indigo-600" /> Teacher Details
-          </h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
-        </div>
+    <Modal onClose={onClose} panelClassName="max-w-2xl">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <User className="w-5 h-5 text-indigo-600" /> Teacher Details
+        </h3>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
+      </div>
 
         {loading ? (
           <div className="p-12 text-center text-slate-500">Loading teacher profile…</div>
@@ -528,8 +516,7 @@ function TeacherDetailModal({ teacher, onClose }: { teacher: Teacher; onClose: (
             </section>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -560,6 +547,7 @@ export function AdminTeachers() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Teacher | null>(null);
   const [viewing, setViewing] = useState<Teacher | null>(null);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 9);
 
   const reload = () => fetchTeachers().then((t) => { setList(t); setLoading(false); });
   useEffect(() => { reload(); }, []);
@@ -582,7 +570,7 @@ export function AdminTeachers() {
         actions={<Button variant="primary" onClick={() => setAdding(true)}><Plus className="w-4 h-4" /> Add Teacher</Button>} />
       <Card className="overflow-hidden">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
-          {list.map((t) => (
+          {paged.map((t) => (
             <div key={t.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
                 <img src={t.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${t.empId}`} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
@@ -610,6 +598,7 @@ export function AdminTeachers() {
           ))}
           {list.length === 0 && <div className="col-span-3 p-10 text-center text-slate-500">No teachers in MySQL — click "Add Teacher" to create one</div>}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
       {adding && <TeacherModal onClose={() => setAdding(false)} onSaved={(t) => { setList((l) => [t, ...l]); setAdding(false); }} />}
       {editing && <TeacherModal teacher={editing} onClose={() => setEditing(null)} onSaved={(t) => { setList((l) => l.map((x) => x.id === t.id ? t : x)); setEditing(null); }} />}
@@ -624,6 +613,7 @@ export function AdminHods() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Hod | null>(null);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 9);
 
   const reload = () => fetchHods().then((h) => { setList(h); setLoading(false); });
   useEffect(() => { reload(); }, []);
@@ -649,7 +639,7 @@ export function AdminHods() {
       />
       <Card className="overflow-hidden">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
-          {list.map((h) => (
+          {paged.map((h) => (
             <div key={h.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
                 <img src={h.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.empId}`} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
@@ -674,6 +664,7 @@ export function AdminHods() {
             <div className="col-span-3 p-10 text-center text-slate-500">No HODs yet — click "Add HOD" to appoint one per department</div>
           )}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
       {adding && <HodModal onClose={() => setAdding(false)} onSaved={(h) => { setList((l) => [h, ...l]); setAdding(false); }} />}
       {editing && <HodModal hod={editing} onClose={() => setEditing(null)} onSaved={(h) => { setList((l) => l.map((x) => x.id === h.id ? h : x)); setEditing(null); }} />}
@@ -739,8 +730,8 @@ function HodModal({ hod, onClose, onSaved }: { hod?: Hod; onClose: () => void; o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <Card className="w-full max-w-lg p-6">
+    <Modal onClose={onClose} panelClassName="max-w-lg">
+      <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">{isEdit ? "Edit HOD" : "Add HOD"}</h3>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
@@ -778,8 +769,8 @@ function HodModal({ hod, onClose, onSaved }: { hod?: Hod; onClose: () => void; o
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -842,36 +833,34 @@ function TeacherModal({ teacher, onClose, onSaved }: { teacher?: Teacher; onClos
     setSaving(false);
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold">{isEdit ? "Edit Teacher" : "Add Teacher"}</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
-        </div>
-        <div className="p-6 space-y-3">
-          <Field label="Name"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Employee ID"><TextInput value={form.emp_id} onChange={(e) => setForm({ ...form, emp_id: e.target.value })} placeholder="TCH005" /></Field>
-          <Field label="Department">
-            <DepartmentSelect
-              value={form.department}
-              onChange={(v) => setForm({ ...form, department: v })}
-              departments={departments}
-              loading={deptsLoading}
-            />
-          </Field>
-          <Field label="Assigned Subjects (comma-separated)"><TextInput value={form.assigned_subjects} onChange={(e) => setForm({ ...form, assigned_subjects: e.target.value })} /></Field>
-          <Field label={isEdit ? "New Password (optional)" : "Password"}>
-            <TextInput type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={isEdit ? "Leave blank to keep current" : "teacher123"} />
-          </Field>
-          {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
-        </div>
-        <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : isEdit ? "Save Changes" : "Add to MySQL"}</Button>
-        </div>
+    <Modal onClose={onClose} panelClassName="max-w-lg">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <h3 className="text-lg font-bold">{isEdit ? "Edit Teacher" : "Add Teacher"}</h3>
+        <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
       </div>
-    </div>
+      <div className="p-6 space-y-3">
+        <Field label="Name"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+        <Field label="Employee ID"><TextInput value={form.emp_id} onChange={(e) => setForm({ ...form, emp_id: e.target.value })} placeholder="TCH005" /></Field>
+        <Field label="Department">
+          <DepartmentSelect
+            value={form.department}
+            onChange={(v) => setForm({ ...form, department: v })}
+            departments={departments}
+            loading={deptsLoading}
+          />
+        </Field>
+        <Field label="Assigned Subjects (comma-separated)"><TextInput value={form.assigned_subjects} onChange={(e) => setForm({ ...form, assigned_subjects: e.target.value })} /></Field>
+        <Field label={isEdit ? "New Password (optional)" : "Password"}>
+          <TextInput type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={isEdit ? "Leave blank to keep current" : "teacher123"} />
+        </Field>
+        {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
+      </div>
+      <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : isEdit ? "Save Changes" : "Add to MySQL"}</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -881,6 +870,7 @@ export function AdminExams() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Exam | null>(null);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 9);
 
   useEffect(() => { fetchAdminExams().then((e) => { setList(e); setLoading(false); }); }, []);
 
@@ -900,46 +890,76 @@ export function AdminExams() {
     <div>
       <PageHeader title="Examination Management" subtitle={`${list.length} scheduled exams (live MySQL data)`}
         actions={<Button variant="primary" onClick={() => setAdding(true)}><Plus className="w-4 h-4" /> Schedule Exam</Button>} />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {list.map((e) => (
-          <Card key={e.id} className="p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <div className="flex flex-wrap gap-1">
-                  {(e.subjects?.length ? e.subjects : [{ subjectCode: e.subjectCode }]).map((s) => (
-                    <Badge key={s.subjectCode} variant="indigo">{s.subjectCode}</Badge>
-                  ))}
+      <div className="space-y-4">
+        {paged.map((e) => {
+          const papers = e.subjects?.length
+            ? e.subjects
+            : [{ subjectCode: e.subjectCode, subjectName: e.subjectName, date: e.date, time: e.time, duration: e.duration }];
+          return (
+            <Card key={e.id} className="overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-lg text-slate-900 dark:text-white break-words">{e.title || e.subjectName}</h3>
+                  {e.title && e.title !== e.subjectName && (
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 break-words">{e.subjectName}</p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-1">
+                    {e.department} • Sem {e.semester} • Room {e.room} • {papers.length} subject{papers.length === 1 ? "" : "s"}
+                  </p>
                 </div>
-                <h3 className="font-bold text-slate-900 dark:text-white mt-2">{e.title || e.subjectName}</h3>
-                {(e.title && e.title !== e.subjectName) && (
-                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{e.subjectName}</p>
-                )}
-                <p className="text-xs text-slate-500 mt-0.5">{e.department} • Sem {e.semester}</p>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{(papers[0]?.date || e.date).split("-")[2]}</p>
+                    <p className="text-xs text-slate-500 uppercase">
+                      {new Date(papers[0]?.date || e.date).toLocaleString("en", { month: "short" })}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => setEditing(e)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
+                      <Edit2 className="w-4 h-4 text-slate-500" />
+                    </button>
+                    <button onClick={() => onDelete(e)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Delete">
+                      <Trash2 className="w-4 h-4 text-rose-500" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-start gap-2">
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{e.date.split("-")[2]}</p>
-                  <p className="text-xs text-slate-500 uppercase">{new Date(e.date).toLocaleString("en", { month: "short" })}</p>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <button onClick={() => setEditing(e)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Edit">
-                    <Edit2 className="w-4 h-4 text-slate-500" />
-                  </button>
-                  <button onClick={() => onDelete(e)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Delete">
-                    <Trash2 className="w-4 h-4 text-rose-500" />
-                  </button>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50">
+                    <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-4 py-2.5 w-12">#</th>
+                      <th className="px-4 py-2.5 w-28">Code</th>
+                      <th className="px-4 py-2.5">Subject</th>
+                      <th className="px-4 py-2.5 w-32">Date</th>
+                      <th className="px-4 py-2.5 w-28">Time</th>
+                      <th className="px-4 py-2.5 w-28">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {papers.map((s, i) => (
+                      <tr key={`${s.subjectCode}-${i}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30">
+                        <td className="px-4 py-2.5 text-slate-500">{i + 1}</td>
+                        <td className="px-4 py-2.5 font-mono font-semibold text-indigo-600 whitespace-nowrap">{s.subjectCode}</td>
+                        <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100 break-words">{s.subjectName || e.subjectName}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">{s.date || e.date}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">{s.time || e.time}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">{s.duration || e.duration || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-            <div className="space-y-1.5 text-sm text-slate-600 dark:text-slate-300 mb-4">
-              <p className="flex items-center gap-2"><Calendar className="w-4 h-4" /> {e.date} at {e.time}</p>
-              <p className="flex items-center gap-2"><Clock className="w-4 h-4" /> Duration: {e.duration}</p>
-              <p className="flex items-center gap-2"><MapPin className="w-4 h-4" /> {e.room}</p>
-            </div>
-          </Card>
-        ))}
-        {list.length === 0 && <div className="col-span-3 p-10 text-center text-slate-500">No exams scheduled — click "Schedule Exam"</div>}
+            </Card>
+          );
+        })}
+        {list.length === 0 && (
+          <Card className="p-10 text-center text-slate-500">No exams scheduled — click "Schedule Exam"</Card>
+        )}
       </div>
+      <Card className="mt-4 overflow-hidden">
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      </Card>
       {adding && <ExamModal onClose={() => setAdding(false)} onSaved={(e) => { setList((l) => [e, ...l]); setAdding(false); }} />}
       {editing && <ExamModal exam={editing} onClose={() => setEditing(null)} onSaved={(e) => { setList((l) => l.map((x) => x.id === e.id ? e : x)); setEditing(null); }} />}
     </div>
@@ -1122,12 +1142,11 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     setSaving(false);
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-bold">{isEdit ? "Edit Exam" : "Schedule Exam"}</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
-        </div>
+    <Modal onClose={onClose} panelClassName="max-w-2xl">
+      <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <h3 className="text-lg font-bold">{isEdit ? "Edit Exam" : "Schedule Exam"}</h3>
+        <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
+      </div>
         <div className="p-6 space-y-3">
           <Field label="Examination Title">
             <TextInput
@@ -1219,8 +1238,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : isEdit ? "Save Changes" : "Schedule Exam"}</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1256,7 +1274,11 @@ export function AdminMarks() {
     exams.flatMap((e) => (e.subjects?.length ? e.subjects.map((s) => s.subjectCode) : [e.subjectCode]))
   ));
 
-  const filtered = students.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = useMemo(
+    () => students.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),
+    [students, search],
+  );
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
   const saveMarks = async (student: Student) => {
     const m = marks[student.id];
@@ -1310,9 +1332,9 @@ export function AdminMarks() {
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <TextInput placeholder="Search students..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+            <TextInput placeholder="Search students..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-10" />
           </div>
-          <Select value={subjectCode} onChange={(e) => setSubjectCode(e.target.value)} className="w-40">
+          <Select value={subjectCode} onChange={(e) => { setSubjectCode(e.target.value); setPage(1); }} className="w-40">
             {(subjectOptions.length ? subjectOptions : [subjectCode]).map((code) => (
               <option key={code} value={code}>{code}</option>
             ))}
@@ -1334,7 +1356,7 @@ export function AdminMarks() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((s) => {
+              {paged.map((s) => {
                 const m = marks[s.id] || { internal: s.internalMarks, assignment: s.assignmentMarks };
                 return (
                   <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
@@ -1382,6 +1404,7 @@ export function AdminMarks() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -1393,30 +1416,55 @@ export function AdminEligibility() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "eligible" | "not">("all");
   useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
-  if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
 
-  const list = students.map((s) => ({ s, e: getStudentEligibility(s) }));
-  const filtered = list.filter(({ e }) => filter === "all" ? true : filter === "eligible" ? e.eligible : !e.eligible);
+  const list = useMemo(() => students.map((s) => ({ s, e: getStudentEligibility(s) })), [students]);
+  const filtered = useMemo(
+    () => list.filter(({ e }) => filter === "all" ? true : filter === "eligible" ? e.eligible : !e.eligible),
+    [list, filter],
+  );
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
+
+  const eligibleCount = useMemo(() => list.filter((x) => x.e.eligible).length, [list]);
+  const ineligibleCount = list.length - eligibleCount;
+  const eligibleRate = list.length ? Math.round((eligibleCount / list.length) * 100) : 0;
+  const avgCriteriaMet = list.length
+    ? Math.round(list.reduce((a, x) => a + x.e.eligibilityPct, 0) / list.length)
+    : 0;
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
 
   return (
     <div>
-      <PageHeader title="Eligibility Verification" subtitle={`${list.length} students • 3-criteria check (live from MySQL)`} />
+      <PageHeader title="Eligibility Verification" subtitle={`${list.length} students • must pass all 3 criteria to be Eligible`} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <Card className="p-5"><p className="text-xs text-slate-500 font-medium">Total Students</p><p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{list.length}</p></Card>
         <Card className="p-5 border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10">
-          <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Eligible</p>
-          <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-300 mt-2">{list.filter(x => x.e.eligible).length}</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Fully Eligible</p>
+          <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-300 mt-2">{eligibleCount}</p>
         </Card>
         <Card className="p-5 border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-900/10">
           <p className="text-xs text-rose-700 dark:text-rose-300 font-medium">Not Eligible</p>
-          <p className="text-3xl font-bold text-rose-700 dark:text-rose-300 mt-2">{list.filter(x => !x.e.eligible).length}</p>
+          <p className="text-3xl font-bold text-rose-700 dark:text-rose-300 mt-2">{ineligibleCount}</p>
         </Card>
-        <Card className="p-5"><p className="text-xs text-slate-500 font-medium">Avg Eligibility</p><p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">{list.length ? Math.round(list.reduce((a, x) => a + x.e.eligibilityPct, 0) / list.length) : 0}%</p></Card>
+        <Card className="p-5 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10">
+          <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">Eligible Rate</p>
+          <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">{eligibleRate}%</p>
+          <p className="text-[11px] text-slate-500 mt-1">{eligibleCount}/{list.length} passed all 3</p>
+        </Card>
+        <Card className="p-5">
+          <p className="text-xs text-slate-500 font-medium">Avg Criteria Met</p>
+          <p className="text-3xl font-bold text-slate-700 dark:text-slate-200 mt-2">{avgCriteriaMet}%</p>
+          <p className="text-[11px] text-slate-500 mt-1">Mean of (checks passed ÷ 3)</p>
+        </Card>
       </div>
 
       <Card className="p-5 mb-6">
-        <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Eligibility Criteria</h4>
+        <h4 className="font-semibold text-slate-900 dark:text-white mb-2">How eligibility is checked</h4>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+          A student is <strong>Eligible</strong> only if they pass <strong>all 3</strong> rules below.
+          Score shows how many rules they passed (33% / 67% / 100%). That is why Avg Criteria Met can be high even when Eligible Rate is lower.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <Criterion label="≥ 75% Attendance" icon="📊" />
           <Criterion label={`≥ 40% Internals (/${INTERNAL_MARKS_MAX})`} icon="📝" />
@@ -1424,57 +1472,60 @@ export function AdminEligibility() {
         </div>
       </Card>
 
-      <Card className="p-5">
-        <div className="flex gap-2 mb-4">
-          {(["all", "eligible", "not"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={cn("px-4 py-2 rounded-lg text-sm font-medium capitalize",
-                filter === f ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300")}>
-              {f === "not" ? "Not Eligible" : f}
-            </button>
-          ))}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-800">
-                <th className="pb-3 font-medium">Student</th>
-                <th className="pb-3 font-medium">Attendance</th>
-                <th className="pb-3 font-medium">Internals</th>
-                <th className="pb-3 font-medium">Fee</th>
-                <th className="pb-3 font-medium">Score</th>
-                <th className="pb-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map(({ s, e }) => (
-                <tr key={s.id}>
-                  <td className="py-3">
-                    <div className="flex items-center gap-2">
-                      <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
-                      <div>
-                        <p className="font-medium">{s.name}</p>
-                        <p className="text-xs text-slate-500">{s.rollNo}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3">{s.attendance >= 75 ? <Check /> : <XIcon />}{s.attendance}%</td>
-                  <td className="py-3">{(s.internalMarks / INTERNAL_MARKS_MAX) * 100 >= 40 ? <Check /> : <XIcon />}{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
-                  <td className="py-3">{s.feePaid ? <Check /> : <XIcon />}{s.feePaid ? "Paid" : "Due"}</td>
-                  <td className="py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-500" style={{ width: `${e.eligibilityPct}%` }} />
-                      </div>
-                      <span className="text-xs">{e.eligibilityPct}%</span>
-                    </div>
-                  </td>
-                  <td className="py-3">{e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">Not Eligible</Badge>}</td>
+      <Card className="overflow-hidden">
+        <div className="p-5 pb-0">
+          <div className="flex gap-2 mb-4">
+            {(["all", "eligible", "not"] as const).map((f) => (
+              <button key={f} onClick={() => { setFilter(f); setPage(1); }}
+                className={cn("px-4 py-2 rounded-lg text-sm font-medium capitalize",
+                  filter === f ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300")}>
+                {f === "not" ? "Not Eligible" : f === "eligible" ? "Fully Eligible" : "All Students"}
+              </button>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                  <th className="pb-3 font-medium">Student</th>
+                  <th className="pb-3 font-medium">Attendance</th>
+                  <th className="pb-3 font-medium">Internals</th>
+                  <th className="pb-3 font-medium">Fee</th>
+                  <th className="pb-3 font-medium">Checks</th>
+                  <th className="pb-3 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {paged.map(({ s, e }) => (
+                  <tr key={s.id}>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
+                        <div>
+                          <p className="font-medium">{s.name}</p>
+                          <p className="text-xs text-slate-500">{s.rollNo} • {s.department}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3">{e.checks.attendance ? <Check /> : <XIcon />}{s.attendance}%</td>
+                    <td className="py-3">{e.checks.internals ? <Check /> : <XIcon />}{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
+                    <td className="py-3">{e.checks.fee ? <Check /> : <XIcon />}{s.feePaid ? "Paid" : "Due"}</td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500" style={{ width: `${e.eligibilityPct}%` }} />
+                        </div>
+                        <span className="text-xs whitespace-nowrap">{e.passed}/{e.total} ({e.eligibilityPct}%)</span>
+                      </div>
+                    </td>
+                    <td className="py-3">{e.eligible ? <Badge variant="green">Eligible</Badge> : <Badge variant="red">Not Eligible</Badge>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -1545,7 +1596,21 @@ export function AdminHallTickets() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [seatingRooms, setSeatingRooms] = useState<{ id: number; room_code: string; room_name: string; rows: number; columns: number }[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const { settings: systemSettings } = useSystemSettings();
+
+  const hallLabel = (r: { room_code: string; room_name: string }) => `${r.room_name} (${r.room_code})`;
+
+  const matchHallLabel = (value: string) => {
+    const v = (value || "").trim();
+    if (!v) return "";
+    const hit = seatingRooms.find((r) => {
+      const label = hallLabel(r);
+      return v === label || v === r.room_code || v === r.room_name;
+    });
+    return hit ? hallLabel(hit) : "";
+  };
 
   const load = async () => {
     setLoading(true);
@@ -1562,6 +1627,27 @@ export function AdminHallTickets() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    setRoomsLoading(true);
+    api.adminSeatingRooms()
+      .then((rooms) => setSeatingRooms(rooms || []))
+      .catch(() => setSeatingRooms([]))
+      .finally(() => setRoomsLoading(false));
+  }, []);
+
+  // Normalize halls once DB room list is ready (e.g. code "A-101" → "Lecture Hall A-101 (A-101)")
+  useEffect(() => {
+    if (!seatingRooms.length || editingId == null) return;
+    setEditSubjects((list) =>
+      list.map((s) => {
+        const matched = matchHallLabel(s.room);
+        return matched && matched !== s.room ? { ...s, room: matched } : s;
+      }),
+    );
+  }, [seatingRooms, editingId]);
+
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(tickets, 10);
+
   const openEdit = (t: HallTicketRow) => {
     const base = t.subjects?.length
       ? t.subjects.map((s) => ({
@@ -1571,7 +1657,7 @@ export function AdminHallTickets() {
           exam_time: s.exam_time,
           duration: s.duration,
           seat_number: s.seat_number || t.seat_number,
-          room: s.room || t.room,
+          room: matchHallLabel(s.room || t.room) || s.room || t.room || "",
         }))
       : [{
           subject_code: t.subject_code || "",
@@ -1580,7 +1666,7 @@ export function AdminHallTickets() {
           exam_time: t.exam_time,
           duration: t.duration,
           seat_number: t.seat_number,
-          room: t.room,
+          room: matchHallLabel(t.room) || t.room || "",
         }];
     setEditSubjects(base);
     setEditingId(t.id);
@@ -1623,11 +1709,18 @@ export function AdminHallTickets() {
     setError(null);
     if (!autoResolve) setSeatConflicts([]);
     try {
+      if (!seatingRooms.length) {
+        throw new Error("No halls found in database. Add halls under Admin → Seating first.");
+      }
+      const missingHall = editSubjects.find((s) => !matchHallLabel(s.room));
+      if (missingHall) {
+        throw new Error(`Select a hall from the list for ${missingHall.subject_code || "each subject"}.`);
+      }
       const result = await api.adminUpdateHallTicket(ticketId, {
         subjects: editSubjects.map((s) => ({
           subject_code: s.subject_code,
           seat_number: s.seat_number,
-          room: s.room,
+          room: matchHallLabel(s.room),
         })),
         auto_resolve_seats: autoResolve,
       });
@@ -1716,118 +1809,144 @@ export function AdminHallTickets() {
           No hall tickets yet. Run seating arrangement, sync hall tickets, or click Generate / Sync All.
         </Card>
       ) : (
-        <div className="space-y-4">
-          {tickets.map((t) => {
-            const isEditing = editingId === t.id;
-            const subjectRows = isEditing
-              ? editSubjects
-              : (t.subjects?.length
-                ? t.subjects
-                : [{ subject_code: t.subject_code || "", subject_name: t.exam, seat_number: t.seat_number, room: t.room, exam_date: t.exam_date, exam_time: t.exam_time }]);
+        <Card className="overflow-hidden">
+          <div className="space-y-4 p-5">
+            {paged.map((t) => {
+              const isEditing = editingId === t.id;
+              const subjectRows = isEditing
+                ? editSubjects
+                : (t.subjects?.length
+                  ? t.subjects
+                  : [{ subject_code: t.subject_code || "", subject_name: t.exam, seat_number: t.seat_number, room: t.room, exam_date: t.exam_date, exam_time: t.exam_time }]);
 
-            return (
-              <Card key={t.id} className={cn("overflow-hidden", isEditing && "ring-2 ring-indigo-500", t.has_seat_conflict && !isEditing && "ring-2 ring-amber-400")}>
-                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <img src={t.photo} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold text-slate-900 dark:text-white">{t.student_name}</p>
-                        {t.has_seat_conflict && (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                            <AlertTriangle className="w-3 h-3" /> Seat conflict
-                          </span>
+              return (
+                <div key={t.id} className={cn("rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden", isEditing && "ring-2 ring-indigo-500", t.has_seat_conflict && !isEditing && "ring-2 ring-amber-400")}>
+                  <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <img src={t.photo} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-bold text-slate-900 dark:text-white">{t.student_name}</p>
+                          {t.has_seat_conflict && (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                              <AlertTriangle className="w-3 h-3" /> Seat conflict
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">{t.roll_no} • {t.department} • {t.hall_ticket_no}</p>
+                        {(t.exam_title || t.exam) && (
+                          <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{t.exam_title || t.exam}</p>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500">{t.roll_no} • {t.department} • {t.hall_ticket_no}</p>
-                      {(t.exam_title || t.exam) && (
-                        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{t.exam_title || t.exam}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      {isEditing ? (
+                        <>
+                          <Button variant="primary" disabled={busy} onClick={() => saveTicket(t.id)}>
+                            <Save className="w-4 h-4" /> {busy ? "Saving…" : "Save Subject Seats"}
+                          </Button>
+                          <Button variant="secondary" onClick={cancelEdit}>Cancel</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="primary" onClick={() => openEdit(t)}>
+                            <Edit2 className="w-4 h-4" /> Edit Subject Seats
+                          </Button>
+                          <Button variant="secondary" onClick={() => {
+                            const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
+                            downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
+                              title: t.exam_title || t.exam,
+                              subjectCode: t.subject_code || t.exam, subjectName: t.exam,
+                              date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
+                              duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
+                            });
+                          }}>
+                            <Download className="w-4 h-4" /> PDF
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    {isEditing ? (
-                      <>
-                        <Button variant="primary" disabled={busy} onClick={() => saveTicket(t.id)}>
-                          <Save className="w-4 h-4" /> {busy ? "Saving…" : "Save Subject Seats"}
-                        </Button>
-                        <Button variant="secondary" onClick={cancelEdit}>Cancel</Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button variant="primary" onClick={() => openEdit(t)}>
-                          <Edit2 className="w-4 h-4" /> Edit Subject Seats
-                        </Button>
-                        <Button variant="secondary" onClick={() => {
-                          const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
-                          downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
-                            title: t.exam_title || t.exam,
-                            subjectCode: t.subject_code || t.exam, subjectName: t.exam,
-                            date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
-                            duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
-                          });
-                        }}>
-                          <Download className="w-4 h-4" /> PDF
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
 
-                <div className="p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Subjects — Hall & Seat</p>
-                  <div className="space-y-3">
-                    {subjectRows.map((s, idx) => {
-                      const rowConflict = (isEditing ? seatConflicts : t.seat_conflicts)?.find((c) => c.subject_code === s.subject_code);
-                      return (
-                      <div key={`${s.subject_code}-${idx}`} className={cn(
-                        "grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 rounded-xl border",
-                        rowConflict
-                          ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
-                          : "bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-700",
-                      )}>
-                        <div className="md:col-span-4">
-                          <p className="font-semibold text-slate-900 dark:text-white">{s.subject_name}</p>
-                          <p className="text-xs text-slate-500">{s.subject_code}{s.exam_date ? ` • ${s.exam_date} ${s.exam_time || ""}` : ""}</p>
-                          {rowConflict && (
-                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                              Conflict with {rowConflict.assigned_to} — try seat {rowConflict.suggested_seat}
-                            </p>
-                          )}
-                        </div>
-                        {isEditing ? (
-                          <>
-                            <div className="md:col-span-4">
-                              <Field label="Exam Hall">
-                                <TextInput value={s.room} onChange={(e) => updateEditSubject(idx, "room", e.target.value)} placeholder="Hall A-101" />
-                              </Field>
-                            </div>
-                            <div className="md:col-span-4">
-                              <Field label="Seat Number">
-                                <TextInput value={s.seat_number} onChange={(e) => updateEditSubject(idx, "seat_number", e.target.value)} placeholder="A1" />
-                              </Field>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="md:col-span-4">
-                              <p className="text-xs text-slate-500 mb-0.5">Exam Hall</p>
-                              <p className="font-semibold text-indigo-700 dark:text-indigo-300">{s.room || "—"}</p>
-                            </div>
-                            <div className="md:col-span-4">
-                              <p className="text-xs text-slate-500 mb-0.5">Seat Number</p>
-                              <p className="font-semibold text-indigo-700 dark:text-indigo-300">{s.seat_number || "—"}</p>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );})}
+                  <div className="p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Subjects — Hall & Seat</p>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                      <table className="w-full text-sm table-fixed">
+                        <thead className="bg-slate-50 dark:bg-slate-800/80">
+                          <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                            <th className="px-3 py-2.5 w-10">#</th>
+                            <th className="px-3 py-2.5 w-20">Code</th>
+                            <th className="px-3 py-2.5">Subject</th>
+                            <th className="px-3 py-2.5 w-28">Date</th>
+                            <th className="px-3 py-2.5 w-24">Time</th>
+                            <th className="px-3 py-2.5 w-36">Exam Hall</th>
+                            <th className="px-3 py-2.5 w-28">Seat</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {subjectRows.map((s, idx) => {
+                            const rowConflict = (isEditing ? seatConflicts : t.seat_conflicts)?.find((c) => c.subject_code === s.subject_code);
+                            return (
+                              <tr
+                                key={`${s.subject_code}-${idx}`}
+                                className={cn(rowConflict && "bg-amber-50 dark:bg-amber-950/20")}
+                              >
+                                <td className="px-3 py-2.5 text-slate-500 align-middle">{idx + 1}</td>
+                                <td className="px-3 py-2.5 font-mono font-semibold text-indigo-600 align-middle">{s.subject_code || "—"}</td>
+                                <td className="px-3 py-2.5 align-middle">
+                                  <p className="font-medium text-slate-900 dark:text-white">{s.subject_name || "—"}</p>
+                                  {rowConflict && (
+                                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                                      Conflict with {rowConflict.assigned_to} — try {rowConflict.suggested_seat}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 align-middle">{s.exam_date || "—"}</td>
+                                <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 align-middle">{s.exam_time || "—"}</td>
+                                <td className="px-3 py-2.5 align-middle">
+                                  {isEditing ? (
+                                    <Select
+                                      value={matchHallLabel(s.room) || ""}
+                                      onChange={(e) => updateEditSubject(idx, "room", e.target.value)}
+                                      disabled={roomsLoading || seatingRooms.length === 0}
+                                      className="min-w-[12rem]"
+                                    >
+                                      <option value="">
+                                        {roomsLoading ? "Loading halls…" : seatingRooms.length ? "Select hall…" : "No halls in DB"}
+                                      </option>
+                                      {seatingRooms.map((r) => {
+                                        const label = hallLabel(r);
+                                        return (
+                                          <option key={r.id} value={label}>
+                                            {label}
+                                          </option>
+                                        );
+                                      })}
+                                    </Select>
+                                  ) : (
+                                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.room || "—"}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 align-middle">
+                                  {isEditing ? (
+                                    <TextInput value={s.seat_number} onChange={(e) => updateEditSubject(idx, "seat_number", e.target.value)} placeholder="A1" />
+                                  ) : (
+                                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.seat_number || "—"}</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </Card>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+        </Card>
       )}
     </div>
   );
@@ -1841,60 +1960,84 @@ function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Studen
   const logo = universityInitials(systemSettings.university_name);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
-          <h3 className="font-bold">Hall Ticket Preview</h3>
-          <div className="flex gap-2">
-            <Button variant="primary" onClick={() => downloadHallTicket(student, hallTicketNo, systemSettings.university_name, systemSettings.academic_year)}><Download className="w-4 h-4" /> Download PDF</Button>
-            <Button variant="secondary" onClick={() => window.print()}><Printer className="w-4 h-4" /> Print</Button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 px-2">✕</button>
-          </div>
+    <Modal onClose={onClose} panelClassName="max-w-3xl">
+      <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+        <h3 className="font-bold">Hall Ticket Preview</h3>
+        <div className="flex gap-2">
+          <Button variant="primary" onClick={() => downloadHallTicket(student, hallTicketNo, systemSettings.university_name, systemSettings.academic_year)}><Download className="w-4 h-4" /> Download PDF</Button>
+          <Button variant="secondary" onClick={() => window.print()}><Printer className="w-4 h-4" /> Print</Button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 px-2">✕</button>
         </div>
-        <div className="p-8 bg-gradient-to-br from-slate-50 to-indigo-50">
-          <div className="bg-white border-2 border-indigo-600 rounded-xl overflow-hidden">
-            <div className="bg-brand-gradient text-white p-4 flex items-center justify-between">
-              <div>
-                <p className="font-bold text-lg">{systemSettings.university_name}</p>
-                <p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p>
-              </div>
-              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">{logo}</div>
+      </div>
+      <div className="p-5 bg-gradient-to-br from-slate-50 to-indigo-50">
+        <div className="bg-white border-2 border-indigo-600 rounded-xl overflow-hidden">
+          <div className="bg-brand-gradient text-white px-4 py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-bold text-base break-words leading-snug">{systemSettings.university_name}</p>
+              <p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p>
             </div>
-            <div className="p-6">
-              <div className="text-center mb-4 pb-4 border-b border-slate-200">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Official Hall Ticket</p>
-                <p className="font-mono font-bold text-xl text-indigo-600 mt-1">{hallTicketNo}</p>
-              </div>
-              <div className="grid grid-cols-3 gap-6">
-                <div className="col-span-2 space-y-2 text-sm">
-                  <Row label="Candidate Name" value={student.name} />
-                  <Row label="Roll Number" value={student.rollNo} />
-                  <Row label="Department" value={student.department} />
-                  <Row label="Semester" value={`Semester ${student.semester}`} />
-                  <Row label="Subject" value={exam.subjectName} />
-                  <Row label="Subject Code" value={exam.subjectCode} />
-                  <Row label="Date & Time" value={`${exam.date} at ${exam.time}`} />
-                  <Row label="Duration" value={exam.duration} />
-                  <Row label="Exam Hall" value={exam.room} bold />
-                  <Row label="Seat Number" value={seatNumber} bold />
-                </div>
-                <div className="flex flex-col items-center">
-                  <img src={student.photo} alt="" className="w-28 h-28 rounded-lg bg-slate-100 border-2 border-indigo-200" />
-                  <div className="mt-4 p-3 rounded-lg border-2 border-indigo-200 bg-indigo-50">
-                    <QRCodeSVG value={qrValue} size={120} level="H" />
-                    <p className="text-[10px] text-center text-slate-600 mt-1 font-medium">Scan to verify</p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-slate-200 flex justify-between text-xs text-slate-600">
+            <div className="w-12 h-12 shrink-0 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-lg font-bold">{logo}</div>
+          </div>
+          <div className="p-4">
+            <div className="text-center mb-3 pb-2 border-b border-slate-200">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Official Hall Ticket</p>
+              <p className="font-mono font-bold text-lg text-indigo-600 mt-0.5 break-all">{hallTicketNo}</p>
+            </div>
+            <div className="flex gap-4 items-start">
+              <dl className="flex-1 min-w-0 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <dt className="text-slate-500">Name</dt>
+                <dd className="font-medium text-slate-900 break-words">{student.name}</dd>
+                <dt className="text-slate-500">Roll No</dt>
+                <dd className="font-medium text-slate-900 break-all">{student.rollNo}</dd>
+                <dt className="text-slate-500">Department</dt>
+                <dd className="font-medium text-slate-900 break-words">{student.department}</dd>
+                <dt className="text-slate-500">Semester</dt>
+                <dd className="font-medium text-slate-900">Semester {student.semester}</dd>
+              </dl>
+              <img src={student.photo} alt="" className="w-28 h-28 shrink-0 rounded-md bg-slate-100 border border-indigo-200 object-cover" />
+            </div>
+            <div className="mt-3 overflow-x-auto rounded-md border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
+                    <th className="px-2.5 py-2 whitespace-nowrap">Code</th>
+                    <th className="px-2.5 py-2">Subject</th>
+                    <th className="px-2.5 py-2 whitespace-nowrap">Date</th>
+                    <th className="px-2.5 py-2 whitespace-nowrap">Time</th>
+                    <th className="px-2.5 py-2 whitespace-nowrap">Duration</th>
+                    <th className="px-2.5 py-2">Hall</th>
+                    <th className="px-2.5 py-2 text-center whitespace-nowrap">Seat</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="px-2.5 py-2 font-mono font-semibold text-indigo-600 whitespace-nowrap align-top">{exam.subjectCode}</td>
+                    <td className="px-2.5 py-2 font-medium break-words align-top">{exam.subjectName}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap align-top">{exam.date}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap align-top">{exam.time}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap align-top">{exam.duration}</td>
+                    <td className="px-2.5 py-2 font-semibold text-indigo-700 break-words align-top">{exam.room}</td>
+                    <td className="px-2.5 py-2 text-center font-bold text-indigo-700 whitespace-nowrap align-top">{seatNumber}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 pt-2 border-t border-slate-200 flex items-end justify-between gap-4">
+              <div className="text-xs text-slate-600 space-y-1">
                 <p>Issued: {new Date().toLocaleDateString()}</p>
-                <p className="font-semibold">Controller of Examinations</p>
+                <p className="font-semibold text-slate-800">Controller of Examinations</p>
+              </div>
+              <div className="flex flex-col items-center shrink-0">
+                <div className="p-1.5 rounded-md border border-indigo-200 bg-indigo-50">
+                  <QRCodeSVG value={qrValue} size={88} level="H" />
+                </div>
+                <p className="text-[9px] text-slate-500 mt-1 font-semibold">Scan to verify</p>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1912,8 +2055,9 @@ export function AdminBacklogs() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
+  const withBacklogs = useMemo(() => students.filter((s) => s.backlogs > 0), [students]);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(withBacklogs, 10);
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
-  const withBacklogs = students.filter((s) => s.backlogs > 0);
   return (
     <div>
       <PageHeader title="Backlog Management" subtitle={`${withBacklogs.length} students with active backlogs`} />
@@ -1936,7 +2080,7 @@ export function AdminBacklogs() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {withBacklogs.map((s) => {
+              {paged.map((s) => {
                 const e = getStudentEligibility(s);
                 return (
                   <tr key={s.id}>
@@ -1953,6 +2097,7 @@ export function AdminBacklogs() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -1992,6 +2137,9 @@ export function AdminFees() {
 
   useEffect(() => { reload(); }, []);
 
+  const unpaid = useMemo(() => students.filter((s) => !s.feePaid), [students]);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(unpaid, 10);
+
   const approvePayment = async (paymentId: number) => {
     setActionId(paymentId);
     try {
@@ -2019,7 +2167,6 @@ export function AdminFees() {
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
   const paid = students.filter(s => s.feePaid);
-  const unpaid = students.filter(s => !s.feePaid);
   const totalDue = unpaid.reduce((a, s) => a + s.feeAmount, 0);
   const totalCollected = paid.reduce((a, s) => a + s.feeAmount, 0);
 
@@ -2109,7 +2256,7 @@ export function AdminFees() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {unpaid.map((s) => {
+              {paged.map((s) => {
                 const overdue = new Date(s.feeDueDate) < new Date();
                 return (
                   <tr key={s.id}>
@@ -2136,6 +2283,7 @@ export function AdminFees() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -2148,6 +2296,7 @@ export function AdminNotifications() {
   const [audience, setAudience] = useState<"all" | "students" | "teachers" | "admin">("all");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(notifications, 10);
 
   const send = async () => {
     if (!title || !message) return;
@@ -2197,24 +2346,27 @@ export function AdminNotifications() {
             </div>
           </div>
         </Card>
-        <Card className="p-6">
-          <h3 className="font-bold text-slate-900 dark:text-white mb-4">Recent Notifications</h3>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {notifications.map((n) => (
-              <div key={n.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="font-semibold text-sm text-slate-900 dark:text-white">{n.title}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {n.department && <Badge variant="amber">{n.department}</Badge>}
-                    <Badge variant="sky">{formatNotificationAudience(n.audience)}</Badge>
+        <Card className="overflow-hidden">
+          <div className="p-6 pb-0">
+            <h3 className="font-bold text-slate-900 dark:text-white mb-4">Recent Notifications</h3>
+            <div className="space-y-3">
+              {paged.map((n) => (
+                <div key={n.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-semibold text-sm text-slate-900 dark:text-white">{n.title}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {n.department && <Badge variant="amber">{n.department}</Badge>}
+                      <Badge variant="sky">{formatNotificationAudience(n.audience)}</Badge>
+                    </div>
                   </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{n.message}</p>
+                  <p className="text-xs text-slate-400 mt-1">{n.createdAt}</p>
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{n.message}</p>
-                <p className="text-xs text-slate-400 mt-1">{n.createdAt}</p>
-              </div>
-            ))}
-            {!notifications.length && <p className="text-sm text-slate-500">No notifications yet</p>}
+              ))}
+              {!notifications.length && <p className="text-sm text-slate-500">No notifications yet</p>}
+            </div>
           </div>
+          <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </Card>
       </div>
     </div>

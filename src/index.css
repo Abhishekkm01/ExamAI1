@@ -29,12 +29,12 @@ body {
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 .dark ::-webkit-scrollbar-thumb { background: #334155; }
 
-/* Animations */
+/* Animations — opacity only (transform breaks position:fixed descendants) */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.animate-fade-in { animation: fadeIn .25s ease-out both; }
+.animate-fade-in { animation: fadeIn .2s ease-out both; }
 
 @keyframes pulse-ring {
   0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.45); }

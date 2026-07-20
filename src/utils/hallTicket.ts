@@ -73,7 +73,7 @@ function subjectsBlockHtml(
   fallbackRoom: string,
   fallbackSeat: string,
 ): string {
-  const cards = subjects.map((s, idx) => {
+  const rows = subjects.map((s, idx) => {
     const code = s.subject_code || s.subjectCode || "";
     const name = s.subject_name || s.subjectName || "";
     const date = s.exam_date || s.date || "";
@@ -81,62 +81,75 @@ function subjectsBlockHtml(
     const duration = s.duration || "";
     const room = s.room || fallbackRoom || "—";
     const seat = s.seat_number || s.seatNumber || fallbackSeat || "—";
-    const label = subjects.length > 1 ? `Subject ${idx + 1}` : "Subject";
     return `
-      <div class="subj">
-        <div class="subj-top">
-          <span class="subj-label">${esc(label)}</span>
-          <span class="subj-code">${esc(code)}</span>
-        </div>
-        <p class="subj-name">${esc(name)}</p>
-        <div class="subj-meta">
-          <span>${esc(date)}${date && time ? " · " : ""}${esc(time)}</span>
-          ${duration ? `<span>${esc(duration)}</span>` : ""}
-        </div>
-        <div class="subj-seat">
-          <span><strong>Hall</strong> ${esc(room)}</span>
-          <span><strong>Seat</strong> ${esc(seat)}</span>
-        </div>
-      </div>`;
+      <tr>
+        <td class="num">${idx + 1}</td>
+        <td class="code">${esc(code)}</td>
+        <td class="name">${esc(name)}</td>
+        <td>${esc(date)}</td>
+        <td>${esc(time)}</td>
+        <td>${esc(duration || "—")}</td>
+        <td>${esc(room)}</td>
+        <td class="seat">${esc(seat)}</td>
+      </tr>`;
   }).join("");
-  return `<div class="subj-list">${cards}</div>`;
+  return `
+    <div class="subj-wrap">
+    <table class="subj-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Subject</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Duration</th>
+          <th>Hall</th>
+          <th>Seat</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
 }
 
 const SHARED_STYLES = `
 body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;background:#f8fafc;color:#0f172a;margin:0}
-.card{border:2px solid #2563eb;border-radius:14px;overflow:hidden;max-width:820px;margin:0 auto;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+.card{border:2px solid #2563eb;border-radius:14px;overflow:hidden;max-width:920px;margin:0 auto;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08)}
 .header{background:linear-gradient(135deg,#2563eb,#7c3aed,#db2777);color:#fff;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}
 .header h1{font-size:22px;margin:0;line-height:1.2}
 .header p{margin:6px 0 0;opacity:.92;font-size:13px;line-height:1.4}
 .logo{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
-.body{padding:28px}
-.title{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:16px;margin-bottom:20px}
-.title small{display:block;text-transform:uppercase;letter-spacing:2px;color:#64748b;font-size:11px;font-weight:600}
-.title h2{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:24px;color:#2563eb;margin:8px 0 0}
-.exam-title{margin:10px 0 0;font-size:15px;font-weight:700;color:#1e293b}
-.grid{display:grid;grid-template-columns:minmax(0,1.7fr) 180px;gap:28px;align-items:start}
-.info{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin-bottom:18px}
-.info .l{color:#64748b;font-size:13px;padding:6px 0}
-.info .v{font-weight:600;font-size:14px;padding:6px 0;word-break:break-word}
+.body{padding:20px}
+.title{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px}
+.title small{display:block;text-transform:uppercase;letter-spacing:2px;color:#64748b;font-size:10px;font-weight:600}
+.title h2{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;color:#2563eb;margin:4px 0 0}
+.exam-title{margin:6px 0 0;font-size:13px;font-weight:700;color:#1e293b}
+.top{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}
+.top-main{flex:1;min-width:0}
+.info{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 12px}
+.info .l{color:#64748b;font-size:12px;padding:2px 0}
+.info .v{font-weight:600;font-size:13px;padding:2px 0;overflow-wrap:anywhere;word-break:break-word}
 .info .v.em{color:#1d4ed8;font-weight:700}
-.section-label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:700;margin:4px 0 10px}
-.subj-list{display:flex;flex-direction:column;gap:10px}
-.subj{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;background:#f8fafc}
-.subj-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
-.subj-label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:700}
-.subj-code{font-size:12px;font-weight:700;color:#4f46e5;background:#eef2ff;padding:2px 8px;border-radius:999px}
-.subj-name{margin:0;font-size:14px;font-weight:700;color:#0f172a}
-.subj-meta{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px;font-size:12px;color:#64748b}
-.subj-seat{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:13px;color:#1e293b}
-.subj-seat strong{color:#64748b;font-weight:600;margin-right:6px}
-.side{text-align:center}
-.photo{width:140px;height:140px;object-fit:cover;border-radius:10px;border:2px solid #c7d2fe;background:#f1f5f9}
-.qr-box{margin-top:14px;padding:12px;border:1px solid #c7d2fe;border-radius:10px;background:#eff6ff}
-.qr-box img{width:120px;height:120px}
-.qr-box p{margin:8px 0 0;font-size:10px;color:#475569;font-weight:600}
-.footer{margin-top:22px;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:12px;font-size:12px;color:#475569}
-@media print{@page{margin:12mm}body{padding:0;background:#fff}.card{box-shadow:none}}
-@media (max-width:700px){.grid{grid-template-columns:1fr}.info{grid-template-columns:1fr}.subj-seat{grid-template-columns:1fr}}
+.section-label{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:700;margin:0 0 6px}
+.subj-wrap{width:100%;overflow-x:auto}
+.subj-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+.subj-table th,.subj-table td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
+.subj-table th{background:#f1f5f9;color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;white-space:nowrap}
+.subj-table tbody tr:nth-child(even){background:#f8fafc}
+.subj-table .num{width:28px;text-align:center;color:#64748b;white-space:nowrap}
+.subj-table .code{white-space:nowrap;font-weight:700;color:#4338ca;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.subj-table .name{font-weight:600;color:#0f172a}
+.subj-table .seat{font-weight:700;color:#1d4ed8;text-align:center;white-space:nowrap}
+.photo{width:112px;height:112px;object-fit:cover;border-radius:8px;border:1px solid #c7d2fe;background:#f1f5f9;flex-shrink:0}
+.footer{margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;font-size:11px;color:#475569}
+.footer .meta{display:flex;flex-direction:column;gap:4px}
+.footer .meta strong{color:#0f172a;font-size:12px}
+.qr-box{padding:6px;border:1px solid #c7d2fe;border-radius:8px;background:#eff6ff;text-align:center;flex-shrink:0}
+.qr-box img{width:88px;height:88px;display:block}
+.qr-box p{margin:4px 0 0;font-size:9px;color:#475569;font-weight:600;line-height:1.2}
+@media print{@page{margin:10mm}body{padding:0;background:#fff}.card{box-shadow:none;max-width:none}.subj-table th,.subj-table td{padding:5px 6px}}
+@media (max-width:700px){.top{flex-direction:column;align-items:center}.info{grid-template-columns:1fr}.subj-table{font-size:11px}.footer{flex-direction:column;align-items:center;text-align:center}}
 `;
 
 export const DEFAULT_HALL_TICKET_EXAM = {
@@ -200,8 +213,8 @@ export function openHallTicketPrintWindow(
       <h2>${esc(hallTicketNo)}</h2>
       <p class="exam-title">${esc(examTitle)}</p>
     </div>
-    <div class="grid">
-      <div>
+    <div class="top">
+      <div class="top-main">
         <div class="info">
           <span class="l">Examination</span><span class="v em">${esc(examTitle)}</span>
           <span class="l">Candidate Name</span><span class="v">${esc(student.name)}</span>
@@ -209,19 +222,19 @@ export function openHallTicketPrintWindow(
           <span class="l">Department</span><span class="v">${esc(student.department)}</span>
           <span class="l">Semester</span><span class="v">Semester ${esc(String(student.semester))}</span>
         </div>
-        <p class="section-label">Examination Subjects</p>
-        ${subjectsBlockHtml(resolved, exam.room, seat)}
       </div>
-      <div class="side">
-        <img class="photo" src="${esc(student.photo)}" alt="photo"/>
-        <div class="qr-box">${qrDataUrl
-          ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
-          : `<p style="font-size:11px;color:#64748b;margin:0">Generate hall ticket to get official QR</p>`}</div>
-      </div>
+      <img class="photo" src="${esc(student.photo)}" alt="photo"/>
     </div>
+    <p class="section-label">Examination Subjects</p>
+    ${subjectsBlockHtml(resolved, exam.room, seat)}
     <div class="footer">
-      <span>Issued: ${new Date().toLocaleDateString()}</span>
-      <span>Controller of Examinations (Digitally Signed)</span>
+      <div class="meta">
+        <span>Issued: ${new Date().toLocaleDateString()}</span>
+        <strong>Controller of Examinations (Digitally Signed)</strong>
+      </div>
+      <div class="qr-box">${qrDataUrl
+        ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
+        : `<p style="font-size:11px;color:#64748b;margin:0">Generate hall ticket to get official QR</p>`}</div>
     </div>
   </div>
 </div>
@@ -289,8 +302,8 @@ export function buildSimpleHallTicketHtml(
       <h2>${esc(hallTicketNo)}</h2>
       <p class="exam-title">${esc(title)}</p>
     </div>
-    <div class="grid">
-      <div>
+    <div class="top">
+      <div class="top-main">
         <div class="info">
           <span class="l">Examination</span><span class="v em">${esc(title)}</span>
           <span class="l">Candidate Name</span><span class="v">${esc(studentName)}</span>
@@ -298,19 +311,19 @@ export function buildSimpleHallTicketHtml(
           <span class="l">Department</span><span class="v">${esc(department)}</span>
           ${semester ? `<span class="l">Semester</span><span class="v">Semester ${esc(String(semester))}</span>` : ""}
         </div>
-        <p class="section-label">Examination Subjects</p>
-        ${subjectsBlockHtml(resolved, room, seat)}
       </div>
-      <div class="side">
-        ${photo ? `<img class="photo" src="${esc(photo)}" alt="photo"/>` : ""}
-        <div class="qr-box">${qrDataUrl
-          ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
-          : `<p style="font-size:11px;color:#64748b;margin:0">${esc(qrContent || "QR pending")}</p>`}</div>
-      </div>
+      ${photo ? `<img class="photo" src="${esc(photo)}" alt="photo"/>` : ""}
     </div>
+    <p class="section-label">Examination Subjects</p>
+    ${subjectsBlockHtml(resolved, room, seat)}
     <div class="footer">
-      <span>Issued: ${new Date().toLocaleDateString()}</span>
-      <span>Controller of Examinations (Digitally Signed)</span>
+      <div class="meta">
+        <span>Issued: ${new Date().toLocaleDateString()}</span>
+        <strong>Controller of Examinations (Digitally Signed)</strong>
+      </div>
+      <div class="qr-box">${qrDataUrl
+        ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
+        : `<p style="font-size:11px;color:#64748b;margin:0">${esc(qrContent || "QR pending")}</p>`}</div>
     </div>
   </div>
 </div>

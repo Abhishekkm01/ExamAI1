@@ -628,76 +628,81 @@ export function StudentHallTicket() {
 
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border-2 border-indigo-600 overflow-hidden shadow-xl">
-          <div className="bg-brand-gradient text-white p-5 flex items-center justify-between">
-            <div><p className="font-bold text-xl">{systemSettings.university_name}</p><p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year, ht.exam.title || ht.exam.subject_name)}</p></div>
-            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">{universityInitials(systemSettings.university_name)}</div>
+          <div className="bg-brand-gradient text-white px-5 py-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-bold text-lg break-words leading-snug">{systemSettings.university_name}</p>
+              <p className="text-xs opacity-90 mt-0.5">{examHeaderSubtitle(systemSettings.academic_year, ht.exam.title || ht.exam.subject_name)}</p>
+            </div>
+            <div className="w-12 h-12 shrink-0 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-lg font-bold">{universityInitials(systemSettings.university_name)}</div>
           </div>
-          <div className="p-8">
-            <div className="text-center mb-6 pb-4 border-b-2 border-slate-200">
-              <p className="text-xs uppercase tracking-widest text-slate-500">Official Hall Ticket</p>
-              <p className="font-mono font-bold text-2xl text-indigo-600 mt-1">{ht.hall_ticket_no}</p>
-              <p className="text-sm font-semibold text-slate-700 mt-2">{ht.exam.title || ht.exam.subject_name}</p>
+          <div className="p-5">
+            <div className="text-center mb-4 pb-3 border-b border-slate-200">
+              <p className="text-[10px] uppercase tracking-widest text-slate-500">Official Hall Ticket</p>
+              <p className="font-mono font-bold text-lg text-indigo-600 mt-0.5 break-all">{ht.hall_ticket_no}</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="md:col-span-2 space-y-3">
-                <InfoRow label="Examination" value={ht.exam.title || ht.exam.subject_name} bold />
-                <InfoRow label="Candidate Name" value={ht.student.name} />
-                <InfoRow label="Roll Number" value={ht.student.roll_no} />
-                <InfoRow label="Department" value={ht.student.department} />
-                <InfoRow label="Semester" value={`Semester ${student.semester}`} />
-                <div className="pt-2">
-                  <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Examination Subjects</p>
-                  <div className="space-y-2">
+            <div className="flex gap-4 items-start">
+              <dl className="flex-1 min-w-0 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <dt className="text-slate-500">Examination</dt>
+                <dd className="font-bold text-indigo-700 dark:text-indigo-300 break-words">{ht.exam.title || ht.exam.subject_name}</dd>
+                <dt className="text-slate-500">Name</dt>
+                <dd className="font-medium break-words">{ht.student.name}</dd>
+                <dt className="text-slate-500">Roll No</dt>
+                <dd className="font-medium break-all">{ht.student.roll_no}</dd>
+                <dt className="text-slate-500">Department</dt>
+                <dd className="font-medium break-words">{ht.student.department}</dd>
+                <dt className="text-slate-500">Semester</dt>
+                <dd className="font-medium">Semester {student.semester}</dd>
+              </dl>
+              <img src={ht.student.photo} alt="" className="w-28 h-28 shrink-0 rounded-md bg-slate-100 border border-indigo-200 object-cover" />
+            </div>
+            <div className="mt-4">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1.5">Examination Subjects</p>
+              <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-700">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80">
+                    <tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
+                      <th className="px-2.5 py-2 whitespace-nowrap">#</th>
+                      <th className="px-2.5 py-2 whitespace-nowrap">Code</th>
+                      <th className="px-2.5 py-2">Subject</th>
+                      <th className="px-2.5 py-2 whitespace-nowrap">Date</th>
+                      <th className="px-2.5 py-2 whitespace-nowrap">Time</th>
+                      <th className="px-2.5 py-2 whitespace-nowrap">Duration</th>
+                      <th className="px-2.5 py-2">Hall</th>
+                      <th className="px-2.5 py-2 text-center whitespace-nowrap">Seat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {(ht.subjects?.length ? ht.subjects : [ht.exam]).map((subj: any, idx: number) => (
-                      <div key={idx} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-3">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-                            {(ht.subjects?.length || 0) > 1 ? `Subject ${idx + 1}` : "Subject"}
-                          </p>
-                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
-                            {subj.subject_code || subj.subjectCode}
-                          </span>
-                        </div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {subj.subject_name || subj.subjectName}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {subj.exam_date || subj.date} · {subj.exam_time || subj.time}
-                          {(subj.duration || ht.exam.duration) ? ` · ${subj.duration || ht.exam.duration}` : ""}
-                        </p>
-                        <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-600 grid grid-cols-2 gap-2 text-xs">
-                          <p><span className="text-slate-500">Hall</span> <span className="font-semibold text-indigo-700 dark:text-indigo-300">{subj.room || ht.exam.room}</span></p>
-                          <p><span className="text-slate-500">Seat</span> <span className="font-semibold text-indigo-700 dark:text-indigo-300">{subj.seat_number || ht.seat_number}</span></p>
-                        </div>
-                      </div>
+                      <tr key={idx} className="bg-white dark:bg-slate-900/40">
+                        <td className="px-2.5 py-2 text-slate-500 align-top">{idx + 1}</td>
+                        <td className="px-2.5 py-2 font-mono font-semibold text-indigo-600 align-top whitespace-nowrap">{subj.subject_code || subj.subjectCode}</td>
+                        <td className="px-2.5 py-2 font-medium text-slate-900 dark:text-white align-top break-words">{subj.subject_name || subj.subjectName}</td>
+                        <td className="px-2.5 py-2 text-slate-600 dark:text-slate-300 align-top whitespace-nowrap">{subj.exam_date || subj.date || "—"}</td>
+                        <td className="px-2.5 py-2 text-slate-600 dark:text-slate-300 align-top whitespace-nowrap">{subj.exam_time || subj.time || "—"}</td>
+                        <td className="px-2.5 py-2 text-slate-600 dark:text-slate-300 align-top whitespace-nowrap">{subj.duration || ht.exam.duration || "—"}</td>
+                        <td className="px-2.5 py-2 font-medium text-indigo-700 dark:text-indigo-300 align-top break-words">{subj.room || ht.exam.room || "—"}</td>
+                        <td className="px-2.5 py-2 text-center font-bold text-indigo-700 dark:text-indigo-300 align-top whitespace-nowrap">{subj.seat_number || ht.seat_number || "—"}</td>
+                      </tr>
                     ))}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col items-center">
-                <img src={ht.student.photo} alt="" className="w-32 h-32 rounded-lg bg-slate-100 border-2 border-indigo-200" />
-                <div className="mt-4 p-3 rounded-lg border-2 border-indigo-200 bg-indigo-50">
-                  <QRCodeSVG value={ht.qr_code_content} size={120} level="H" />
-                  <p className="text-[10px] text-center text-slate-600 mt-1 font-semibold">Scan to verify</p>
-                </div>
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="mt-6 pt-4 border-t border-slate-200 flex justify-between text-xs text-slate-600">
-              <p>Issued: {new Date().toLocaleDateString()}</p>
-              <p className="font-semibold">Controller of Examinations</p>
+            <div className="mt-4 pt-3 border-t border-slate-200 flex items-end justify-between gap-4">
+              <div className="text-xs text-slate-600 space-y-1">
+                <p>Issued: {new Date().toLocaleDateString()}</p>
+                <p className="font-semibold text-slate-800">Controller of Examinations</p>
+              </div>
+              <div className="flex flex-col items-center shrink-0">
+                <div className="p-1.5 rounded-md border border-indigo-200 bg-indigo-50">
+                  <QRCodeSVG value={ht.qr_code_content} size={88} level="H" />
+                </div>
+                <p className="text-[9px] text-slate-500 mt-1 font-semibold">Scan to verify</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function InfoRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-      <span className="text-slate-500 text-sm">{label}</span>
-      <span className={cn("text-sm", bold ? "font-bold text-indigo-700" : "font-medium")}>{value}</span>
     </div>
   );
 }
@@ -744,49 +749,55 @@ export function StudentExams() {
   return (
     <div>
       <PageHeader title="My Exams" subtitle={`${list.length} scheduled examinations (live from MySQL)`} />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {list.map((e) => {
           const subjects = e.subjects?.length
             ? e.subjects
             : [{ subjectCode: e.subjectCode, subjectName: e.subjectName, date: e.date, time: e.time, duration: e.duration }];
           return (
-          <Card key={e.id} className="p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <div className="min-w-0 flex-1 pr-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {subjects.map((s) => (
-                    <Badge key={s.subjectCode} variant="indigo">{s.subjectCode}</Badge>
-                  ))}
-                </div>
-                <h3 className="font-bold mt-2">{e.title || e.subjectName}</h3>
+          <Card key={e.id} className="overflow-hidden">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white">{e.title || e.subjectName}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {subjects.length} subject{subjects.length === 1 ? "" : "s"}
+                  {subjects.length} subject{subjects.length === 1 ? "" : "s"} • Room {e.room} • Total marks {e.totalMarks}
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-3xl font-bold text-indigo-600">{(subjects[0]?.date || e.date).split("-")[2]}</p>
+                <p className="text-2xl font-bold text-indigo-600">{(subjects[0]?.date || e.date).split("-")[2]}</p>
                 <p className="text-xs text-slate-500 uppercase">{new Date(subjects[0]?.date || e.date).toLocaleString("en", { month: "short" })}</p>
               </div>
             </div>
-            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-3">
-              {subjects.map((s) => (
-                <div key={`${s.subjectCode}-${s.date}`} className="rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2">
-                  <p className="font-medium text-slate-800 dark:text-slate-100">{s.subjectName}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {s.subjectCode} · {s.date || e.date} at {s.time || e.time}
-                    {s.duration ? ` · ${s.duration}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
-              <p>🏛️ {e.room}</p>
-              <p>📊 Total Marks: {e.totalMarks}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm table-fixed">
+                <thead className="bg-slate-50 dark:bg-slate-800/50">
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-2.5 w-10">#</th>
+                    <th className="px-4 py-2.5 w-24">Code</th>
+                    <th className="px-4 py-2.5">Subject</th>
+                    <th className="px-4 py-2.5 w-32">Date</th>
+                    <th className="px-4 py-2.5 w-28">Time</th>
+                    <th className="px-4 py-2.5 w-28">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {subjects.map((s, idx) => (
+                    <tr key={`${s.subjectCode}-${s.date}-${idx}`}>
+                      <td className="px-4 py-2.5 text-slate-500">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-mono font-semibold text-indigo-600">{s.subjectCode}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-100">{s.subjectName}</td>
+                      <td className="px-4 py-2.5">{s.date || e.date}</td>
+                      <td className="px-4 py-2.5">{s.time || e.time}</td>
+                      <td className="px-4 py-2.5">{s.duration || e.duration || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
           );
         })}
-        {list.length === 0 && <div className="col-span-2 p-10 text-center text-slate-500">No exams scheduled for your department</div>}
+        {list.length === 0 && <div className="p-10 text-center text-slate-500">No exams scheduled for your department</div>}
       </div>
     </div>
   );

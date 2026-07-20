@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
+import { Pagination } from "../../components/Pagination";
+import { useClientPagination } from "../../hooks/useClientPagination";
 import { fetchHodStudents, fetchHodTeachers, fetchHodExams, getStudentEligibility } from "../../data/apiData";
 import { api, downloadHodReport } from "../../data/api";
 import { notifyNotificationsUpdated } from "../../contexts/AppContext";
@@ -169,6 +171,7 @@ export function HodStudents() {
     (s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.rollNo.toLowerCase().includes(search.toLowerCase()))
   ), [list, search, semester]);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading students…</div>;
 
@@ -179,8 +182,8 @@ export function HodStudents() {
         subtitle="Monitor academics — create/delete remains with Admin"
       />
       <div className="flex flex-wrap gap-3 mb-4">
-        <TextInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or roll…" className="max-w-xs" />
-        <Select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-40">
+        <TextInput value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search name or roll…" className="max-w-xs" />
+        <Select value={semester} onChange={(e) => { setSemester(e.target.value); setPage(1); }} className="w-40">
           <option value="all">All Semesters</option>
           {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={String(n)}>Sem {n}</option>)}
         </Select>
@@ -202,7 +205,7 @@ export function HodStudents() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => {
+              {paged.map((s) => {
                 const el = getStudentEligibility(s);
                 return (
                   <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
@@ -232,6 +235,7 @@ export function HodStudents() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
       {editing && (
         <HodStudentAcademicModal
@@ -324,6 +328,7 @@ export function HodTeachers() {
   const [list, setList] = useState<Teacher[]>([]);
   const [editing, setEditing] = useState<Teacher | null>(null);
   const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 9);
 
   useEffect(() => {
     fetchHodTeachers().then((t) => { setList(t); setLoading(false); });
@@ -339,7 +344,7 @@ export function HodTeachers() {
       />
       <Card className="overflow-hidden">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
-          {list.map((t) => (
+          {paged.map((t) => (
             <div key={t.id} className="p-5 rounded-xl border border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3 mb-3">
                 <img src={t.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${t.empId}`} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
@@ -360,6 +365,7 @@ export function HodTeachers() {
           ))}
           {!list.length && <div className="col-span-3 p-10 text-center text-slate-500">No teachers in this department</div>}
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
       {editing && (
         <HodSubjectsModal
@@ -426,6 +432,7 @@ export function HodExams() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(exams, 10);
 
   useEffect(() => {
     fetchHodExams()
@@ -454,84 +461,89 @@ export function HodExams() {
         </Card>
       )}
 
-      <div className="space-y-4">
-        {exams.map((exam) => {
-          const papers = exam.subjects?.length
-            ? exam.subjects
-            : [{
-                subjectCode: exam.subjectCode,
-                subjectName: exam.subjectName,
-                date: exam.date,
-                time: exam.time,
-                duration: exam.duration,
-                invigilatorId: exam.invigilatorId,
-                invigilatorName: exam.invigilatorName,
-              }];
+      {exams.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="space-y-4 p-5">
+            {paged.map((exam) => {
+              const papers = exam.subjects?.length
+                ? exam.subjects
+                : [{
+                    subjectCode: exam.subjectCode,
+                    subjectName: exam.subjectName,
+                    date: exam.date,
+                    time: exam.time,
+                    duration: exam.duration,
+                    invigilatorId: exam.invigilatorId,
+                    invigilatorName: exam.invigilatorName,
+                  }];
 
-          return (
-            <Card key={exam.id} className="overflow-hidden">
-              <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {papers.map((p) => (
-                        <Badge key={p.subjectCode} variant="indigo">{p.subjectCode}</Badge>
-                      ))}
+              return (
+                <div key={exam.id} className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {papers.map((p) => (
+                            <Badge key={p.subjectCode} variant="indigo">{p.subjectCode}</Badge>
+                          ))}
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          {exam.title || exam.subjectName}
+                        </h3>
+                        <p className="text-sm text-slate-500 mt-0.5">
+                          {exam.department} · Semester {exam.semester} · {papers.length} paper{papers.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                        <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-slate-400" /> {exam.room || "Room TBA"}</p>
+                        <p className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-slate-400" /> {exam.totalMarks} marks</p>
+                      </div>
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      {exam.title || exam.subjectName}
-                    </h3>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                      {exam.department} · Semester {exam.semester} · {papers.length} paper{papers.length === 1 ? "" : "s"}
-                    </p>
                   </div>
-                  <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1">
-                    <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-slate-400" /> {exam.room || "Room TBA"}</p>
-                    <p className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-slate-400" /> {exam.totalMarks} marks</p>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                          <th className="px-5 py-3 font-medium">Code</th>
+                          <th className="px-5 py-3 font-medium">Subject</th>
+                          <th className="px-5 py-3 font-medium">Date</th>
+                          <th className="px-5 py-3 font-medium">Time</th>
+                          <th className="px-5 py-3 font-medium">Duration</th>
+                          <th className="px-5 py-3 font-medium">Invigilator</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {papers.map((p) => (
+                          <tr key={`${exam.id}-${p.subjectCode}`} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                            <td className="px-5 py-3 font-mono text-xs text-indigo-600 dark:text-indigo-400">{p.subjectCode}</td>
+                            <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{p.subjectName}</td>
+                            <td className="px-5 py-3">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                {p.date || exam.date || "—"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                {p.time || exam.time || "—"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">{p.duration || exam.duration || "—"}</td>
+                            <td className="px-5 py-3">{p.invigilatorName || "Not assigned"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                      <th className="px-5 py-3 font-medium">Code</th>
-                      <th className="px-5 py-3 font-medium">Subject</th>
-                      <th className="px-5 py-3 font-medium">Date</th>
-                      <th className="px-5 py-3 font-medium">Time</th>
-                      <th className="px-5 py-3 font-medium">Duration</th>
-                      <th className="px-5 py-3 font-medium">Invigilator</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {papers.map((p) => (
-                      <tr key={`${exam.id}-${p.subjectCode}`} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
-                        <td className="px-5 py-3 font-mono text-xs text-indigo-600 dark:text-indigo-400">{p.subjectCode}</td>
-                        <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">{p.subjectName}</td>
-                        <td className="px-5 py-3">
-                          <span className="inline-flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            {p.date || exam.date || "—"}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className="inline-flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {p.time || exam.time || "—"}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">{p.duration || exam.duration || "—"}</td>
-                        <td className="px-5 py-3">{p.invigilatorName || "Not assigned"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+        </Card>
+      )}
     </div>
   );
 }
@@ -539,6 +551,7 @@ export function HodExams() {
 export function HodMarks() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(rows, 10);
 
   useEffect(() => {
     api.hodMarks().then((d) => { setRows(d || []); setLoading(false); }).catch(() => setLoading(false));
@@ -564,7 +577,7 @@ export function HodMarks() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {paged.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="p-4">{r.roll_no}</td>
                   <td className="p-4">{r.name}</td>
@@ -581,6 +594,7 @@ export function HodMarks() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -591,6 +605,7 @@ export function HodEligibility() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 10);
 
   const reload = () => fetchHodStudents().then((s) => { setList(s); setLoading(false); });
   useEffect(() => { reload(); }, []);
@@ -636,7 +651,7 @@ export function HodEligibility() {
               </tr>
             </thead>
             <tbody>
-              {list.map((s) => {
+              {paged.map((s) => {
                 const el = getStudentEligibility(s);
                 return (
                   <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
@@ -654,6 +669,7 @@ export function HodEligibility() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -662,6 +678,7 @@ export function HodEligibility() {
 export function HodBacklogs() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 10);
 
   useEffect(() => {
     api.hodBacklogs().then((d) => { setList(d || []); setLoading(false); }).catch(() => setLoading(false));
@@ -686,7 +703,7 @@ export function HodBacklogs() {
               </tr>
             </thead>
             <tbody>
-              {list.map((s) => (
+              {paged.map((s) => (
                 <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="p-4">{s.roll_no}</td>
                   <td className="p-4">{s.name}</td>
@@ -704,6 +721,7 @@ export function HodBacklogs() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -712,6 +730,7 @@ export function HodBacklogs() {
 export function HodFees() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 10);
 
   useEffect(() => {
     api.hodFees().then((d) => { setList(d || []); setLoading(false); }).catch(() => setLoading(false));
@@ -740,7 +759,7 @@ export function HodFees() {
               </tr>
             </thead>
             <tbody>
-              {list.map((s) => (
+              {paged.map((s) => (
                 <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="p-4">{s.roll_no}</td>
                   <td className="p-4">{s.name}</td>
@@ -754,6 +773,7 @@ export function HodFees() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
     </div>
   );
@@ -768,6 +788,7 @@ export function HodNotifications() {
   const [err, setErr] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(list, 10);
 
   const reload = async () => {
     try {
@@ -832,31 +853,34 @@ export function HodNotifications() {
             </Button>
           </div>
         </Card>
-        <Card className="p-6">
-          <h3 className="font-bold mb-4">Recent (your department)</h3>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {loading && <p className="text-sm text-slate-500">Loading…</p>}
-            {!loading && list.map((n) => {
-              const parsed = parseNotificationTitle(n.title || "");
-              const body = cleanNotificationMessage(n.message || "");
-              return (
-              <div key={n.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="font-semibold text-sm text-slate-900 dark:text-white">{parsed.title}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {parsed.department && <Badge variant="amber">{parsed.department}</Badge>}
-                    <Badge variant="sky">{formatNotificationAudience(n.audience)}</Badge>
+        <Card className="overflow-hidden">
+          <div className="p-6 pb-0">
+            <h3 className="font-bold mb-4">Recent (your department)</h3>
+            <div className="space-y-3">
+              {loading && <p className="text-sm text-slate-500">Loading…</p>}
+              {!loading && paged.map((n) => {
+                const parsed = parseNotificationTitle(n.title || "");
+                const body = cleanNotificationMessage(n.message || "");
+                return (
+                <div key={n.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-semibold text-sm text-slate-900 dark:text-white">{parsed.title}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {parsed.department && <Badge variant="amber">{parsed.department}</Badge>}
+                      <Badge variant="sky">{formatNotificationAudience(n.audience)}</Badge>
+                    </div>
                   </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{body}</p>
+                  {n.created_at && (
+                    <p className="text-xs text-slate-400 mt-1">{String(n.created_at).replace("T", " ").slice(0, 16)}</p>
+                  )}
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{body}</p>
-                {n.created_at && (
-                  <p className="text-xs text-slate-400 mt-1">{String(n.created_at).replace("T", " ").slice(0, 16)}</p>
-                )}
-              </div>
-              );
-            })}
-            {!loading && !list.length && <p className="text-sm text-slate-500">No notifications yet</p>}
+                );
+              })}
+              {!loading && !list.length && <p className="text-sm text-slate-500">No notifications yet</p>}
+            </div>
           </div>
+          <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
         </Card>
       </div>
     </div>

@@ -38,6 +38,12 @@ def refresh_student_eligibility(student):
         student.fee_paid,
     ]) / 3) * 100)
     student.save()
+
+    # Hall tickets must not stay active for ineligible students
+    if not passed:
+        from .models import HallTicket
+        HallTicket.objects.filter(student=student, is_active=True).update(is_active=False)
+
     return student
 
 
