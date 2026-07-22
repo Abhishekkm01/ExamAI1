@@ -14,12 +14,28 @@ def settings_to_dict(obj=None):
         'academic_year': obj.academic_year,
         'current_semester': obj.current_semester,
         'contact_email': obj.contact_email,
+        'college_logo_url': obj.college_logo_url or '',
+        'default_exam_fee': float(obj.default_exam_fee or 45000),
+        'default_college_fee': float(getattr(obj, 'default_college_fee', None) or 25000),
+        'default_backlog_fee': float(getattr(obj, 'default_backlog_fee', None) or 1500),
         'attendance_threshold': obj.attendance_threshold,
         'internal_marks_threshold': obj.internal_marks_threshold,
         'min_sgpa': obj.min_sgpa,
         'ml_model': obj.ml_model,
         'updated_at': obj.updated_at.isoformat() if obj.updated_at else None,
     }
+
+
+def get_default_exam_fee():
+    return float(get_system_settings().default_exam_fee or 45000)
+
+
+def get_default_college_fee():
+    return float(getattr(get_system_settings(), 'default_college_fee', None) or 25000)
+
+
+def get_default_backlog_fee():
+    return float(getattr(get_system_settings(), 'default_backlog_fee', None) or 1500)
 
 
 def ensure_default_settings():

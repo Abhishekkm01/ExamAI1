@@ -181,82 +181,22 @@ def auto_arrange(request):
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def manual_arrange(request):
-    """Create manual seating arrangement"""
-    user = getattr(request, '_jwt_user', request.user)
-    if not user or not hasattr(user, 'role') or user.role != 'admin':
-        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-    
-    serializer = ManualSeatingSerializer(data=request.data)
-    if serializer.is_valid():
-        try:
-            result = SeatingArrangementService.create_manual_arrangement(
-                exam_id=serializer.validated_data['exam_id'],
-                arrangements_data=serializer.validated_data['arrangements']
-            )
-            return Response(result, status=status.HTTP_201_CREATED)
-        except ValueError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    """Manual seating is disabled — use AI auto-arrange only."""
+    return Response(
+        {'detail': 'Seat allotment is system-assigned only. Use Auto Arrange (AI even/odd seating).'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @api_view(['PUT'])
 @authentication_classes([])
 @permission_classes([AllowAny])  # Will be protected by middleware
 def update_arrangement(request, arrangement_id):
-    """Update a specific seating arrangement"""
-    user = getattr(request, '_jwt_user', request.user)
-    if not user or not hasattr(user, 'role') or user.role != 'admin':
-        return Response({'detail': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-    
-    try:
-        arrangement = SeatingArrangement.objects.get(id=arrangement_id)
-    except SeatingArrangement.DoesNotExist:
-        return Response({'detail': 'Arrangement not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    serializer = SeatingArrangementUpdateSerializer(data=request.data, partial=True)
-    if serializer.is_valid():
-        data = serializer.validated_data
-        try:
-            # If only seat_number (and optional room) provided, move on the grid
-            if 'seat_number' in data and 'seat_row' not in data and 'seat_column' not in data:
-                SeatingArrangementService.apply_seat_label(
-                    arrangement,
-                    data['seat_number'],
-                    room_id=data.get('room_id'),
-                )
-            else:
-                room_id = data.get('room_id', arrangement.room_id)
-                seat_row = data.get('seat_row', arrangement.seat_row)
-                seat_column = data.get('seat_column', arrangement.seat_column)
-                if SeatingArrangement.objects.filter(
-                    exam_id=arrangement.exam_id,
-                    room_id=room_id,
-                    seat_row=seat_row,
-                    seat_column=seat_column,
-                ).exclude(id=arrangement.id).exists():
-                    return Response(
-                        {'detail': 'This seat is already assigned to another student'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                for field, value in data.items():
-                    if field == 'room_id':
-                        arrangement.room_id = value
-                    else:
-                        setattr(arrangement, field, value)
-                if 'seat_row' in data or 'seat_column' in data:
-                    arrangement.seat_number = SeatingArrangementService.generate_seat_number(
-                        arrangement.seat_row, arrangement.seat_column, arrangement.room.room_code,
-                    )
-                arrangement.save()
-        except ValueError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        SeatingArrangementService.sync_arrangement_to_hall_ticket(arrangement)
-        response_serializer = SeatingArrangementSerializer(arrangement)
-        return Response(response_serializer.data)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    """Manual seat edits are disabled — seating is AI-assigned only."""
+    return Response(
+        {'detail': 'Seat allotment is system-assigned only and cannot be edited by admin.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @api_view(['DELETE'])

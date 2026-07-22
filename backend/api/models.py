@@ -50,9 +50,17 @@ class User(AbstractUser):
 
 
 class Student(models.Model):
+    GENDER_CHOICES = [
+        ('male', 'Male'),
+        ('female', 'Female'),
+        ('other', 'Other'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='student_profile')
     roll_no = models.CharField(max_length=50, unique=True, db_index=True)
     mobile = models.CharField(max_length=20, blank=True, null=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='')
+    date_of_birth = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=100, db_index=True)
     semester = models.IntegerField(default=1)
     section = models.CharField(max_length=10, default='A')
@@ -63,8 +71,11 @@ class Student(models.Model):
     assignment_marks = models.FloatField(default=0.0)
     previous_result = models.FloatField(default=0.0)
     backlogs = models.IntegerField(default=0)
-    fee_paid = models.BooleanField(default=False, db_index=True)
-    fee_amount = models.FloatField(default=45000.0)
+    fee_paid = models.BooleanField(default=False, db_index=True)  # True when BOTH college + exam fees paid
+    fee_amount = models.FloatField(default=45000.0)  # exam fee amount
+    exam_fee_paid = models.BooleanField(default=False, db_index=True)
+    college_fee_amount = models.FloatField(default=25000.0)
+    college_fee_paid = models.BooleanField(default=False, db_index=True)
     fee_due_date = models.CharField(max_length=50, blank=True, null=True)
     is_eligible = models.BooleanField(default=False, db_index=True)
     eligibility_percentage = models.FloatField(default=0.0)
@@ -83,6 +94,48 @@ class Student(models.Model):
             models.Index(fields=['is_eligible']),
             models.Index(fields=['department', 'semester'], name='idx_student_dept_sem'),
         ]
+
+
+class StudentBacklog(models.Model):
+    """Previous-semester failed subject. Appears on hall ticket only after apply + fee approve."""
+
+    STATUS_OPEN = 'open'           # recorded by admin; student has not applied
+    STATUS_APPLIED = 'applied'     # student applied; awaiting / during fee payment
+    STATUS_APPROVED = 'approved'   # fee approved — included on current-cycle hall ticket
+    STATUS_CLEARED = 'cleared'     # passed / cleared
+    STATUS_CHOICES = [
+        (STATUS_OPEN, 'Open'),
+        (STATUS_APPLIED, 'Applied'),
+        (STATUS_APPROVED, 'Approved to write'),
+        (STATUS_CLEARED, 'Cleared'),
+    ]
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='backlog_subjects')
+    subject_code = models.CharField(max_length=50, db_index=True)
+    subject_name = models.CharField(max_length=255)
+    from_semester = models.IntegerField(default=1)
+    exam_date = models.CharField(max_length=50, blank=True, default='')
+    exam_time = models.CharField(max_length=50, blank=True, default='')
+    duration = models.CharField(max_length=50, blank=True, default='3 hours')
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True,
+    )
+    is_cleared = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_backlogs'
+        unique_together = [('student', 'subject_code')]
+        indexes = [
+            models.Index(fields=['student']),
+            models.Index(fields=['subject_code']),
+            models.Index(fields=['is_cleared']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f'{self.student_id}:{self.subject_code}'
 
 
 class Teacher(models.Model):
@@ -134,6 +187,7 @@ class Exam(models.Model):
     duration = models.CharField(max_length=50, default='3 hours')
     room = models.CharField(max_length=100)
     total_marks = models.IntegerField(default=100)
+    fee_amount = models.FloatField(default=45000.0)
     requires_face_verification = models.BooleanField(default=True)
     invigilator = models.ForeignKey(
         'Teacher', on_delete=models.SET_NULL, null=True, blank=True,
@@ -376,8 +430,20 @@ class FeePayment(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     ]
+    FEE_TYPE_CHOICES = [
+        ('college', 'College Fee'),
+        ('exam', 'Exam Fee'),
+        ('backlog', 'Backlog Fee'),
+    ]
 
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='fee_payments')
+    exam = models.ForeignKey(
+        'Exam', on_delete=models.SET_NULL, blank=True, null=True, related_name='fee_payments'
+    )
+    backlog = models.ForeignKey(
+        'StudentBacklog', on_delete=models.SET_NULL, blank=True, null=True, related_name='fee_payments'
+    )
+    fee_type = models.CharField(max_length=20, choices=FEE_TYPE_CHOICES, default='exam', db_index=True)
     amount = models.FloatField()
     method = models.CharField(max_length=20, choices=METHOD_CHOICES)
     transaction_id = models.CharField(max_length=100, unique=True)
@@ -396,7 +462,47 @@ class FeePayment(models.Model):
             models.Index(fields=['student']),
             models.Index(fields=['transaction_id']),
             models.Index(fields=['status']),
+            models.Index(fields=['fee_type']),
+            models.Index(fields=['exam']),
         ]
+
+
+class ClassTimetable(models.Model):
+    """Weekly class schedule slots for a teacher."""
+
+    DAY_CHOICES = [
+        (0, 'Monday'),
+        (1, 'Tuesday'),
+        (2, 'Wednesday'),
+        (3, 'Thursday'),
+        (4, 'Friday'),
+        (5, 'Saturday'),
+    ]
+
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='class_slots')
+    subject_code = models.CharField(max_length=50, db_index=True)
+    subject_name = models.CharField(max_length=255, blank=True, default='')
+    day_of_week = models.PositiveSmallIntegerField(choices=DAY_CHOICES)  # 0=Mon … 5=Sat
+    start_time = models.CharField(max_length=20)  # e.g. "09:00"
+    end_time = models.CharField(max_length=20)    # e.g. "10:00"
+    room = models.CharField(max_length=100, blank=True, default='')
+    semester = models.PositiveSmallIntegerField(default=1)
+    section = models.CharField(max_length=10, blank=True, default='A')
+    department = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'class_timetable'
+        ordering = ['day_of_week', 'start_time', 'id']
+        indexes = [
+            models.Index(fields=['teacher']),
+            models.Index(fields=['day_of_week']),
+            models.Index(fields=['subject_code']),
+        ]
+
+    def __str__(self):
+        return f"{self.subject_code} D{self.day_of_week} {self.start_time}-{self.end_time}"
 
 
 class SystemSettings(models.Model):
@@ -411,6 +517,10 @@ class SystemSettings(models.Model):
     academic_year = models.CharField(max_length=20, default='2026-27')
     current_semester = models.PositiveSmallIntegerField(default=5)
     contact_email = models.EmailField(default='admin@nit.edu')
+    college_logo_url = models.URLField(max_length=512, blank=True, default='')
+    default_exam_fee = models.FloatField(default=45000.0)
+    default_college_fee = models.FloatField(default=25000.0)
+    default_backlog_fee = models.FloatField(default=1500.0)
     attendance_threshold = models.PositiveSmallIntegerField(default=75)
     internal_marks_threshold = models.PositiveSmallIntegerField(default=40)
     min_sgpa = models.FloatField(default=5.0)

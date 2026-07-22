@@ -24,7 +24,8 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = ['id', 'user', 'roll_no', 'mobile', 'department', 'semester', 'section', 
                   'photo', 'attendance_percentage', 'internal_marks', 'assignment_marks',
-                  'previous_result', 'backlogs', 'fee_paid', 'fee_amount', 'fee_due_date',
+                  'previous_result', 'backlogs', 'fee_paid', 'fee_amount', 'exam_fee_paid',
+                  'college_fee_amount', 'college_fee_paid', 'fee_due_date',
                   'is_eligible', 'eligibility_percentage', 'ai_risk_score', 'created_at', 'updated_at', 'is_deleted']
 
 
@@ -143,10 +144,18 @@ class RegisterStudentSerializer(serializers.Serializer):
     department = serializers.CharField()
     semester = serializers.IntegerField(min_value=1, max_value=8)
     section = serializers.CharField(required=False, allow_blank=True, default="A")
-    mobile = serializers.CharField(required=False, allow_blank=True)
+    mobile = serializers.CharField(min_length=10, max_length=20)
+    gender = serializers.ChoiceField(choices=['male', 'female', 'other'], required=False, allow_blank=True)
+    date_of_birth = serializers.CharField(required=False, allow_blank=True)
 
     def validate_department(self, value):
         return validate_department_name(value)
+
+    def validate_mobile(self, value):
+        digits = ''.join(ch for ch in (value or '') if ch.isdigit())
+        if len(digits) < 10:
+            raise serializers.ValidationError('Phone number must have at least 10 digits.')
+        return value.strip()
 
 
 class StudentProfileUpdateSerializer(serializers.Serializer):
@@ -171,7 +180,9 @@ class SetupStudentSerializer(serializers.Serializer):
     department = serializers.CharField()
     semester = serializers.IntegerField()
     section = serializers.CharField(required=False, allow_blank=True)
-    mobile = serializers.CharField(required=False, allow_blank=True)
+    mobile = serializers.CharField(min_length=10, max_length=20)
+    gender = serializers.ChoiceField(choices=['male', 'female', 'other'], required=False, allow_blank=True)
+    date_of_birth = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     photo = serializers.CharField(required=False, allow_blank=True)
     attendance_percentage = serializers.FloatField(default=0)
     internal_marks = serializers.FloatField(default=0)
@@ -179,11 +190,17 @@ class SetupStudentSerializer(serializers.Serializer):
     previous_result = serializers.FloatField(default=0)
     backlogs = serializers.IntegerField(default=0)
     fee_paid = serializers.BooleanField(default=False)
-    fee_amount = serializers.FloatField(default=45000)
+    fee_amount = serializers.FloatField(required=False)
     fee_due_date = serializers.CharField(required=False, allow_blank=True)
 
     def validate_department(self, value):
         return validate_department_name(value)
+
+    def validate_mobile(self, value):
+        digits = ''.join(ch for ch in (value or '') if ch.isdigit())
+        if len(digits) < 10:
+            raise serializers.ValidationError('Phone number must have at least 10 digits.')
+        return value.strip()
 
 
 class LoginSerializer(serializers.Serializer):
@@ -276,22 +293,25 @@ class StudentCreateSerializer(serializers.Serializer):
     password = serializers.CharField()
     name = serializers.CharField()
     roll_no = serializers.CharField()
-    mobile = serializers.CharField(required=False)
+    mobile = serializers.CharField(min_length=10, max_length=20)
+    gender = serializers.ChoiceField(choices=['male', 'female', 'other'], required=False, allow_blank=True)
+    date_of_birth = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     department = serializers.CharField()
     semester = serializers.IntegerField()
     section = serializers.CharField(required=False)
     photo = serializers.URLField(required=False)
-    attendance_percentage = serializers.FloatField(default=0)
-    internal_marks = serializers.FloatField(default=0)
-    assignment_marks = serializers.FloatField(default=0)
-    previous_result = serializers.FloatField(default=0)
-    backlogs = serializers.IntegerField(default=0)
     fee_paid = serializers.BooleanField(default=False)
-    fee_amount = serializers.FloatField(default=45000)
+    fee_amount = serializers.FloatField(required=False)
     fee_due_date = serializers.CharField(required=False)
 
     def validate_department(self, value):
         return validate_department_name(value)
+
+    def validate_mobile(self, value):
+        digits = ''.join(ch for ch in (value or '') if ch.isdigit())
+        if len(digits) < 10:
+            raise serializers.ValidationError('Phone number must have at least 10 digits.')
+        return value.strip()
 
 
 class MarksUpdateSerializer(serializers.Serializer):
@@ -325,21 +345,18 @@ class MarksUpdateSerializer(serializers.Serializer):
 class StudentUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     email = serializers.EmailField(required=False)
+    password = serializers.CharField(required=False, min_length=6)
     roll_no = serializers.CharField(required=False)
     mobile = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    gender = serializers.ChoiceField(choices=['male', 'female', 'other'], required=False, allow_blank=True)
+    date_of_birth = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     department = serializers.CharField(required=False)
     semester = serializers.IntegerField(required=False)
     section = serializers.CharField(required=False)
     photo = serializers.URLField(required=False, allow_blank=True, allow_null=True)
-    attendance_percentage = serializers.FloatField(required=False)
-    internal_marks = serializers.FloatField(required=False)
-    assignment_marks = serializers.FloatField(required=False)
-    previous_result = serializers.FloatField(required=False)
-    backlogs = serializers.IntegerField(required=False)
     fee_paid = serializers.BooleanField(required=False)
     fee_amount = serializers.FloatField(required=False)
     fee_due_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    password = serializers.CharField(required=False, min_length=6)
 
     def validate_department(self, value):
         if not value:
@@ -358,6 +375,7 @@ class ExamCreateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField()
     total_marks = serializers.IntegerField(default=100)
+    fee_amount = serializers.FloatField(required=False, min_value=0)
     requires_face_verification = serializers.BooleanField(default=True)
     invigilator_id = serializers.IntegerField(required=False, allow_null=True)
     subjects = ExamSubjectInputSerializer(many=True, required=False)
@@ -392,6 +410,7 @@ class ExamUpdateSerializer(serializers.Serializer):
     duration = serializers.CharField(required=False)
     room = serializers.CharField(required=False)
     total_marks = serializers.IntegerField(required=False)
+    fee_amount = serializers.FloatField(required=False, min_value=0)
     requires_face_verification = serializers.BooleanField(required=False)
     invigilator_id = serializers.IntegerField(required=False, allow_null=True)
     subjects = ExamSubjectInputSerializer(many=True, required=False)
@@ -584,8 +603,8 @@ class AutoSeatingSerializer(serializers.Serializer):
     exam_id = serializers.IntegerField()
     room_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
     arrangement_strategy = serializers.ChoiceField(
-        choices=['sequential', 'department', 'alphabetical', 'random'],
-        default='sequential'
+        choices=['even_odd', 'ai', 'sequential', 'department', 'alphabetical', 'random'],
+        default='even_odd'
     )
     leave_empty_seats = serializers.BooleanField(default=False)
     seats_between_students = serializers.IntegerField(default=0, min_value=0)
@@ -615,6 +634,9 @@ class SeatingArrangementUpdateSerializer(serializers.Serializer):
 class PayFeeSerializer(serializers.Serializer):
     method = serializers.ChoiceField(choices=['online', 'bank_transfer', 'college'])
     reference = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    fee_type = serializers.ChoiceField(choices=['college', 'exam', 'backlog'], default='exam')
+    exam_id = serializers.IntegerField(required=False, allow_null=True)
+    backlog_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class FeePaymentReviewSerializer(serializers.Serializer):
@@ -626,7 +648,39 @@ class SystemSettingsUpdateSerializer(serializers.Serializer):
     academic_year = serializers.CharField(max_length=20, required=False)
     current_semester = serializers.IntegerField(min_value=1, max_value=8, required=False)
     contact_email = serializers.EmailField(required=False)
+    college_logo_url = serializers.URLField(required=False, allow_blank=True)
+    default_exam_fee = serializers.FloatField(min_value=0, required=False)
+    default_college_fee = serializers.FloatField(min_value=0, required=False)
+    default_backlog_fee = serializers.FloatField(min_value=0, required=False)
     attendance_threshold = serializers.IntegerField(min_value=0, max_value=100, required=False)
     internal_marks_threshold = serializers.IntegerField(min_value=0, max_value=100, required=False)
     min_sgpa = serializers.FloatField(min_value=0, max_value=10, required=False)
     ml_model = serializers.ChoiceField(choices=['rf', 'dt'], required=False)
+    apply_fee_to_unpaid = serializers.BooleanField(required=False, default=False)
+
+
+class ClassTimetableSerializer(serializers.Serializer):
+    subject_code = serializers.CharField(max_length=50)
+    subject_name = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    day_of_week = serializers.IntegerField(min_value=0, max_value=5)
+    start_time = serializers.CharField(max_length=20)
+    end_time = serializers.CharField(max_length=20)
+    room = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    semester = serializers.IntegerField(min_value=1, max_value=8, required=False, default=1)
+    section = serializers.CharField(max_length=10, required=False, allow_blank=True, default='A')
+    department = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    teacher_id = serializers.IntegerField(required=False)
+
+    def validate(self, data):
+        start = (data.get('start_time') or '').strip()
+        end = (data.get('end_time') or '').strip()
+        if start and end and start >= end:
+            raise serializers.ValidationError({'end_time': 'End time must be after start time.'})
+        data['subject_code'] = data['subject_code'].strip().upper()
+        data['start_time'] = start
+        data['end_time'] = end
+        return data
+
+
+class HodClassTimetableSerializer(ClassTimetableSerializer):
+    teacher_id = serializers.IntegerField(required=True)

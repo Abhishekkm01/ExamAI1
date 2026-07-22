@@ -67,10 +67,33 @@ export default function AdminDashboard() {
   ).map(([name, value]) => ({ name, value }));
   const COLORS = ["#2563eb", "#7c3aed", "#db2777", "#059669", "#f59e0b"];
   const hasTrendData = trendData.some((d) => d.total > 0);
+  const notEligible = Math.max(0, totalStudents - eligible);
   const elgData = [
     { name: "Eligible", value: eligible, fill: "#10b981" },
-    { name: "Not Eligible", value: Math.max(0, totalStudents - eligible), fill: "#ef4444" },
+    { name: "Not Eligible", value: notEligible, fill: "#ef4444" },
   ];
+  const deptEligibility = Object.entries(
+    students.reduce<Record<string, { eligible: number; notEligible: number; total: number }>>((acc, s) => {
+      const dept = s.department || "Unknown";
+      if (!acc[dept]) acc[dept] = { eligible: 0, notEligible: 0, total: 0 };
+      const isEligible = getStudentEligibility(s).eligible;
+      if (isEligible) acc[dept].eligible += 1;
+      else acc[dept].notEligible += 1;
+      acc[dept].total += 1;
+      return acc;
+    }, {})
+  )
+    .map(([dept, counts]) => ({
+      dept,
+      ...counts,
+      rate: counts.total ? Math.round((counts.eligible / counts.total) * 100) : 0,
+    }))
+    .sort((a, b) => a.dept.localeCompare(b.dept));
+  const deptEligibilityChart = deptEligibility.map((d) => ({
+    name: d.dept,
+    Eligible: d.eligible,
+    "Not Eligible": d.notEligible,
+  }));
   const recentStudents = students.slice(0, 5);
 
   return (
@@ -157,6 +180,56 @@ export default function AdminDashboard() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Department-wise Eligibility</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Eligible vs not eligible students in each department</p>
+          </div>
+          <button onClick={() => navigate("/admin/eligibility")} className="text-sm text-indigo-600 hover:underline">
+            View details →
+          </button>
+        </div>
+        {deptEligibility.length > 0 ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+              {deptEligibility.map((d) => (
+                <div
+                  key={d.dept}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-slate-50/60 dark:bg-slate-800/40 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 transition"
+                  onClick={() => navigate("/admin/eligibility")}
+                >
+                  <p className="font-semibold text-slate-900 dark:text-white">{d.dept}</p>
+                  <div className="mt-2 flex items-center gap-3 text-sm">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">Eligible: {d.eligible}</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-medium">Not Eligible: {d.notEligible}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Total: {d.total} · Rate: {d.rate}%</p>
+                  <div className="mt-2 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${d.rate}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={deptEligibilityChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.3)" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
+                  <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: "rgba(15,23,42,.9)", border: "none", borderRadius: 8, color: "#fff" }} />
+                  <Legend />
+                  <Bar dataKey="Eligible" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Not Eligible" fill="#ef4444" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-slate-500 text-center py-10">No department eligibility data yet</p>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <Card className="p-5">

@@ -150,7 +150,23 @@ export const api = {
   deleteExam: (id: number) =>
     tryFetch(`/api/admin/exams/${id}/delete`, { method: "DELETE" }),
   adminBacklogs: () => tryFetch("/api/admin/backlogs"),
+  adminStudentBacklogs: (studentId: number) => tryFetch(`/api/admin/students/${studentId}/backlogs`),
+  adminAddStudentBacklog: (studentId: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/students/${studentId}/backlogs`, { method: "POST", body: JSON.stringify(data) }),
+  adminUpdateStudentBacklog: (studentId: number, backlogId: number, data: Record<string, unknown>) =>
+    tryFetch(`/api/admin/students/${studentId}/backlogs/${backlogId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  adminDeleteStudentBacklog: (studentId: number, backlogId: number) =>
+    tryFetch(`/api/admin/students/${studentId}/backlogs/${backlogId}`, { method: "DELETE" }),
   adminFees: () => tryFetch("/api/admin/fees"),
+  adminSetExamFee: (data: {
+    default_exam_fee?: number;
+    default_college_fee?: number;
+    apply_to_unpaid?: boolean;
+    fee_due_date?: string;
+  }) => tryFetch("/api/admin/fees/set-amount", { method: "PUT", body: JSON.stringify(data) }),
   approveFeePayment: (paymentId: number, adminNote = "") =>
     tryFetch(`/api/admin/fees/payments/${paymentId}/approve`, {
       method: "PUT",
@@ -170,8 +186,11 @@ export const api = {
   adminHallTickets: () => tryFetch("/api/admin/halltickets"),
   adminUpdateHallTicket: (id: number, data: Record<string, unknown>) =>
     tryFetch(`/api/admin/halltickets/${id}/update`, { method: "PUT", body: JSON.stringify(data) }),
-  adminMarkFeePaid: (studentId: number) =>
-    tryFetch(`/api/admin/fees/${studentId}/mark-paid`, { method: "PUT" }),
+  adminMarkFeePaid: (studentId: number, feeType: "college" | "exam" = "exam", examId?: number | null) =>
+    tryFetch(`/api/admin/fees/${studentId}/mark-paid`, {
+      method: "PUT",
+      body: JSON.stringify({ fee_type: feeType, exam_id: examId ?? undefined }),
+    }),
   sendNotification: (data: { title: string; message: string; audience: string }) =>
     tryFetch("/api/admin/notifications/create", { method: "POST", body: JSON.stringify(data) }),
   adminNotifications: () => tryFetch("/api/admin/notifications"),
@@ -189,6 +208,19 @@ export const api = {
   },
   markAttendance: (data: any) =>
     tryFetch("/api/teacher/attendance/mark", { method: "POST", body: JSON.stringify(data) }),
+  teacherTimetable: () => tryFetch("/api/teacher/timetable"),
+  hodTimetable: (teacherId?: number | string) => {
+    const q = teacherId ? `?teacher_id=${teacherId}` : "";
+    return tryFetch(`/api/hod/timetable${q}`);
+  },
+  hodAddTimetableSlot: (data: Record<string, unknown>) =>
+    tryFetch("/api/hod/timetable", { method: "POST", body: JSON.stringify(data) }),
+  hodDeleteTimetableSlot: (id: number) =>
+    tryFetch(`/api/hod/timetable/${id}`, { method: "DELETE" }),
+  teacherAddTimetableSlot: (data: Record<string, unknown>) =>
+    tryFetch("/api/teacher/timetable", { method: "POST", body: JSON.stringify(data) }),
+  teacherDeleteTimetableSlot: (id: number) =>
+    tryFetch(`/api/teacher/timetable/${id}`, { method: "DELETE" }),
   updateMarks: (data: any) =>
     tryFetch("/api/teacher/marks/update", { method: "POST", body: JSON.stringify(data) }),
 
@@ -229,10 +261,25 @@ export const api = {
   studentExams: () => tryFetch("/api/student/exams"),
   studentNotifications: () => tryFetch("/api/student/notifications"),
   studentFees: () => tryFetch("/api/student/fees"),
-  payStudentFee: (method: "online" | "bank_transfer" | "college", reference = "") =>
+  studentBacklogs: () => tryFetch("/api/student/backlogs"),
+  applyStudentBacklog: (backlogId: number) =>
+    tryFetch(`/api/student/backlogs/${backlogId}/apply`, { method: "POST", body: "{}" }),
+  payStudentFee: (
+    method: "online" | "bank_transfer" | "college",
+    reference = "",
+    feeType: "college" | "exam" | "backlog" = "exam",
+    examId?: number | null,
+    backlogId?: number | null,
+  ) =>
     tryFetch("/api/student/fees/pay", {
       method: "POST",
-      body: JSON.stringify({ method, reference }),
+      body: JSON.stringify({
+        method,
+        reference,
+        fee_type: feeType,
+        exam_id: examId ?? undefined,
+        backlog_id: backlogId ?? undefined,
+      }),
     }),
   studentFaceEnroll: (imageBase64: string) =>
     tryFetch("/api/student/face-enroll", {

@@ -4,10 +4,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Q
-from .models import User, Student, Teacher, HOD, Exam, Notification, EligibilityPrediction
+from .models import User, Student, Teacher, HOD, Exam, Notification, EligibilityPrediction, ClassTimetable
 from .serializers import (
     HodProfileUpdateSerializer, HodTeacherSubjectsSerializer,
     HodStudentAcademicUpdateSerializer, NotificationCreateSerializer, NotificationSerializer,
+    HodClassTimetableSerializer, ClassTimetableSerializer,
 )
 from .auth_utils import verify_password, get_password_hash
 from .photo_utils import save_profile_photo
@@ -307,13 +308,78 @@ def verify_department(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def list_backlogs(request):
+    from .backlog_service import list_student_backlogs, active_backlogs_for_student
+
     user, hod, err = _require_hod(request)
     if err:
         return err
     students = Student.objects.filter(
-        department=hod.department, is_deleted=False, backlogs__gt=0
-    ).select_related('user').order_by('-backlogs', 'roll_no')
-    return Response([_student_dict(s) for s in students])
+        department=hod.department, is_deleted=False
+    ).select_related('user').prefetch_related('backlog_subjects').order_by('roll_no')
+    data = []
+    for s in students:
+        active = active_backlogs_for_student(s)
+        if not active and s.backlogs <= 0:
+            continue
+        row = _student_dict(s)
+        row['backlogs'] = len(active) or s.backlogs
+        row['backlog_subjects'] = list_student_backlogs(s)
+        data.append(row)
+    return Response(data)
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def student_backlogs(request, sid):
+    from .backlog_service import list_student_backlogs, upsert_backlog, sync_student_backlog_count
+
+    user, hod, err = _require_hod(request)
+    if err:
+        return err
+    try:
+        s = Student.objects.get(id=sid, department=hod.department, is_deleted=False)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        sync_student_backlog_count(s)
+        return Response({'student_id': s.id, 'backlogs': s.backlogs, 'subjects': list_student_backlogs(s)})
+
+    row, error = upsert_backlog(s, request.data or {})
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        'message': 'Backlog subject saved — regenerating hall ticket will include it',
+        'backlogs': s.backlogs,
+        'subjects': list_student_backlogs(s),
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def student_backlog_detail(request, sid, backlog_id):
+    from .backlog_service import clear_backlog, delete_backlog, list_student_backlogs
+
+    user, hod, err = _require_hod(request)
+    if err:
+        return err
+    try:
+        s = Student.objects.get(id=sid, department=hod.department, is_deleted=False)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        error = delete_backlog(s, backlog_id)
+        if error:
+            return Response({'detail': error}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'message': 'Removed', 'backlogs': s.backlogs, 'subjects': list_student_backlogs(s)})
+
+    row, error = clear_backlog(s, backlog_id, cleared=bool(request.data.get('is_cleared', True)))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_404_NOT_FOUND)
+    return Response({'message': 'Updated', 'backlogs': s.backlogs, 'subjects': list_student_backlogs(s)})
 
 
 @api_view(['GET'])
@@ -669,3 +735,131 @@ def upload_profile_photo(request):
     hod.save()
     user.save()
     return Response({'message': 'Photo updated', 'photo': photo_url})
+
+
+DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+
+def _hod_slot_dict(slot):
+    return {
+        'id': slot.id,
+        'teacher_id': slot.teacher_id,
+        'teacher_name': slot.teacher.user.name if slot.teacher_id and getattr(slot.teacher, 'user', None) else '',
+        'subject_code': slot.subject_code,
+        'subject_name': slot.subject_name or slot.subject_code,
+        'day_of_week': slot.day_of_week,
+        'day_name': DAY_NAMES[slot.day_of_week] if 0 <= slot.day_of_week < len(DAY_NAMES) else str(slot.day_of_week),
+        'start_time': slot.start_time,
+        'end_time': slot.end_time,
+        'room': slot.room or '',
+        'semester': slot.semester,
+        'section': slot.section or 'A',
+        'department': slot.department or '',
+    }
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_timetable(request):
+    """HOD assigns and lists class timetable for department teachers."""
+    user, hod, err = _require_hod(request)
+    if err:
+        return err
+
+    teachers = Teacher.objects.filter(
+        department=hod.department, is_deleted=False
+    ).select_related('user').order_by('user__name')
+
+    if request.method == 'GET':
+        teacher_id = request.query_params.get('teacher_id')
+        slots = ClassTimetable.objects.filter(
+            teacher__department=hod.department,
+            teacher__is_deleted=False,
+        ).select_related('teacher__user')
+        if teacher_id:
+            slots = slots.filter(teacher_id=teacher_id)
+        slots = slots.order_by('day_of_week', 'start_time', 'teacher_id', 'id')
+        return Response({
+            'slots': [_hod_slot_dict(s) for s in slots],
+            'teachers': [
+                {
+                    'id': t.id,
+                    'name': t.user.name,
+                    'emp_id': t.emp_id,
+                    'assigned_subjects': [x.strip() for x in (t.assigned_subjects or '').split(',') if x.strip()],
+                }
+                for t in teachers
+            ],
+            'day_names': DAY_NAMES,
+            'department': hod.department,
+        })
+
+    serializer = HodClassTimetableSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    data = serializer.validated_data
+    try:
+        teacher = Teacher.objects.select_related('user').get(
+            id=data['teacher_id'], department=hod.department, is_deleted=False
+        )
+    except Teacher.DoesNotExist:
+        return Response({'detail': 'Teacher not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+
+    slot = ClassTimetable.objects.create(
+        teacher=teacher,
+        subject_code=data['subject_code'],
+        subject_name=data.get('subject_name') or data['subject_code'],
+        day_of_week=data['day_of_week'],
+        start_time=data['start_time'],
+        end_time=data['end_time'],
+        room=data.get('room') or '',
+        semester=data.get('semester') or 1,
+        section=data.get('section') or 'A',
+        department=hod.department,
+    )
+    return Response(_hod_slot_dict(slot), status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_timetable_detail(request, slot_id):
+    """HOD updates or deletes a class timetable slot in their department."""
+    user, hod, err = _require_hod(request)
+    if err:
+        return err
+
+    try:
+        slot = ClassTimetable.objects.select_related('teacher__user').get(
+            id=slot_id,
+            teacher__department=hod.department,
+            teacher__is_deleted=False,
+        )
+    except ClassTimetable.DoesNotExist:
+        return Response({'detail': 'Class slot not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        slot.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = ClassTimetableSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    data = serializer.validated_data
+
+    if 'teacher_id' in data and data['teacher_id']:
+        try:
+            teacher = Teacher.objects.get(
+                id=data['teacher_id'], department=hod.department, is_deleted=False
+            )
+            slot.teacher = teacher
+        except Teacher.DoesNotExist:
+            return Response({'detail': 'Teacher not found in your department'}, status=status.HTTP_404_NOT_FOUND)
+
+    for field in ('subject_code', 'subject_name', 'day_of_week', 'start_time', 'end_time', 'room', 'semester', 'section'):
+        if field in data:
+            setattr(slot, field, data[field])
+    slot.department = hod.department
+    slot.save()
+    return Response(_hod_slot_dict(slot))

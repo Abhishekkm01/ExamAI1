@@ -3,17 +3,44 @@ import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "..
 import { Pagination } from "../../components/Pagination";
 import { useClientPagination } from "../../hooks/useClientPagination";
 import { fetchHodStudents, fetchHodTeachers, fetchHodExams, getStudentEligibility } from "../../data/apiData";
-import { api, downloadHodReport } from "../../data/api";
+import { api, downloadHodReport, API_BASE } from "../../data/api";
 import { notifyNotificationsUpdated } from "../../contexts/AppContext";
 import type { Student, Teacher, Exam } from "../../data/types";
 import {
   Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, AlertTriangle,
   GraduationCap, Wallet, Mail, Edit2, X, Save, FileText, TicketCheck,
-  Calendar, Clock, MapPin,
+  Calendar, Clock, MapPin, Plus, Trash2,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX } from "../../data/marksConstants";
 import { cleanNotificationMessage, formatNotificationAudience, parseNotificationTitle } from "../../utils/notifications";
+import { cn } from "../../utils/cn";
+
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const token = () => localStorage.getItem("examshield_token") || "";
+
+type HodClassSlot = {
+  id: number;
+  teacher_id: number;
+  teacher_name: string;
+  subject_code: string;
+  subject_name: string;
+  day_of_week: number;
+  day_name: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  semester: number;
+  section: string;
+  department: string;
+};
+
+type HodTeacherOption = {
+  id: number;
+  name: string;
+  emp_id: string;
+  assigned_subjects: string[];
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -424,6 +451,279 @@ function HodSubjectsModal({
           <Button variant="primary" onClick={save} disabled={saving}>Save</Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+export function HodTimetable() {
+  const [slots, setSlots] = useState<HodClassSlot[]>([]);
+  const [teachers, setTeachers] = useState<HodTeacherOption[]>([]);
+  const [department, setDepartment] = useState("");
+  const [teacherFilter, setTeacherFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    teacher_id: "",
+    subject_code: "",
+    subject_name: "",
+    day_of_week: 0,
+    start_time: "09:00",
+    end_time: "10:00",
+    room: "",
+    semester: 5,
+    section: "A",
+  });
+
+  const selectedTeacher = teachers.find((t) => String(t.id) === form.teacher_id);
+  const subjectOptions = selectedTeacher?.assigned_subjects?.length
+    ? selectedTeacher.assigned_subjects
+    : [];
+
+  const load = async (tid = teacherFilter) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const q = tid !== "all" ? `?teacher_id=${tid}` : "";
+      const res = await fetch(`${API_BASE}/api/hod/timetable${q}`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || "Failed to load timetable");
+      }
+      const data = await res.json();
+      setSlots(data.slots || []);
+      setTeachers(data.teachers || []);
+      setDepartment(data.department || "");
+      if (!form.teacher_id && (data.teachers || [])[0]) {
+        setForm((f) => ({
+          ...f,
+          teacher_id: String(data.teachers[0].id),
+          subject_code: (data.teachers[0].assigned_subjects || [])[0] || "",
+        }));
+      }
+    } catch (e: any) {
+      setError(e.message || "Failed to load timetable");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filteredSlots = useMemo(
+    () => teacherFilter === "all" ? slots : slots.filter((s) => String(s.teacher_id) === teacherFilter),
+    [slots, teacherFilter],
+  );
+
+  const byDay = useMemo(() => {
+    return DAY_NAMES.map((name, day) => ({
+      day,
+      name,
+      slots: filteredSlots.filter((s) => s.day_of_week === day),
+    }));
+  }, [filteredSlots]);
+
+  const addSlot = async () => {
+    if (!form.teacher_id) {
+      setError("Select a teacher");
+      return;
+    }
+    if (!form.subject_code.trim()) {
+      setError("Subject code is required");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/hod/timetable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          teacher_id: Number(form.teacher_id),
+          subject_code: form.subject_code.trim().toUpperCase(),
+          subject_name: form.subject_name,
+          day_of_week: form.day_of_week,
+          start_time: form.start_time,
+          end_time: form.end_time,
+          room: form.room,
+          semester: form.semester,
+          section: form.section,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = j.detail || (j.end_time && j.end_time[0]) || "Failed to assign class";
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      setMessage(`Class assigned to ${j.teacher_name || "teacher"}`);
+      setForm((f) => ({ ...f, subject_name: "", room: "" }));
+      await load(teacherFilter);
+    } catch (e: any) {
+      setError(e.message || "Failed to assign class");
+    }
+    setBusy(false);
+  };
+
+  const removeSlot = async (id: number) => {
+    if (!confirm("Remove this class slot from the teacher timetable?")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/hod/timetable/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || "Failed to delete");
+      }
+      setMessage("Class slot removed");
+      await load(teacherFilter);
+    } catch (e: any) {
+      setError(e.message || "Failed to delete");
+    }
+    setBusy(false);
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading class timetable…</div>;
+
+  return (
+    <div>
+      <PageHeader
+        title="Class Timetable"
+        subtitle={department ? `Assign weekly classes to faculty • ${department}` : "Assign weekly classes to faculty"}
+      />
+
+      {(message || error) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {error || message}
+        </div>
+      )}
+
+      <Card className="p-5 mb-6">
+        <h3 className="font-semibold mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Assign Class Slot</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Teacher</label>
+            <Select
+              value={form.teacher_id}
+              onChange={(e) => {
+                const tid = e.target.value;
+                const t = teachers.find((x) => String(x.id) === tid);
+                setForm({
+                  ...form,
+                  teacher_id: tid,
+                  subject_code: (t?.assigned_subjects || [])[0] || form.subject_code,
+                });
+              }}
+            >
+              <option value="">Select teacher</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>{t.name} ({t.emp_id})</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Subject</label>
+            {subjectOptions.length ? (
+              <Select value={form.subject_code} onChange={(e) => setForm({ ...form, subject_code: e.target.value })}>
+                {subjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            ) : (
+              <TextInput value={form.subject_code} onChange={(e) => setForm({ ...form, subject_code: e.target.value })} placeholder="e.g. CS301" />
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Subject Name</label>
+            <TextInput value={form.subject_name} onChange={(e) => setForm({ ...form, subject_name: e.target.value })} placeholder="Optional" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Day</label>
+            <Select value={String(form.day_of_week)} onChange={(e) => setForm({ ...form, day_of_week: +e.target.value })}>
+              {DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Start</label>
+            <TextInput type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">End</label>
+            <TextInput type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Room</label>
+            <TextInput value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="e.g. Lab-2" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Semester / Section</label>
+            <div className="flex gap-2">
+              <TextInput type="number" min={1} max={8} value={form.semester} onChange={(e) => setForm({ ...form, semester: +e.target.value })} />
+              <TextInput value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="A" />
+            </div>
+          </div>
+        </div>
+        <Button variant="primary" className="mt-4" onClick={addSlot} disabled={busy || !teachers.length}>
+          <Save className="w-4 h-4" /> {busy ? "Saving…" : "Assign Class"}
+        </Button>
+      </Card>
+
+      <Card className="p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm font-medium text-slate-600 dark:text-slate-300">Filter by teacher</label>
+          <Select
+            value={teacherFilter}
+            onChange={(e) => { setTeacherFilter(e.target.value); load(e.target.value); }}
+            className="min-w-[220px]"
+          >
+            <option value="all">All teachers</option>
+            {teachers.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </Select>
+          <p className="text-xs text-slate-500">{`${filteredSlots.length} class slot${filteredSlots.length === 1 ? "" : "s"}`}</p>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {byDay.map(({ day, name, slots: daySlots }) => (
+          <Card key={day} className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">{name}</h3>
+              <Badge variant="indigo">{`${daySlots.length}`}</Badge>
+            </div>
+            <div className="space-y-2">
+              {daySlots.map((s) => (
+                <div key={s.id} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-indigo-600 dark:text-indigo-400">{s.subject_code}</p>
+                      <p className="text-xs text-slate-500">{s.subject_name}</p>
+                      <p className="text-sm font-medium mt-1">{s.teacher_name}</p>
+                      <p className="text-sm mt-0.5">{s.start_time} – {s.end_time}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {s.room || "Room TBA"} · Sem {s.semester} · Sec {s.section}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeSlot(s.id)}
+                      className="p-1.5 rounded-md text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {daySlots.length === 0 && <p className="text-sm text-slate-500 py-6 text-center">No classes</p>}
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

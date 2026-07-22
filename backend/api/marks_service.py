@@ -72,6 +72,21 @@ def get_student_subject_performance(student):
         if code and code not in codes:
             codes.append(code)
 
+    # Include all exam subjects for this student's department + semester
+    exam_qs = Exam.objects.filter(
+        department=student.department,
+        semester=student.semester,
+        is_deleted=False,
+    )
+    for exam in exam_qs:
+        code = normalize_subject_code(exam.subject_code)
+        if code and code not in codes:
+            codes.append(code)
+        for sub in ExamSubject.objects.filter(exam=exam).values_list('subject_code', flat=True):
+            sc = normalize_subject_code(sub)
+            if sc and sc not in codes:
+                codes.append(sc)
+
     names = _subject_name_map(codes)
     codes.sort()
 
@@ -90,6 +105,7 @@ def get_student_subject_performance(student):
             'assignment_marks': float(mark.assignment_score) if mark else 0.0,
             'attendance': attendance_pct,
             'has_marks': mark is not None,
+            'has_attendance': total > 0,
         })
     return rows
 

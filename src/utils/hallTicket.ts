@@ -76,6 +76,7 @@ function subjectsBlockHtml(
   const rows = subjects.map((s, idx) => {
     const code = s.subject_code || s.subjectCode || "";
     const name = s.subject_name || s.subjectName || "";
+    const backlogTag = (s as any).is_backlog || (s as any).isBacklog ? ' <span class="bl">Backlog</span>' : "";
     const date = s.exam_date || s.date || "";
     const time = s.exam_time || s.time || "";
     const duration = s.duration || "";
@@ -85,7 +86,7 @@ function subjectsBlockHtml(
       <tr>
         <td class="num">${idx + 1}</td>
         <td class="code">${esc(code)}</td>
-        <td class="name">${esc(name)}</td>
+        <td class="name">${esc(name)}${backlogTag}</td>
         <td>${esc(date)}</td>
         <td>${esc(time)}</td>
         <td>${esc(duration || "—")}</td>
@@ -113,6 +114,32 @@ function subjectsBlockHtml(
     </div>`;
 }
 
+function logoHtml(universityName: string, collegeLogoUrl?: string) {
+  const logo = universityInitials(universityName);
+  if (collegeLogoUrl?.trim()) {
+    return `<img class="logo-img" src="${esc(collegeLogoUrl.trim())}" alt="College logo"/>`;
+  }
+  return `<div class="logo">${esc(logo)}</div>`;
+}
+
+function signaturesHtml() {
+  return `
+    <div class="sigs">
+      <div class="sig">
+        <div class="sig-line"></div>
+        <p>Student Signature</p>
+      </div>
+      <div class="sig">
+        <div class="sig-line"></div>
+        <p>Invigilator Signature</p>
+      </div>
+      <div class="sig">
+        <div class="sig-line"></div>
+        <p>Principal Signature</p>
+      </div>
+    </div>`;
+}
+
 const SHARED_STYLES = `
 body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;background:#f8fafc;color:#0f172a;margin:0}
 .card{border:2px solid #2563eb;border-radius:14px;overflow:hidden;max-width:920px;margin:0 auto;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08)}
@@ -120,6 +147,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;backgr
 .header h1{font-size:22px;margin:0;line-height:1.2}
 .header p{margin:6px 0 0;opacity:.92;font-size:13px;line-height:1.4}
 .logo{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+.logo-img{width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;padding:4px;flex-shrink:0}
 .body{padding:20px}
 .title{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px}
 .title small{display:block;text-transform:uppercase;letter-spacing:2px;color:#64748b;font-size:10px;font-weight:600}
@@ -140,8 +168,13 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;backgr
 .subj-table .num{width:28px;text-align:center;color:#64748b;white-space:nowrap}
 .subj-table .code{white-space:nowrap;font-weight:700;color:#4338ca;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .subj-table .name{font-weight:600;color:#0f172a}
+.subj-table .bl{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#b91c1c;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;vertical-align:middle}
 .subj-table .seat{font-weight:700;color:#1d4ed8;text-align:center;white-space:nowrap}
 .photo{width:112px;height:112px;object-fit:cover;border-radius:8px;border:1px solid #c7d2fe;background:#f1f5f9;flex-shrink:0}
+.sigs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0}
+.sig{text-align:center}
+.sig-line{height:40px;border-bottom:1px solid #94a3b8;margin-bottom:6px}
+.sig p{margin:0;font-size:11px;font-weight:600;color:#475569}
 .footer{margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;font-size:11px;color:#475569}
 .footer .meta{display:flex;flex-direction:column;gap:4px}
 .footer .meta strong{color:#0f172a;font-size:12px}
@@ -149,7 +182,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;backgr
 .qr-box img{width:88px;height:88px;display:block}
 .qr-box p{margin:4px 0 0;font-size:9px;color:#475569;font-weight:600;line-height:1.2}
 @media print{@page{margin:10mm}body{padding:0;background:#fff}.card{box-shadow:none;max-width:none}.subj-table th,.subj-table td{padding:5px 6px}}
-@media (max-width:700px){.top{flex-direction:column;align-items:center}.info{grid-template-columns:1fr}.subj-table{font-size:11px}.footer{flex-direction:column;align-items:center;text-align:center}}
+@media (max-width:700px){.top{flex-direction:column;align-items:center}.info{grid-template-columns:1fr}.subj-table{font-size:11px}.footer{flex-direction:column;align-items:center;text-align:center}.sigs{grid-template-columns:1fr}}
 `;
 
 export const DEFAULT_HALL_TICKET_EXAM = {
@@ -172,10 +205,11 @@ export function downloadHallTicket(
   qrContent?: string,
   subjects?: HallTicketSubject[],
   examOverride?: Partial<HallTicketExam>,
+  collegeLogoUrl?: string,
 ) {
   const exam = { ...DEFAULT_HALL_TICKET_EXAM, room, ...examOverride };
   const seat = seatNumber || `S${100 + parseInt(student.id.replace(/\D/g, ""), 10)}`;
-  openHallTicketPrintWindow(student, hallTicketNo, universityName, academicYear, exam, seat, qrContent, subjects);
+  openHallTicketPrintWindow(student, hallTicketNo, universityName, academicYear, exam, seat, qrContent, subjects, collegeLogoUrl);
 }
 
 export function openHallTicketPrintWindow(
@@ -187,6 +221,7 @@ export function openHallTicketPrintWindow(
   seat: string,
   qrContent?: string,
   subjects?: HallTicketSubject[],
+  collegeLogoUrl?: string,
 ) {
   const qrValue = qrContent?.trim();
   const qrDataUrl = qrValue
@@ -194,7 +229,6 @@ export function openHallTicketPrintWindow(
     : "";
   const examTitle = (exam.title || exam.subjectName || "Examination").trim();
   const subtitle = examHeaderSubtitle(academicYear, examTitle);
-  const logo = universityInitials(universityName);
   const resolved = resolveSubjects(subjects, exam, exam.room, seat);
 
   const html = `<!DOCTYPE html><html><head><title>Hall Ticket ${esc(hallTicketNo)}</title>
@@ -205,7 +239,7 @@ export function openHallTicketPrintWindow(
       <h1>${esc(universityName)}</h1>
       <p>${esc(subtitle)}</p>
     </div>
-    <div class="logo">${esc(logo)}</div>
+    ${logoHtml(universityName, collegeLogoUrl)}
   </div>
   <div class="body">
     <div class="title">
@@ -227,10 +261,11 @@ export function openHallTicketPrintWindow(
     </div>
     <p class="section-label">Examination Subjects</p>
     ${subjectsBlockHtml(resolved, exam.room, seat)}
+    ${signaturesHtml()}
     <div class="footer">
       <div class="meta">
         <span>Issued: ${new Date().toLocaleDateString()}</span>
-        <strong>Controller of Examinations (Digitally Signed)</strong>
+        <strong>Controller of Examinations</strong>
       </div>
       <div class="qr-box">${qrDataUrl
         ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`
@@ -267,6 +302,7 @@ export function buildSimpleHallTicketHtml(
   examTitle?: string,
   semester?: number | string,
   photo?: string,
+  collegeLogoUrl?: string,
 ) {
   const title = (examTitle || examName || "").trim() || "Examination";
   const exam: HallTicketExam = {
@@ -283,7 +319,6 @@ export function buildSimpleHallTicketHtml(
     ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`
     : "";
   const subtitle = examHeaderSubtitle(academicYear, title);
-  const logo = universityInitials(universityName);
   const resolved = resolveSubjects(subjects, exam, room, seat);
 
   return `<!DOCTYPE html><html><head><title>Hall Ticket ${esc(hallTicketNo)}</title>
@@ -294,7 +329,7 @@ export function buildSimpleHallTicketHtml(
       <h1>${esc(universityName)}</h1>
       <p>${esc(subtitle)}</p>
     </div>
-    <div class="logo">${esc(logo)}</div>
+    ${logoHtml(universityName, collegeLogoUrl)}
   </div>
   <div class="body">
     <div class="title">
@@ -316,10 +351,11 @@ export function buildSimpleHallTicketHtml(
     </div>
     <p class="section-label">Examination Subjects</p>
     ${subjectsBlockHtml(resolved, room, seat)}
+    ${signaturesHtml()}
     <div class="footer">
       <div class="meta">
         <span>Issued: ${new Date().toLocaleDateString()}</span>
-        <strong>Controller of Examinations (Digitally Signed)</strong>
+        <strong>Controller of Examinations</strong>
       </div>
       <div class="qr-box">${qrDataUrl
         ? `<img src="${qrDataUrl}" alt="QR"/><p>Scan to verify</p>`

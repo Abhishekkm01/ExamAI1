@@ -15,7 +15,7 @@ from .permissions import IsAdmin
 from .auth_utils import get_password_hash, verify_password
 from .photo_utils import save_profile_photo
 from .fee_service import (
-    admin_mark_fee_paid, approve_fee_payment, list_pending_payments, reject_fee_payment,
+    approve_fee_payment, list_pending_payments, reject_fee_payment,
 )
 from .attendance_service import refresh_student_eligibility, get_attendance_trends
 import sys
@@ -40,7 +40,6 @@ from .hall_ticket_service import (
     update_hall_ticket_subjects, refresh_hall_ticket_qr,
     detect_ticket_seat_conflicts, SeatConflictError,
 )
-from .marks_service import update_student_marks
 
 
 @api_view(['GET'])
@@ -121,6 +120,8 @@ def list_students(request):
             'semester': s.semester,
             'section': s.section,
             'mobile': s.mobile,
+            'gender': s.gender or '',
+            'date_of_birth': s.date_of_birth,
             'photo': s.photo,
             'attendance': s.attendance_percentage,
             'internal_marks': s.internal_marks,
@@ -129,6 +130,9 @@ def list_students(request):
             'backlogs': s.backlogs,
             'fee_paid': s.fee_paid,
             'fee_amount': s.fee_amount,
+            'exam_fee_paid': s.exam_fee_paid,
+            'college_fee_amount': s.college_fee_amount,
+            'college_fee_paid': s.college_fee_paid,
             'fee_due_date': s.fee_due_date,
             'is_eligible': s.is_eligible,
             'eligibility_percentage': s.eligibility_percentage,
@@ -163,6 +167,8 @@ def get_student(request, sid):
         'semester': s.semester,
         'section': s.section,
         'mobile': s.mobile,
+        'gender': s.gender or '',
+        'date_of_birth': s.date_of_birth,
         'photo': s.photo,
         'attendance': s.attendance_percentage,
         'internal_marks': s.internal_marks,
@@ -171,6 +177,9 @@ def get_student(request, sid):
         'backlogs': s.backlogs,
         'fee_paid': s.fee_paid,
         'fee_amount': s.fee_amount,
+        'exam_fee_paid': s.exam_fee_paid,
+        'college_fee_amount': s.college_fee_amount,
+        'college_fee_paid': s.college_fee_paid,
         'fee_due_date': s.fee_due_date,
         'is_eligible': s.is_eligible,
         'eligibility_percentage': s.eligibility_percentage,
@@ -182,11 +191,12 @@ def get_student(request, sid):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def create_student(request):
-    """Create a new student"""
+    """Create a new student (identity fields only; marks/attendance come from teachers)."""
     serializer = StudentCreateSerializer(data=request.data)
     if serializer.is_valid():
         data = serializer.validated_data
-        
+        from .settings_service import get_default_exam_fee
+
         with transaction.atomic():
             user = User.objects.create(
                 email=data['email'],
@@ -195,39 +205,46 @@ def create_student(request):
                 role=RoleEnum.STUDENT,
                 avatar=data.get('photo') or f"https://api.dicebear.com/7.x/avataaars/svg?seed={data['roll_no']}",
             )
-            
-            ai = eligibility_ai.predict_eligibility(
-                data['attendance_percentage'],
-                data['internal_marks'],
-                data['previous_result'],
-                data['backlogs'],
-            )
-            
+
+            ai = eligibility_ai.predict_eligibility(0, 0, 0, 0)
+            from .settings_service import get_default_exam_fee, get_default_college_fee
+            fee_amount = data.get('fee_amount')
+            if fee_amount is None:
+                fee_amount = get_default_exam_fee()
+            college_fee = data.get('college_fee_amount')
+            if college_fee is None:
+                college_fee = get_default_college_fee()
+
             student = Student.objects.create(
                 user=user,
                 roll_no=data['roll_no'],
                 mobile=data.get('mobile'),
+                gender=data.get('gender') or '',
+                date_of_birth=data.get('date_of_birth') or None,
                 department=data['department'],
                 semester=data['semester'],
                 section=data.get('section', 'A'),
                 photo=user.avatar,
-                attendance_percentage=data['attendance_percentage'],
-                internal_marks=data['internal_marks'],
-                assignment_marks=data['assignment_marks'],
-                previous_result=data['previous_result'],
-                backlogs=data['backlogs'],
-                fee_paid=data['fee_paid'],
-                fee_amount=data['fee_amount'],
+                attendance_percentage=0,
+                internal_marks=0,
+                assignment_marks=0,
+                previous_result=0,
+                backlogs=0,
+                fee_paid=False,
+                fee_amount=fee_amount,
+                exam_fee_paid=False,
+                college_fee_amount=college_fee,
+                college_fee_paid=False,
                 fee_due_date=data.get('fee_due_date'),
                 is_eligible=False,
                 eligibility_percentage=0,
                 ai_risk_score=ai['risk_score'],
             )
             refresh_student_eligibility(student)
-        
-        return Response({'message': 'Student created', 'student_id': student.id}, 
+
+        return Response({'message': 'Student created', 'student_id': student.id},
                        status=status.HTTP_201_CREATED)
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -235,19 +252,25 @@ def create_student(request):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def update_student(request, sid):
-    """Update student"""
+    """Update student identity fields only (marks/attendance are teacher-managed)."""
     try:
         s = Student.objects.get(id=sid, is_deleted=False)
     except Student.DoesNotExist:
         return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-    
+
+    blocked = {'attendance_percentage', 'internal_marks', 'assignment_marks', 'previous_result', 'backlogs', 'subject_code'}
+    if any(k in request.data for k in blocked):
+        return Response(
+            {'detail': 'Internal marks and attendance can only be uploaded by teachers.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     serializer = StudentUpdateSerializer(data=request.data, partial=True)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     user = s.user
-    subject_code = request.data.get('subject_code', 'CS301')
 
     if 'email' in data and User.objects.filter(
         email=data['email'], is_deleted=False
@@ -271,22 +294,11 @@ def update_student(request, sid):
         user.save()
 
     for field, value in data.items():
-        if field in ('mobile', 'photo', 'fee_due_date') and value in (None, ''):
-            value = None
+        if field in ('mobile', 'photo', 'fee_due_date', 'date_of_birth', 'gender') and value in (None, ''):
+            value = None if field != 'gender' else ''
         setattr(s, field, value)
-
-    if 'internal_marks' in data or 'assignment_marks' in data:
-        try:
-            update_student_marks(
-                s,
-                subject_code,
-                internal_marks=data.get('internal_marks', s.internal_marks),
-                assignment_marks=data.get('assignment_marks', s.assignment_marks),
-            )
-        except ValueError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    else:
-        refresh_student_eligibility(s)
+    s.save()
+    refresh_student_eligibility(s)
 
     return Response({
         'message': 'Updated',
@@ -296,6 +308,9 @@ def update_student(request, sid):
         'roll_no': s.roll_no,
         'department': s.department,
         'semester': s.semester,
+        'gender': s.gender or '',
+        'date_of_birth': s.date_of_birth,
+        'mobile': s.mobile,
         'internal_marks': s.internal_marks,
         'assignment_marks': s.assignment_marks,
         'is_eligible': s.is_eligible,
@@ -703,79 +718,11 @@ def generate_halltickets(request):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def update_hallticket(request, ht_id):
-    """Admin: update seat/hall per subject on a hall ticket."""
-    try:
-        ht = HallTicket.objects.select_related('student', 'exam').get(
-            id=ht_id, is_active=True, exam__is_deleted=False,
-        )
-    except HallTicket.DoesNotExist:
-        return Response({'detail': 'Hall ticket not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    serializer = HallTicketUpdateSerializer(data=request.data, partial=True)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    data = serializer.validated_data
-    exam = resolve_hall_ticket_exam(ht.student, ht)
-    if not exam:
-        return Response({'detail': 'No active exam found for this hall ticket'}, status=status.HTTP_400_BAD_REQUEST)
-
-    auto_resolve = data.get('auto_resolve_seats', False)
-    resolved = []
-    try:
-        if 'subjects' in data and data['subjects']:
-            subjects, resolved = update_hall_ticket_subjects(
-                ht, exam, data['subjects'], auto_resolve=auto_resolve,
-            )
-        else:
-            if 'seat_number' in data:
-                ht.seat_number = data['seat_number']
-            if 'room' in data:
-                ht.room = data['room']
-            ht.save()
-            subjects = sync_hall_ticket_subjects(ht, exam, ht.seat_number, ht.room)
-    except SeatConflictError as e:
-        return Response({
-            'detail': str(e),
-            'conflicts': e.conflicts,
-        }, status=status.HTTP_400_BAD_REQUEST)
-    except ValueError as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    refresh_hall_ticket_qr(ht, exam, ht.student)
-
-    primary = subjects[0] if subjects else {
-        'seat_number': ht.seat_number,
-        'room': ht.room,
-    }
-    try:
-        SeatingArrangementService.sync_from_hall_ticket_seat(
-            ht.student,
-            exam,
-            primary.get('seat_number') or ht.seat_number,
-            primary.get('room') or ht.room,
-        )
-    except ValueError as e:
-        return Response({
-            'detail': str(e),
-            'subjects': subjects,
-            'hall_ticket_saved': True,
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    msg = 'Hall ticket updated'
-    if resolved:
-        msg = f"Hall ticket updated — {len(resolved)} seat conflict(s) auto-assigned to available seats"
-
-    return Response({
-        'id': ht.id,
-        'hall_ticket_no': ht.hall_ticket_no,
-        'seat_number': ht.seat_number,
-        'room': ht.room,
-        'subjects': subjects,
-        'qr_code_content': ht.qr_code_content,
-        'resolved_conflicts': resolved,
-        'message': msg,
-    })
+    """Seat/hall edits disabled — seating is AI-assigned only."""
+    return Response(
+        {'detail': 'Seat allotment is system-assigned only. Use Seating Arrangement → AI Auto Arrange, then sync hall tickets.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @api_view(['GET'])
@@ -839,54 +786,232 @@ def list_halltickets(request):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def backlogs(request):
-    """List students with backlogs"""
-    students = Student.objects.filter(backlogs__gt=0, is_deleted=False).select_related('user')
+    """List students with backlog subjects (for hall ticket inclusion)."""
+    from .backlog_service import list_student_backlogs, active_backlogs_for_student
+
+    students = Student.objects.filter(is_deleted=False).select_related('user').prefetch_related('backlog_subjects')
     data = []
     for s in students:
+        active = active_backlogs_for_student(s)
+        if not active and s.backlogs <= 0:
+            continue
         data.append({
             'id': s.id,
             'name': s.user.name,
             'roll_no': s.roll_no,
             'department': s.department,
-            'backlogs': s.backlogs,
+            'semester': s.semester,
+            'backlogs': len(active) or s.backlogs,
             'attendance': s.attendance_percentage,
-            'is_eligible': s.is_eligible
+            'is_eligible': s.is_eligible,
+            'photo': s.photo,
+            'backlog_subjects': list_student_backlogs(s),
         })
     return Response(data)
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def student_backlogs(request, sid):
+    """List or add backlog subjects for a student (appear on hall ticket)."""
+    from .backlog_service import list_student_backlogs, upsert_backlog, sync_student_backlog_count
+
+    try:
+        s = Student.objects.get(id=sid, is_deleted=False)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        sync_student_backlog_count(s)
+        return Response({
+            'student_id': s.id,
+            'backlogs': s.backlogs,
+            'subjects': list_student_backlogs(s),
+        })
+
+    row, error = upsert_backlog(s, request.data or {})
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        'message': 'Backlog subject recorded. Student must apply and pay before it appears on the hall ticket.',
+        'backlogs': s.backlogs,
+        'subject': {
+            'id': row.id,
+            'subject_code': row.subject_code,
+            'subject_name': row.subject_name,
+            'from_semester': row.from_semester,
+            'exam_date': row.exam_date,
+            'exam_time': row.exam_time,
+            'duration': row.duration,
+            'status': row.status,
+            'is_cleared': row.is_cleared,
+        },
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def student_backlog_detail(request, sid, backlog_id):
+    """Clear or delete a backlog subject."""
+    from .backlog_service import clear_backlog, delete_backlog, list_student_backlogs
+
+    try:
+        s = Student.objects.get(id=sid, is_deleted=False)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        error = delete_backlog(s, backlog_id)
+        if error:
+            return Response({'detail': error}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'message': 'Backlog subject removed', 'backlogs': s.backlogs, 'subjects': list_student_backlogs(s)})
+
+    cleared = request.data.get('is_cleared', True)
+    row, error = clear_backlog(s, backlog_id, cleared=bool(cleared))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_404_NOT_FOUND)
+    return Response({
+        'message': 'Backlog updated',
+        'backlogs': s.backlogs,
+        'subjects': list_student_backlogs(s),
+    })
 
 
 @api_view(['GET'])
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def fees(request):
-    """Fee status report"""
-    students = Student.objects.filter(is_deleted=False)
-    paid = [s for s in students if s.fee_paid]
-    unpaid = [s for s in students if not s.fee_paid]
-    
+    """Fee status report for college + per-exam fees."""
+    from .settings_service import get_default_exam_fee, get_default_college_fee, get_default_backlog_fee
+    from .fee_service import exam_fee_rows, sync_overall_fee_paid
+
+    students = list(Student.objects.filter(is_deleted=False).select_related('user'))
     unpaid_data = []
-    for s in unpaid:
+    total_collected = 0.0
+    total_due = 0.0
+    paid_count = 0
+
+    for s in students:
+        sync_overall_fee_paid(s)
+        s.refresh_from_db()
+        rows = exam_fee_rows(s)
+        unpaid_exams = [r for r in rows if not r['paid']]
+        college_due = 0.0 if s.college_fee_paid else float(s.college_fee_amount or 0)
+        exam_due = sum(float(r['fee_amount'] or 0) for r in unpaid_exams)
+        college_collected = float(s.college_fee_amount or 0) if s.college_fee_paid else 0.0
+        exam_collected = sum(float(r['fee_amount'] or 0) for r in rows if r['paid'])
+        total_collected += college_collected + exam_collected
+        total_due += college_due + exam_due
+
+        if s.fee_paid:
+            paid_count += 1
+            continue
+        if college_due <= 0 and exam_due <= 0:
+            continue
+
         unpaid_data.append({
             'id': s.id,
             'name': s.user.name,
             'roll_no': s.roll_no,
-            'amount': s.fee_amount,
+            'department': s.department,
+            'semester': s.semester,
+            'amount': college_due + exam_due,
+            'exam_fee_amount': exam_due,
+            'exam_fee_paid': len(unpaid_exams) == 0,
+            'college_fee_amount': s.college_fee_amount,
+            'college_fee_paid': s.college_fee_paid,
+            'unpaid_exams': unpaid_exams,
             'due_date': s.fee_due_date,
-            'photo': s.photo
+            'photo': s.photo,
         })
-    
+
     pending = list_pending_payments()
 
     return Response({
-        'total_collected': sum(s.fee_amount for s in paid),
-        'total_due': sum(s.fee_amount for s in unpaid),
-        'paid_count': len(paid),
-        'unpaid_count': len(unpaid),
+        'total_collected': total_collected,
+        'total_due': total_due,
+        'paid_count': paid_count,
+        'unpaid_count': len(unpaid_data),
+        'exam_unpaid_count': sum(1 for s in unpaid_data if not s['exam_fee_paid']),
+        'college_unpaid_count': sum(1 for s in unpaid_data if not s['college_fee_paid']),
         'unpaid_students': unpaid_data,
         'pending_verifications': pending,
         'pending_count': len(pending),
+        'default_exam_fee': get_default_exam_fee(),
+        'default_college_fee': get_default_college_fee(),
+        'default_backlog_fee': get_default_backlog_fee(),
     })
 
+
+@api_view(['PUT'])
+@authentication_classes([])
+@rf_permission_classes([IsAdmin])
+def set_exam_fee(request):
+    """Admin sets college and/or exam fee amounts."""
+    from .settings_service import get_system_settings, settings_to_dict
+
+    exam_amount = request.data.get('default_exam_fee', request.data.get('exam_fee'))
+    college_amount = request.data.get('default_college_fee', request.data.get('college_fee'))
+    apply_to_unpaid = bool(request.data.get('apply_to_unpaid', True))
+    fee_due_date = request.data.get('fee_due_date')
+
+    obj = get_system_settings()
+    updated_exam = 0
+    updated_college = 0
+    messages = []
+
+    if exam_amount is not None:
+        try:
+            exam_amount = float(exam_amount)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Valid exam fee amount is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if exam_amount < 0:
+            return Response({'detail': 'Exam fee cannot be negative'}, status=status.HTTP_400_BAD_REQUEST)
+        obj.default_exam_fee = exam_amount
+        messages.append(f'Exam fee ₹{exam_amount:,.0f}')
+        if apply_to_unpaid:
+            updated_exam = Student.objects.filter(is_deleted=False, exam_fee_paid=False).update(fee_amount=exam_amount)
+
+    if college_amount is not None:
+        try:
+            college_amount = float(college_amount)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Valid college fee amount is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if college_amount < 0:
+            return Response({'detail': 'College fee cannot be negative'}, status=status.HTTP_400_BAD_REQUEST)
+        obj.default_college_fee = college_amount
+        messages.append(f'College fee ₹{college_amount:,.0f}')
+        if apply_to_unpaid:
+            updated_college = Student.objects.filter(is_deleted=False, college_fee_paid=False).update(
+                college_fee_amount=college_amount
+            )
+
+    if not messages:
+        return Response(
+            {'detail': 'Provide default_exam_fee and/or default_college_fee'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if fee_due_date is not None:
+        Student.objects.filter(is_deleted=False, fee_paid=False).update(fee_due_date=fee_due_date or None)
+
+    obj.save()
+    payload = settings_to_dict(obj)
+    payload['fee_updated_students'] = updated_exam + updated_college
+    payload['exam_updated'] = updated_exam
+    payload['college_updated'] = updated_college
+    applied = []
+    if updated_exam:
+        applied.append(f'{updated_exam} exam unpaid')
+    if updated_college:
+        applied.append(f'{updated_college} college unpaid')
+    payload['message'] = (
+        'Set ' + ' + '.join(messages)
+        + (f' (applied to {", ".join(applied)})' if applied else '')
+    )
+    return Response(payload)
 
 @api_view(['PUT'])
 @authentication_classes([])
@@ -938,18 +1063,16 @@ def reject_fee_payment_view(request, payment_id):
 @authentication_classes([])
 @rf_permission_classes([IsAdmin])
 def mark_fee_paid(request, sid):
-    """Mark fee as paid for a student"""
-    user = getattr(request, '_jwt_user', request.user)
-    try:
-        s = Student.objects.get(id=sid)
-    except Student.DoesNotExist:
-        return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    payment, error = admin_mark_fee_paid(s, user)
-    if error:
-        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
-
-    return Response({'message': 'Fee marked as paid'})
+    """Admin cannot mark fees paid directly — students must initiate payment first."""
+    return Response(
+        {
+            'detail': (
+                'Admin cannot mark fees as paid. The student must submit a payment '
+                'from their Payments page; then approve it under Pending Verifications.'
+            ),
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 @api_view(['POST'])
@@ -1177,7 +1300,8 @@ def update_settings(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
-    if not data:
+    apply_fee = data.pop('apply_fee_to_unpaid', False)
+    if not data and not apply_fee:
         return Response({'detail': 'No settings provided'}, status=status.HTTP_400_BAD_REQUEST)
 
     obj = get_system_settings()
@@ -1188,6 +1312,15 @@ def update_settings(request):
         setattr(obj, field, value)
     obj.save()
 
+    fee_updated = 0
+    if apply_fee:
+        exam_val = float(obj.default_exam_fee or 45000)
+        college_val = float(getattr(obj, 'default_college_fee', None) or 25000)
+        fee_updated += Student.objects.filter(is_deleted=False, exam_fee_paid=False).update(fee_amount=exam_val)
+        fee_updated += Student.objects.filter(is_deleted=False, college_fee_paid=False).update(
+            college_fee_amount=college_val
+        )
+
     recalculated = 0
     if ai_changed:
         recalculated = refresh_all_eligibility()
@@ -1195,6 +1328,8 @@ def update_settings(request):
     payload = settings_to_dict(obj)
     if recalculated:
         payload['recalculated_students'] = recalculated
+    if fee_updated:
+        payload['fee_updated_students'] = fee_updated
     return Response(payload)
 
 

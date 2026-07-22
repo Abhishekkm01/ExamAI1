@@ -167,7 +167,7 @@ export function AdminStudents() {
           onClose={() => setEditing(null)}
           onSave={async (s, opts) => {
             if (s.id) {
-              // Edit — call PUT
+              // Edit — call PUT (identity fields only)
               try {
                 const sid = parseInt(s.id.replace("s", ""));
                 const payload: Record<string, unknown> = {
@@ -175,18 +175,10 @@ export function AdminStudents() {
                   email: s.email,
                   roll_no: s.rollNo,
                   mobile: s.mobile || "",
+                  gender: s.gender || "",
+                  date_of_birth: s.dateOfBirth || "",
                   department: s.department,
                   semester: s.semester,
-                  section: s.section,
-                  photo: s.photo || "",
-                  attendance_percentage: s.attendance,
-                  internal_marks: s.internalMarks,
-                  assignment_marks: s.assignmentMarks,
-                  previous_result: s.previousResult,
-                  backlogs: s.backlogs,
-                  fee_paid: s.feePaid,
-                  fee_amount: s.feeAmount,
-                  fee_due_date: s.feeDueDate || "",
                 };
                 if (opts?.password) payload.password = opts.password;
                 await api.adminUpdateStudent(Number(sid), payload);
@@ -196,15 +188,18 @@ export function AdminStudents() {
                 return;
               }
             } else {
-              // Create — call setup-student API
+              // Create — call setup-student API (identity fields; fee uses backend default)
               try {
                 const result = await apiAddStudent({
-                  email: s.email, name: s.name, password: opts?.password || "student123",
-                  roll_no: s.rollNo, mobile: s.mobile, department: s.department,
-                  semester: s.semester, section: s.section, photo: s.photo,
-                  attendance_percentage: s.attendance, internal_marks: s.internalMarks,
-                  assignment_marks: s.assignmentMarks, previous_result: s.previousResult,
-                  backlogs: s.backlogs, fee_paid: s.feePaid, fee_amount: s.feeAmount, fee_due_date: s.feeDueDate,
+                  email: s.email,
+                  name: s.name,
+                  password: opts?.password || "student123",
+                  roll_no: s.rollNo,
+                  mobile: s.mobile || "",
+                  gender: s.gender || "",
+                  date_of_birth: s.dateOfBirth || "",
+                  department: s.department,
+                  semester: s.semester,
                 }) as { student_id: number };
                 const newS: Student = { ...s, id: `s${result.student_id}` };
                 setList((l) => [newS, ...l]);
@@ -225,9 +220,9 @@ export function AdminStudents() {
 function StudentModal({ student, onClose, onSave }: { student: Student | null; onClose: () => void; onSave: (s: Student, opts?: { password?: string }) => void }) {
   const { departments, loading: deptsLoading } = useDepartments();
   const [form, setForm] = useState<Student>(student || {
-    id: "", rollNo: "", name: "", email: "", mobile: "", department: "",
-    semester: 5, section: "A", photo: "", attendance: 75, internalMarks: 30, assignmentMarks: 7,
-    previousResult: 7.0, backlogs: 0, feePaid: false, feeAmount: 45000, feeDueDate: "2026-09-30", createdAt: new Date().toISOString().slice(0, 10),
+    id: "", rollNo: "", name: "", email: "", mobile: "", gender: "", dateOfBirth: "", department: "",
+    semester: 5, section: "A", photo: "", attendance: 0, internalMarks: 0, assignmentMarks: 0,
+    previousResult: 0, backlogs: 0, feePaid: false, feeAmount: 45000, feeDueDate: "", createdAt: new Date().toISOString().slice(0, 10),
   });
   const [password, setPassword] = useState("");
   const update = (k: keyof Student, v: any) => setForm({ ...form, [k]: v } as Student);
@@ -245,13 +240,24 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
       </div>
       <div className="p-6 grid grid-cols-2 gap-4">
-        <Field label="Roll No"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
+        <Field label="Roll No (USN)"><TextInput value={form.rollNo} onChange={(e) => update("rollNo", e.target.value)} /></Field>
         <Field label="Name"><TextInput value={form.name} onChange={(e) => update("name", e.target.value)} /></Field>
         <Field label="Email"><TextInput type="email" value={form.email} onChange={(e) => update("email", e.target.value)} /></Field>
         <Field label={student?.id ? "New Password (optional)" : "Password"}>
           <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={student?.id ? "Leave blank to keep current" : "Student login password (min 6 chars)"} />
         </Field>
-        <Field label="Mobile"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} /></Field>
+        <Field label="Mobile *"><TextInput value={form.mobile} onChange={(e) => update("mobile", e.target.value)} required /></Field>
+        <Field label="Gender">
+          <Select value={form.gender || ""} onChange={(e) => update("gender", e.target.value)}>
+            <option value="">Select gender</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </Select>
+        </Field>
+        <Field label="Date of Birth">
+          <TextInput type="date" value={form.dateOfBirth || ""} onChange={(e) => update("dateOfBirth", e.target.value)} />
+        </Field>
         <Field label="Department">
           <DepartmentSelect
             value={form.department}
@@ -261,23 +267,14 @@ function StudentModal({ student, onClose, onSave }: { student: Student | null; o
           />
         </Field>
         <Field label="Semester"><TextInput type="number" value={form.semester} onChange={(e) => update("semester", +e.target.value)} /></Field>
-        <Field label="Section"><TextInput value={form.section} onChange={(e) => update("section", e.target.value)} /></Field>
-        <Field label="Attendance %"><TextInput type="number" value={form.attendance} onChange={(e) => update("attendance", +e.target.value)} /></Field>
-        <Field label={`Internal Marks /${INTERNAL_MARKS_MAX}`}><TextInput type="number" min={0} max={INTERNAL_MARKS_MAX} value={form.internalMarks} onChange={(e) => update("internalMarks", +e.target.value)} /></Field>
-        <Field label={`Assignment Marks /${ASSIGNMENT_MARKS_MAX}`}><TextInput type="number" min={0} max={ASSIGNMENT_MARKS_MAX} value={form.assignmentMarks} onChange={(e) => update("assignmentMarks", +e.target.value)} /></Field>
-        <Field label="Previous SGPA"><TextInput type="number" step="0.1" value={form.previousResult} onChange={(e) => update("previousResult", +e.target.value)} /></Field>
-        <Field label="Backlogs"><TextInput type="number" value={form.backlogs} onChange={(e) => update("backlogs", +e.target.value)} /></Field>
-        <Field label="Fee Paid">
-          <Select value={form.feePaid ? "yes" : "no"} onChange={(e) => update("feePaid", e.target.value === "yes")}>
-            <option value="yes">Yes</option><option value="no">No</option>
-          </Select>
-        </Field>
-        <Field label="Fee Amount"><TextInput type="number" value={form.feeAmount} onChange={(e) => update("feeAmount", +e.target.value)} /></Field>
-        <Field label="Photo URL"><TextInput value={form.photo} onChange={(e) => update("photo", e.target.value)} placeholder="https://..." /></Field>
       </div>
       <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button onClick={() => {
+          if (!form.mobile?.trim()) {
+            alert("Mobile is required");
+            return;
+          }
           if (!student?.id && password && password.length < 6) {
             alert("Password must be at least 6 characters");
             return;
@@ -319,6 +316,9 @@ function StudentDetailModal({ student, onClose }: { student: Student; onClose: (
     backlogs: detail.backlogs,
     feePaid: detail.fee_paid,
     feeAmount: detail.fee_amount,
+    examFeePaid: !!detail.exam_fee_paid,
+    collegeFeeAmount: detail.college_fee_amount ?? 0,
+    collegeFeePaid: !!detail.college_fee_paid,
     feeDueDate: detail.fee_due_date || "",
     createdAt: student.createdAt,
   } : student;
@@ -390,8 +390,8 @@ function StudentDetailModal({ student, onClose }: { student: Student; onClose: (
           <section>
             <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Wallet className="w-3.5 h-3.5" /> Fee Status</h5>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <Info label="Fee Paid" value={s.feePaid ? "Yes" : "No"} ok={s.feePaid} />
-              <Info label="Fee Amount" value={`₹${s.feeAmount?.toLocaleString?.() ?? s.feeAmount}`} />
+              <Info label="College Fee" value={`₹${(s.collegeFeeAmount ?? 0).toLocaleString()}${s.collegeFeePaid ? " (Paid)" : " (Due)"}`} ok={s.collegeFeePaid} />
+              <Info label="Exam Fee" value={`₹${s.feeAmount?.toLocaleString?.() ?? s.feeAmount}${s.examFeePaid ? " (Paid)" : " (Due)"}`} ok={s.examFeePaid} />
               <Info label="Due Date" value={s.feeDueDate || "—"} ok={s.feePaid} />
             </div>
           </section>
@@ -401,7 +401,7 @@ function StudentDetailModal({ student, onClose }: { student: Student; onClose: (
             <div className="space-y-2">
               <EligibilityRow label="Attendance ≥ 75%" ok={e.checks.attendance} detail={`${s.attendance}%`} />
               <EligibilityRow label="Internal marks ≥ 40%" ok={e.checks.internals} detail={`${internalPct}%`} />
-              <EligibilityRow label="Exam fee paid" ok={e.checks.fee} detail={s.feePaid ? "Paid" : "Pending"} />
+              <EligibilityRow label="College & exam fees paid" ok={e.checks.fee} detail={s.feePaid ? "Both paid" : "Pending"} />
             </div>
             {detail?.ai_risk_score != null && (
               <p className="text-xs text-slate-500 mt-3">AI risk score: <span className="font-semibold">{Math.round(detail.ai_risk_score)}</span> (lower is better)</p>
@@ -905,6 +905,7 @@ export function AdminExams() {
                   )}
                   <p className="text-xs text-slate-500 mt-1">
                     {e.department} • Sem {e.semester} • Room {e.room} • {papers.length} subject{papers.length === 1 ? "" : "s"}
+                    {e.feeAmount != null ? ` • Fee ₹${Number(e.feeAmount).toLocaleString()}` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -1000,6 +1001,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
     duration: exam?.duration || "3 hours",
     room: exam?.room || "",
     total_marks: exam?.totalMarks || 100,
+    fee_amount: exam?.feeAmount ?? 45000,
     requires_face_verification: exam?.requiresFaceVerification ?? true,
   });
   const [subjects, setSubjects] = useState(initialSubjects);
@@ -1113,6 +1115,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           duration: form.duration,
           room: form.room,
           totalMarks: form.total_marks,
+          feeAmount: form.fee_amount,
           requiresFaceVerification: form.requires_face_verification,
           invigilatorId: primaryInvigilator,
           invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === primaryInvigilator)?.name || null,
@@ -1132,6 +1135,7 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
           duration: form.duration,
           room: form.room,
           totalMarks: form.total_marks,
+          feeAmount: form.fee_amount,
           requiresFaceVerification: form.requires_face_verification,
           invigilatorId: primaryInvigilator,
           invigilatorName: teachers.find((t) => Number(t.id.replace(/^t/, "")) === primaryInvigilator)?.name || null,
@@ -1223,7 +1227,11 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
               )}
             </Field>
             <Field label="Total Marks"><TextInput type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: +e.target.value })} /></Field>
+            <Field label="Exam Fee (₹)">
+              <TextInput type="number" min={0} value={form.fee_amount} onChange={(e) => setForm({ ...form, fee_amount: +e.target.value })} />
+            </Field>
           </div>
+          <p className="text-xs text-slate-500 -mt-1">Students in this department &amp; semester must pay this fee for the examination.</p>
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input
               type="checkbox"
@@ -1245,34 +1253,15 @@ function ExamModal({ exam, onClose, onSaved }: { exam?: Exam; onClose: () => voi
 // ==================== INTERNAL MARKS ====================
 export function AdminMarks() {
   const [students, setStudents] = useState<Student[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [subjectCode, setSubjectCode] = useState("CS301");
-  const [marks, setMarks] = useState<Record<string, { internal: number; assignment: number }>>({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const maxTotal = INTERNAL_ASSIGNMENT_TOTAL;
 
   useEffect(() => {
-    Promise.all([fetchStudents(), fetchAdminExams()]).then(([s, e]) => {
+    fetchStudents().then((s) => {
       setStudents(s);
-      setExams(e);
-      const codes = e.flatMap((x) => (x.subjects?.length ? x.subjects.map((sub) => sub.subjectCode) : [x.subjectCode]));
-      if (codes.length && !codes.includes(subjectCode)) setSubjectCode(codes[0]);
-      setMarks(Object.fromEntries(s.map((x) => [
-        x.id,
-        { internal: x.internalMarks, assignment: x.assignmentMarks },
-      ])));
       setLoading(false);
     });
   }, []);
-
-  const subjectOptions = Array.from(new Set(
-    exams.flatMap((e) => (e.subjects?.length ? e.subjects.map((s) => s.subjectCode) : [e.subjectCode]))
-  ));
 
   const filtered = useMemo(
     () => students.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),
@@ -1280,67 +1269,22 @@ export function AdminMarks() {
   );
   const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
-  const saveMarks = async (student: Student) => {
-    const m = marks[student.id];
-    if (!m) return;
-    if (m.internal > INTERNAL_MARKS_MAX) {
-      setError(`Internal marks cannot exceed ${INTERNAL_MARKS_MAX}.`);
-      return;
-    }
-    if (m.assignment > ASSIGNMENT_MARKS_MAX) {
-      setError(`Assignment marks cannot exceed ${ASSIGNMENT_MARKS_MAX}.`);
-      return;
-    }
-    if (m.internal + m.assignment > maxTotal) {
-      setError(`Total marks (${m.internal + m.assignment}) cannot exceed ${INTERNAL_ASSIGNMENT_TOTAL} (internal ${INTERNAL_MARKS_MAX} + assignment ${ASSIGNMENT_MARKS_MAX}).`);
-      return;
-    }
-    setSavingId(student.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const sid = parseInt(student.id.replace(/^s/, ""), 10);
-      await api.adminUpdateStudent(sid, {
-        internal_marks: m.internal,
-        assignment_marks: m.assignment,
-        subject_code: subjectCode,
-      });
-      setMessage(`Marks updated for ${student.name}`);
-      setStudents((list) => list.map((s) => s.id === student.id ? {
-        ...s,
-        internalMarks: m.internal,
-        assignmentMarks: m.assignment,
-      } : s));
-    } catch (e: any) {
-      setError(e.message || "Failed to save marks");
-    }
-    setSavingId(null);
-  };
-
   if (loading) return <div className="p-10 text-center text-slate-500">Loading marks from MySQL…</div>;
   return (
     <div>
-      <PageHeader title="Internal Marks Management" subtitle="View and update internal marks for all students" />
+      <PageHeader title="Internal Marks Management" subtitle="View student internal marks and attendance aggregates" />
 
-      {(message || error) && (
-        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
-          {error || message}
-        </div>
-      )}
+      <Card className="p-4 mb-6 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+        <p className="text-sm text-amber-900 dark:text-amber-200">
+          Internal marks and attendance are uploaded by teachers only. Admin can view student aggregates below.
+        </p>
+      </Card>
 
       <Card className="p-5 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <TextInput placeholder="Search students..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-10" />
-          </div>
-          <Select value={subjectCode} onChange={(e) => { setSubjectCode(e.target.value); setPage(1); }} className="w-40">
-            {(subjectOptions.length ? subjectOptions : [subjectCode]).map((code) => (
-              <option key={code} value={code}>{code}</option>
-            ))}
-          </Select>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <TextInput placeholder="Search students..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-10" />
         </div>
-        <p className="text-xs text-slate-500 mt-2">Internal max: {INTERNAL_MARKS_MAX} • Assignment max: {ASSIGNMENT_MARKS_MAX} • Combined total: {INTERNAL_ASSIGNMENT_TOTAL}</p>
       </Card>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -1349,58 +1293,34 @@ export function AdminMarks() {
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
                 <th className="p-4 font-medium">Department</th>
+                <th className="p-4 font-medium">Attendance %</th>
                 <th className="p-4 font-medium">Internal /{INTERNAL_MARKS_MAX}</th>
                 <th className="p-4 font-medium">Assignment /{ASSIGNMENT_MARKS_MAX}</th>
-                <th className="p-4 font-medium">Total /{maxTotal}</th>
-                <th className="p-4 font-medium text-right">Actions</th>
+                <th className="p-4 font-medium">Total /{INTERNAL_ASSIGNMENT_TOTAL}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paged.map((s) => {
-                const m = marks[s.id] || { internal: s.internalMarks, assignment: s.assignmentMarks };
-                return (
-                  <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
-                        <div>
-                          <p className="font-medium text-slate-800 dark:text-white">{s.name}</p>
-                          <p className="text-xs text-slate-500">{s.rollNo}</p>
-                        </div>
+              {paged.map((s) => (
+                <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <img src={s.photo} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
+                      <div>
+                        <p className="font-medium text-slate-800 dark:text-white">{s.name}</p>
+                        <p className="text-xs text-slate-500">{s.rollNo}</p>
                       </div>
-                    </td>
-                    <td className="p-4 text-slate-600 dark:text-slate-300">{s.department}</td>
-                    <td className="p-4">
-                      <input
-                        type="number"
-                        min={0}
-                        max={INTERNAL_MARKS_MAX}
-                        step={0.5}
-                        value={m.internal}
-                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, internal: +e.target.value } })}
-                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                      />
-                    </td>
-                    <td className="p-4">
-                      <input
-                        type="number"
-                        min={0}
-                        max={ASSIGNMENT_MARKS_MAX}
-                        step={0.5}
-                        value={m.assignment}
-                        onChange={(e) => setMarks({ ...marks, [s.id]: { ...m, assignment: +e.target.value } })}
-                        className="w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                      />
-                    </td>
-                    <td className={cn("p-4 font-semibold", m.internal + m.assignment > maxTotal && "text-rose-600")}>{m.internal + m.assignment}/{maxTotal}</td>
-                    <td className="p-4 text-right">
-                      <Button variant="secondary" disabled={savingId === s.id} onClick={() => saveMarks(s)}>
-                        <Save className="w-3.5 h-3.5" /> {savingId === s.id ? "Saving…" : "Save"}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="p-4 text-slate-600 dark:text-slate-300">{s.department}</td>
+                  <td className="p-4 text-slate-700 dark:text-slate-200">{s.attendance}%</td>
+                  <td className="p-4 text-slate-700 dark:text-slate-200">{s.internalMarks}/{INTERNAL_MARKS_MAX}</td>
+                  <td className="p-4 text-slate-700 dark:text-slate-200">{s.assignmentMarks}/{ASSIGNMENT_MARKS_MAX}</td>
+                  <td className="p-4 font-semibold text-slate-800 dark:text-white">{s.internalMarks + s.assignmentMarks}/{INTERNAL_ASSIGNMENT_TOTAL}</td>
+                </tr>
+              ))}
+              {paged.length === 0 && (
+                <tr><td colSpan={6} className="p-10 text-center text-slate-500">No students found</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1415,12 +1335,34 @@ export function AdminEligibility() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "eligible" | "not">("all");
+  const [deptFilter, setDeptFilter] = useState<string>("all");
   useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
 
   const list = useMemo(() => students.map((s) => ({ s, e: getStudentEligibility(s) })), [students]);
+
+  const departments = useMemo(
+    () => Array.from(new Set(students.map((s) => s.department).filter(Boolean))).sort(),
+    [students],
+  );
+
+  const deptSummary = useMemo(() => {
+    return departments.map((dept) => {
+      const rows = list.filter(({ s }) => s.department === dept);
+      const eligible = rows.filter(({ e }) => e.eligible).length;
+      const notEligible = rows.length - eligible;
+      const rate = rows.length ? Math.round((eligible / rows.length) * 100) : 0;
+      return { dept, total: rows.length, eligible, notEligible, rate };
+    });
+  }, [departments, list]);
+
   const filtered = useMemo(
-    () => list.filter(({ e }) => filter === "all" ? true : filter === "eligible" ? e.eligible : !e.eligible),
-    [list, filter],
+    () => list.filter(({ s, e }) => {
+      if (deptFilter !== "all" && s.department !== deptFilter) return false;
+      if (filter === "eligible") return e.eligible;
+      if (filter === "not") return !e.eligible;
+      return true;
+    }),
+    [list, filter, deptFilter],
   );
   const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(filtered, 10);
 
@@ -1460,6 +1402,27 @@ export function AdminEligibility() {
       </div>
 
       <Card className="p-5 mb-6">
+        <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Department-wise Eligibility</h4>
+        {deptSummary.length === 0 ? (
+          <p className="text-sm text-slate-500">No department data available.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {deptSummary.map((d) => (
+              <div key={d.dept} className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-800/30">
+                <p className="font-semibold text-slate-900 dark:text-white">{d.dept}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                  Eligible: <span className="font-medium text-emerald-600 dark:text-emerald-400">{d.eligible}</span>
+                  {" · "}
+                  Not Eligible: <span className="font-medium text-rose-600 dark:text-rose-400">{d.notEligible}</span>
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Total: {d.total} · Rate: {d.rate}%</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5 mb-6">
         <h4 className="font-semibold text-slate-900 dark:text-white mb-2">How eligibility is checked</h4>
         <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
           A student is <strong>Eligible</strong> only if they pass <strong>all 3</strong> rules below.
@@ -1474,14 +1437,24 @@ export function AdminEligibility() {
 
       <Card className="overflow-hidden">
         <div className="p-5 pb-0">
-          <div className="flex gap-2 mb-4">
-            {(["all", "eligible", "not"] as const).map((f) => (
-              <button key={f} onClick={() => { setFilter(f); setPage(1); }}
-                className={cn("px-4 py-2 rounded-lg text-sm font-medium capitalize",
-                  filter === f ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300")}>
-                {f === "not" ? "Not Eligible" : f === "eligible" ? "Fully Eligible" : "All Students"}
-              </button>
-            ))}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <div className="flex gap-2 flex-wrap">
+              {(["all", "eligible", "not"] as const).map((f) => (
+                <button key={f} onClick={() => { setFilter(f); setPage(1); }}
+                  className={cn("px-4 py-2 rounded-lg text-sm font-medium capitalize",
+                    filter === f ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300")}>
+                  {f === "not" ? "Not Eligible" : f === "eligible" ? "Fully Eligible" : "All Students"}
+                </button>
+              ))}
+            </div>
+            <Select
+              value={deptFilter}
+              onChange={(e) => { setDeptFilter(e.target.value); setPage(1); }}
+              className="sm:w-56 sm:ml-auto"
+            >
+              <option value="all">All Departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </Select>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1590,27 +1563,10 @@ export function AdminHallTickets() {
 
   const [tickets, setTickets] = useState<HallTicketRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editSubjects, setEditSubjects] = useState<HallTicketSubjectRow[]>([]);
-  const [seatConflicts, setSeatConflicts] = useState<SeatConflict[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [seatingRooms, setSeatingRooms] = useState<{ id: number; room_code: string; room_name: string; rows: number; columns: number }[]>([]);
-  const [roomsLoading, setRoomsLoading] = useState(true);
   const { settings: systemSettings } = useSystemSettings();
-
-  const hallLabel = (r: { room_code: string; room_name: string }) => `${r.room_name} (${r.room_code})`;
-
-  const matchHallLabel = (value: string) => {
-    const v = (value || "").trim();
-    if (!v) return "";
-    const hit = seatingRooms.find((r) => {
-      const label = hallLabel(r);
-      return v === label || v === r.room_code || v === r.room_name;
-    });
-    return hit ? hallLabel(hit) : "";
-  };
 
   const load = async () => {
     setLoading(true);
@@ -1627,59 +1583,7 @@ export function AdminHallTickets() {
 
   useEffect(() => { load(); }, []);
 
-  useEffect(() => {
-    setRoomsLoading(true);
-    api.adminSeatingRooms()
-      .then((rooms) => setSeatingRooms(rooms || []))
-      .catch(() => setSeatingRooms([]))
-      .finally(() => setRoomsLoading(false));
-  }, []);
-
-  // Normalize halls once DB room list is ready (e.g. code "A-101" → "Lecture Hall A-101 (A-101)")
-  useEffect(() => {
-    if (!seatingRooms.length || editingId == null) return;
-    setEditSubjects((list) =>
-      list.map((s) => {
-        const matched = matchHallLabel(s.room);
-        return matched && matched !== s.room ? { ...s, room: matched } : s;
-      }),
-    );
-  }, [seatingRooms, editingId]);
-
   const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(tickets, 10);
-
-  const openEdit = (t: HallTicketRow) => {
-    const base = t.subjects?.length
-      ? t.subjects.map((s) => ({
-          subject_code: s.subject_code,
-          subject_name: s.subject_name,
-          exam_date: s.exam_date,
-          exam_time: s.exam_time,
-          duration: s.duration,
-          seat_number: s.seat_number || t.seat_number,
-          room: matchHallLabel(s.room || t.room) || s.room || t.room || "",
-        }))
-      : [{
-          subject_code: t.subject_code || "",
-          subject_name: t.exam,
-          exam_date: t.exam_date,
-          exam_time: t.exam_time,
-          duration: t.duration,
-          seat_number: t.seat_number,
-          room: matchHallLabel(t.room) || t.room || "",
-        }];
-    setEditSubjects(base);
-    setEditingId(t.id);
-    setSeatConflicts(t.seat_conflicts || []);
-    setMessage(null);
-    setError(null);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditSubjects([]);
-    setSeatConflicts([]);
-  };
 
   const generateAll = async () => {
     setBusy(true);
@@ -1694,60 +1598,11 @@ export function AdminHallTickets() {
     setBusy(false);
   };
 
-  const applySuggestedSeats = (conflicts: SeatConflict[]) => {
-    setEditSubjects((list) => list.map((s) => {
-      const hit = conflicts.find((c) => c.subject_code === s.subject_code);
-      return hit ? { ...s, seat_number: hit.suggested_seat } : s;
-    }));
-    setSeatConflicts([]);
-    setError(null);
-    setMessage("Suggested available seats applied — click Save Subject Seats to confirm.");
-  };
-
-  const saveTicket = async (ticketId: number, autoResolve = false) => {
-    setBusy(true);
-    setError(null);
-    if (!autoResolve) setSeatConflicts([]);
-    try {
-      if (!seatingRooms.length) {
-        throw new Error("No halls found in database. Add halls under Admin → Seating first.");
-      }
-      const missingHall = editSubjects.find((s) => !matchHallLabel(s.room));
-      if (missingHall) {
-        throw new Error(`Select a hall from the list for ${missingHall.subject_code || "each subject"}.`);
-      }
-      const result = await api.adminUpdateHallTicket(ticketId, {
-        subjects: editSubjects.map((s) => ({
-          subject_code: s.subject_code,
-          seat_number: s.seat_number,
-          room: matchHallLabel(s.room),
-        })),
-        auto_resolve_seats: autoResolve,
-      });
-      setMessage(result.message || "Hall ticket updated — seat & hall saved for all subjects");
-      cancelEdit();
-      await load();
-    } catch (e: any) {
-      const conflicts = Array.isArray(e.conflicts) ? e.conflicts as SeatConflict[] : [];
-      if (conflicts.length) {
-        setSeatConflicts(conflicts);
-        setError(e.message || "Seat conflict — another student already has this seat for the same subject and time.");
-      } else {
-        setError(e.message || "Failed to save hall ticket");
-      }
-    }
-    setBusy(false);
-  };
-
-  const updateEditSubject = (idx: number, field: "seat_number" | "room", value: string) => {
-    setEditSubjects((list) => list.map((s, i) => i === idx ? { ...s, [field]: value } : s));
-  };
-
   if (loading) return <div className="p-10 text-center text-slate-500">Loading hall tickets from MySQL…</div>;
 
   return (
     <div>
-      <PageHeader title="Hall Ticket Management" subtitle="Set exam hall and seat number separately for each subject on every hall ticket"
+      <PageHeader title="Hall Ticket Management" subtitle="View hall tickets with AI-assigned seats and download PDFs"
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => window.location.href = "/admin/seating"}>
@@ -1761,46 +1616,13 @@ export function AdminHallTickets() {
 
       <Card className="p-4 mb-6 bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800">
         <p className="text-sm text-indigo-900 dark:text-indigo-200">
-          <strong>Per-subject seating:</strong> Each hall ticket lists all exam subjects. Click <strong>Edit Subject Seats</strong> on a student card to set a different hall and seat for each subject, then save.
+          Seats are assigned by the AI seating system only and cannot be edited manually. Use Seating Arrangement to allocate seats, then Generate / Sync All to refresh hall tickets.
         </p>
       </Card>
 
-      {(message || error || seatConflicts.length > 0) && (
-        <div className="space-y-3 mb-4">
-          {(message || error) && (
-            <div className={cn("p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
-              {error || message}
-            </div>
-          )}
-          {seatConflicts.length > 0 && (
-            <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
-              <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-amber-900 dark:text-amber-200">Seat conflict detected</p>
-                    <p className="text-sm text-amber-800 dark:text-amber-300">The same hall and seat cannot be assigned twice for the same exam, subject, date and time.</p>
-                  </div>
-                </div>
-                <Button variant="primary" disabled={busy} onClick={() => applySuggestedSeats(seatConflicts)}>
-                  Use suggested seats
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {seatConflicts.map((c) => (
-                  <div key={c.subject_code} className="text-sm text-amber-900 dark:text-amber-100 bg-white/70 dark:bg-slate-900/40 rounded-lg px-3 py-2">
-                    <strong>{c.subject_name}</strong> — seat <strong>{c.seat_number}</strong> in <strong>{c.room}</strong> is taken by <strong>{c.assigned_to}</strong>
-                    {c.assigned_roll_no ? ` (${c.assigned_roll_no})` : ""}. Suggested: <strong>{c.suggested_seat}</strong>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3">
-                <Button variant="secondary" disabled={busy} onClick={() => editingId && saveTicket(editingId, true)}>
-                  Auto-fix and save now
-                </Button>
-              </div>
-            </div>
-          )}
+      {(message || error) && (
+        <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
+          {error || message}
         </div>
       )}
 
@@ -1812,15 +1634,12 @@ export function AdminHallTickets() {
         <Card className="overflow-hidden">
           <div className="space-y-4 p-5">
             {paged.map((t) => {
-              const isEditing = editingId === t.id;
-              const subjectRows = isEditing
-                ? editSubjects
-                : (t.subjects?.length
-                  ? t.subjects
-                  : [{ subject_code: t.subject_code || "", subject_name: t.exam, seat_number: t.seat_number, room: t.room, exam_date: t.exam_date, exam_time: t.exam_time }]);
+              const subjectRows = t.subjects?.length
+                ? t.subjects
+                : [{ subject_code: t.subject_code || "", subject_name: t.exam, seat_number: t.seat_number, room: t.room, exam_date: t.exam_date, exam_time: t.exam_time }];
 
               return (
-                <div key={t.id} className={cn("rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden", isEditing && "ring-2 ring-indigo-500", t.has_seat_conflict && !isEditing && "ring-2 ring-amber-400")}>
+                <div key={t.id} className={cn("rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden", t.has_seat_conflict && "ring-2 ring-amber-400")}>
                   <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <img src={t.photo} alt="" className="w-12 h-12 rounded-full bg-slate-200" />
@@ -1840,31 +1659,17 @@ export function AdminHallTickets() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {isEditing ? (
-                        <>
-                          <Button variant="primary" disabled={busy} onClick={() => saveTicket(t.id)}>
-                            <Save className="w-4 h-4" /> {busy ? "Saving…" : "Save Subject Seats"}
-                          </Button>
-                          <Button variant="secondary" onClick={cancelEdit}>Cancel</Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button variant="primary" onClick={() => openEdit(t)}>
-                            <Edit2 className="w-4 h-4" /> Edit Subject Seats
-                          </Button>
-                          <Button variant="secondary" onClick={() => {
-                            const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
-                            downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
-                              title: t.exam_title || t.exam,
-                              subjectCode: t.subject_code || t.exam, subjectName: t.exam,
-                              date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
-                              duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
-                            });
-                          }}>
-                            <Download className="w-4 h-4" /> PDF
-                          </Button>
-                        </>
-                      )}
+                      <Button variant="secondary" onClick={() => {
+                        const student: Student = { id: `s${t.student_id}`, rollNo: t.roll_no, name: t.student_name, email: "", mobile: "", department: t.department, semester: 5, section: "A", photo: t.photo, attendance: 75, internalMarks: 30, assignmentMarks: 7, previousResult: 7, backlogs: 0, feePaid: true, feeAmount: 45000, feeDueDate: "", createdAt: "" };
+                        downloadHallTicket(student, t.hall_ticket_no, systemSettings.university_name, systemSettings.academic_year, t.room, t.seat_number, t.qr_code_content, t.subjects, {
+                          title: t.exam_title || t.exam,
+                          subjectCode: t.subject_code || t.exam, subjectName: t.exam,
+                          date: t.exam_date || DEFAULT_HALL_TICKET_EXAM.date, time: t.exam_time || DEFAULT_HALL_TICKET_EXAM.time,
+                          duration: t.duration || DEFAULT_HALL_TICKET_EXAM.duration, room: t.room,
+                        }, systemSettings.college_logo_url);
+                      }}>
+                        <Download className="w-4 h-4" /> PDF
+                      </Button>
                     </div>
                   </div>
 
@@ -1885,7 +1690,7 @@ export function AdminHallTickets() {
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {subjectRows.map((s, idx) => {
-                            const rowConflict = (isEditing ? seatConflicts : t.seat_conflicts)?.find((c) => c.subject_code === s.subject_code);
+                            const rowConflict = t.seat_conflicts?.find((c) => c.subject_code === s.subject_code);
                             return (
                               <tr
                                 key={`${s.subject_code}-${idx}`}
@@ -1904,35 +1709,10 @@ export function AdminHallTickets() {
                                 <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 align-middle">{s.exam_date || "—"}</td>
                                 <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300 align-middle">{s.exam_time || "—"}</td>
                                 <td className="px-3 py-2.5 align-middle">
-                                  {isEditing ? (
-                                    <Select
-                                      value={matchHallLabel(s.room) || ""}
-                                      onChange={(e) => updateEditSubject(idx, "room", e.target.value)}
-                                      disabled={roomsLoading || seatingRooms.length === 0}
-                                      className="min-w-[12rem]"
-                                    >
-                                      <option value="">
-                                        {roomsLoading ? "Loading halls…" : seatingRooms.length ? "Select hall…" : "No halls in DB"}
-                                      </option>
-                                      {seatingRooms.map((r) => {
-                                        const label = hallLabel(r);
-                                        return (
-                                          <option key={r.id} value={label}>
-                                            {label}
-                                          </option>
-                                        );
-                                      })}
-                                    </Select>
-                                  ) : (
-                                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.room || "—"}</span>
-                                  )}
+                                  <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.room || "—"}</span>
                                 </td>
                                 <td className="px-3 py-2.5 align-middle">
-                                  {isEditing ? (
-                                    <TextInput value={s.seat_number} onChange={(e) => updateEditSubject(idx, "seat_number", e.target.value)} placeholder="A1" />
-                                  ) : (
-                                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.seat_number || "—"}</span>
-                                  )}
+                                  <span className="font-semibold text-indigo-700 dark:text-indigo-300">{s.seat_number || "—"}</span>
                                 </td>
                               </tr>
                             );
@@ -1964,7 +1744,7 @@ function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Studen
       <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
         <h3 className="font-bold">Hall Ticket Preview</h3>
         <div className="flex gap-2">
-          <Button variant="primary" onClick={() => downloadHallTicket(student, hallTicketNo, systemSettings.university_name, systemSettings.academic_year)}><Download className="w-4 h-4" /> Download PDF</Button>
+          <Button variant="primary" onClick={() => downloadHallTicket(student, hallTicketNo, systemSettings.university_name, systemSettings.academic_year, undefined, undefined, undefined, undefined, undefined, systemSettings.college_logo_url)}><Download className="w-4 h-4" /> Download PDF</Button>
           <Button variant="secondary" onClick={() => window.print()}><Printer className="w-4 h-4" /> Print</Button>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 px-2">✕</button>
         </div>
@@ -1976,7 +1756,11 @@ function HallTicketPreview({ student, hallTicketNo, onClose }: { student: Studen
               <p className="font-bold text-base break-words leading-snug">{systemSettings.university_name}</p>
               <p className="text-xs opacity-90">{examHeaderSubtitle(systemSettings.academic_year)}</p>
             </div>
-            <div className="w-12 h-12 shrink-0 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-lg font-bold">{logo}</div>
+            {systemSettings.college_logo_url ? (
+              <img src={systemSettings.college_logo_url} alt="College logo" className="w-12 h-12 shrink-0 rounded-lg bg-white object-contain p-1" />
+            ) : (
+              <div className="w-12 h-12 shrink-0 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-lg font-bold">{logo}</div>
+            )}
           </div>
           <div className="p-4">
             <div className="text-center mb-3 pb-2 border-b border-slate-200">
@@ -2051,20 +1835,125 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 }
 
 // ==================== BACKLOGS ====================
+type BacklogSubject = {
+  id: number;
+  subject_code: string;
+  subject_name: string;
+  from_semester: number;
+  exam_date?: string;
+  exam_time?: string;
+  duration?: string;
+  status?: string;
+  is_cleared: boolean;
+  fee_amount?: number;
+  on_hall_ticket?: boolean;
+};
+
+type BacklogStudentRow = {
+  id: number;
+  name: string;
+  roll_no: string;
+  department: string;
+  semester?: number;
+  backlogs: number;
+  attendance: number;
+  is_eligible: boolean;
+  photo?: string;
+  backlog_subjects?: BacklogSubject[];
+};
+
 export function AdminBacklogs() {
-  const [students, setStudents] = useState<Student[]>([]);
+  const [rows, setRows] = useState<BacklogStudentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetchStudents().then((s) => { setStudents(s); setLoading(false); }); }, []);
-  const withBacklogs = useMemo(() => students.filter((s) => s.backlogs > 0), [students]);
+  const [selected, setSelected] = useState<BacklogStudentRow | null>(null);
+  const [form, setForm] = useState({
+    subject_code: "",
+    subject_name: "",
+    from_semester: 1,
+    exam_date: "",
+    exam_time: "10:00 AM",
+    duration: "3 hours",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = async () => {
+    const data = await api.adminBacklogs().catch(() => []);
+    setRows(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const withBacklogs = useMemo(
+    () => rows.filter((s) => (s.backlog_subjects || []).some((b) => !b.is_cleared) || s.backlogs > 0),
+    [rows],
+  );
   const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(withBacklogs, 10);
+
+  const openManage = async (row: BacklogStudentRow) => {
+    setErr(null);
+    try {
+      const detail = await api.adminStudentBacklogs(row.id);
+      setSelected({
+        ...row,
+        backlogs: detail.backlogs,
+        backlog_subjects: detail.subjects || [],
+      });
+      setForm({
+        subject_code: "",
+        subject_name: "",
+        from_semester: Math.max(1, (row.semester || 2) - 1),
+        exam_date: "",
+        exam_time: "10:00 AM",
+        duration: "3 hours",
+      });
+    } catch (e: any) {
+      alert(e.message || "Failed to load backlogs");
+    }
+  };
+
+  const addBacklog = async () => {
+    if (!selected) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.adminAddStudentBacklog(selected.id, form);
+      await openManage(selected);
+      await reload();
+    } catch (e: any) {
+      setErr(e.message || "Failed to add backlog");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearBacklog = async (backlogId: number) => {
+    if (!selected) return;
+    await api.adminUpdateStudentBacklog(selected.id, backlogId, { is_cleared: true });
+    await openManage(selected);
+    await reload();
+  };
+
+  const removeBacklog = async (backlogId: number) => {
+    if (!selected) return;
+    if (!confirm("Remove this backlog subject from hall ticket?")) return;
+    await api.adminDeleteStudentBacklog(selected.id, backlogId);
+    await openManage(selected);
+    await reload();
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
   return (
     <div>
-      <PageHeader title="Backlog Management" subtitle={`${withBacklogs.length} students with active backlogs`} />
+      <PageHeader
+        title="Backlog Management"
+        subtitle="Record failed subjects. Students apply + pay; after you approve the fee, papers appear on the hall ticket."
+      />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card className="p-5"><p className="text-xs text-slate-500">Total Backlogs</p><p className="text-3xl font-bold text-rose-600 mt-2">{withBacklogs.reduce((a,s)=>a+s.backlogs,0)}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Active Backlog Papers</p><p className="text-3xl font-bold text-rose-600 mt-2">{withBacklogs.reduce((a, s) => a + (s.backlog_subjects?.filter((b) => !b.is_cleared).length || s.backlogs), 0)}</p></Card>
         <Card className="p-5"><p className="text-xs text-slate-500">Affected Students</p><p className="text-3xl font-bold text-amber-600 mt-2">{withBacklogs.length}</p></Card>
-        <Card className="p-5"><p className="text-xs text-slate-500">Avg per Student</p><p className="text-3xl font-bold text-slate-700 dark:text-slate-200 mt-2">{(withBacklogs.reduce((a,s)=>a+s.backlogs,0)/Math.max(1,withBacklogs.length)).toFixed(1)}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Flow</p><p className="text-sm text-slate-600 dark:text-slate-300 mt-2">Record → Student Apply → Pay → Approve fee → Hall ticket</p></Card>
       </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -2073,32 +1962,134 @@ export function AdminBacklogs() {
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
                 <th className="p-4 font-medium">Department</th>
-                <th className="p-4 font-medium">Backlogs</th>
+                <th className="p-4 font-medium">Backlog Subjects</th>
                 <th className="p-4 font-medium">Attendance</th>
-                <th className="p-4 font-medium">Eligibility</th>
                 <th className="p-4 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {paged.map((s) => {
-                const e = getStudentEligibility(s);
+                const active = (s.backlog_subjects || []).filter((b) => !b.is_cleared);
                 return (
                   <tr key={s.id}>
-                    <td className="p-4"><div className="flex items-center gap-3"><img src={s.photo} className="w-8 h-8 rounded-full" alt="" /><div><p className="font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.rollNo}</p></div></div></td>
-                    <td className="p-4">{s.department}</td>
-                    <td className="p-4"><Badge variant="red">{s.backlogs} pending</Badge></td>
+                    <td className="p-4"><div className="flex items-center gap-3"><img src={s.photo || "https://api.dicebear.com/7.x/avataaars/svg?seed=student"} className="w-8 h-8 rounded-full" alt="" /><div><p className="font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.roll_no}</p></div></div></td>
+                    <td className="p-4">{s.department}{s.semester != null ? ` · Sem ${s.semester}` : ""}</td>
+                    <td className="p-4">
+                      {active.length === 0 ? <Badge variant="red">{s.backlogs} pending</Badge> : (
+                        <div className="space-y-1">
+                          {active.map((b) => (
+                            <div key={b.id} className="text-xs">
+                              <Badge variant="red">{b.subject_code}</Badge>
+                              <span className="ml-1 text-slate-600 dark:text-slate-300">{b.subject_name} (Sem {b.from_semester})</span>
+                              <span className="ml-1">
+                                <Badge variant={b.status === "approved" ? "green" : b.status === "applied" ? "indigo" : "amber"}>
+                                  {b.status || "open"}
+                                </Badge>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-4">{s.attendance}%</td>
-                    <td className="p-4">{e.eligibilityPct}%</td>
-                    <td className="p-4 text-right"><Button variant="secondary"><Mail className="w-3.5 h-3.5" /> Notify</Button></td>
+                    <td className="p-4 text-right">
+                      <Button variant="primary" onClick={() => openManage(s)}>Manage Subjects</Button>
+                    </td>
                   </tr>
                 );
               })}
-              {withBacklogs.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-slate-500">No students with backlogs 🎉</td></tr>}
+              {withBacklogs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-10 text-center text-slate-500">
+                    No backlog subjects yet. Open a student via search below or use Manage after adding from student list.
+                    <div className="mt-4">
+                      <Button variant="secondary" onClick={async () => {
+                        const all = await fetchStudents();
+                        const pick = window.prompt("Enter student roll number to add backlog subjects:");
+                        if (!pick) return;
+                        const found = all.find((s) => s.rollNo.toLowerCase() === pick.trim().toLowerCase());
+                        if (!found) { alert("Student not found"); return; }
+                        openManage({
+                          id: Number(found.id.replace(/^s/, "")),
+                          name: found.name,
+                          roll_no: found.rollNo,
+                          department: found.department,
+                          semester: found.semester,
+                          backlogs: found.backlogs,
+                          attendance: found.attendance,
+                          is_eligible: false,
+                          photo: found.photo,
+                          backlog_subjects: [],
+                        });
+                      }}>
+                        Add backlog for student (by roll no)
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
+
+      {selected && (
+        <Modal onClose={() => setSelected(null)} panelClassName="max-w-2xl">
+          <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold">Backlog Subjects — {selected.name}</h3>
+              <p className="text-xs text-slate-500">{selected.roll_no} · On hall ticket only after student apply + fee approval</p>
+            </div>
+            <button onClick={() => setSelected(null)}><X className="w-5 h-5 text-slate-400" /></button>
+          </div>
+          <div className="p-6 space-y-4">
+            {(selected.backlog_subjects || []).length === 0 ? (
+              <p className="text-sm text-slate-500">No backlog subjects yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {(selected.backlog_subjects || []).map((b) => (
+                  <div key={b.id} className={cn("p-3 rounded-lg border flex items-center justify-between gap-3", b.is_cleared ? "opacity-50 border-slate-200" : "border-rose-200 bg-rose-50/40 dark:bg-rose-950/20")}>
+                    <div>
+                      <p className="font-semibold">{b.subject_code} — {b.subject_name}</p>
+                      <p className="text-xs text-slate-500">
+                        From semester {b.from_semester}
+                        {b.exam_date ? ` · ${b.exam_date} ${b.exam_time || ""}` : ""}
+                        {b.is_cleared ? " · Cleared" : ` · ${b.status || "open"}`}
+                        {b.on_hall_ticket ? " · On hall ticket" : ""}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {!b.is_cleared && (
+                        <Button variant="secondary" onClick={() => clearBacklog(b.id)}>Mark Cleared</Button>
+                      )}
+                      <Button variant="secondary" onClick={() => removeBacklog(b.id)}>Remove</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-3">
+              <p className="font-semibold text-sm">Record previous-semester fail</p>
+              {err && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{err}</div>}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Subject Code"><TextInput value={form.subject_code} onChange={(e) => setForm({ ...form, subject_code: e.target.value })} placeholder="CS201" /></Field>
+                <Field label="From Semester"><TextInput type="number" min={1} max={8} value={form.from_semester} onChange={(e) => setForm({ ...form, from_semester: +e.target.value })} /></Field>
+              </div>
+              <Field label="Subject Name"><TextInput value={form.subject_name} onChange={(e) => setForm({ ...form, subject_name: e.target.value })} placeholder="Data Structures" /></Field>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Exam Date"><TextInput type="date" value={form.exam_date} onChange={(e) => setForm({ ...form, exam_date: e.target.value })} /></Field>
+                <Field label="Exam Time"><TextInput value={form.exam_time} onChange={(e) => setForm({ ...form, exam_time: e.target.value })} /></Field>
+                <Field label="Duration"><TextInput value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} /></Field>
+              </div>
+              <Button variant="primary" disabled={saving} onClick={addBacklog}>
+                {saving ? "Saving…" : "Record Fail Subject"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2113,32 +2104,98 @@ type PendingFeePayment = {
   photo?: string;
   amount: number;
   method: string;
+  fee_type?: string;
+  exam_title?: string;
+  exam_id?: number | null;
+  backlog_id?: number | null;
+  backlog_subject?: string | null;
   transaction_id: string;
   reference: string;
   status: string;
   paid_at: string | null;
 };
 
+type UnpaidFeeStudent = {
+  id: number;
+  name: string;
+  roll_no: string;
+  department?: string;
+  semester?: number;
+  amount: number;
+  exam_fee_amount: number;
+  exam_fee_paid: boolean;
+  college_fee_amount: number;
+  college_fee_paid: boolean;
+  unpaid_exams?: {
+    exam_id: number;
+    title: string;
+    fee_amount: number;
+    paid: boolean;
+  }[];
+  due_date?: string | null;
+  photo?: string;
+};
+
 export function AdminFees() {
-  const [students, setStudents] = useState<Student[]>([]);
+  const [unpaidStudents, setUnpaidStudents] = useState<UnpaidFeeStudent[]>([]);
   const [pending, setPending] = useState<PendingFeePayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<number | null>(null);
+  const [examFee, setExamFee] = useState(45000);
+  const [collegeFee, setCollegeFee] = useState(25000);
+  const [feeDueDate, setFeeDueDate] = useState("");
+  const [applyToUnpaid, setApplyToUnpaid] = useState(true);
+  const [savingFee, setSavingFee] = useState(false);
+  const [feeMessage, setFeeMessage] = useState<string | null>(null);
+  const [feeError, setFeeError] = useState<string | null>(null);
+  const [totals, setTotals] = useState({ collected: 0, due: 0, unpaidCount: 0 });
 
   const reload = async () => {
-    const [studentRows, feeData] = await Promise.all([
-      fetchStudents(),
-      api.adminFees().catch(() => ({ pending_verifications: [] })),
-    ]);
-    setStudents(studentRows);
+    const feeData = await api.adminFees().catch(() => ({
+      pending_verifications: [],
+      unpaid_students: [],
+      default_exam_fee: 45000,
+      default_college_fee: 25000,
+      total_collected: 0,
+      total_due: 0,
+      unpaid_count: 0,
+    }));
     setPending(feeData.pending_verifications || []);
+    setUnpaidStudents(feeData.unpaid_students || []);
+    if (feeData.default_exam_fee != null) setExamFee(Number(feeData.default_exam_fee));
+    if (feeData.default_college_fee != null) setCollegeFee(Number(feeData.default_college_fee));
+    setTotals({
+      collected: Number(feeData.total_collected || 0),
+      due: Number(feeData.total_due || 0),
+      unpaidCount: Number(feeData.unpaid_count || 0),
+    });
     setLoading(false);
   };
 
   useEffect(() => { reload(); }, []);
 
-  const unpaid = useMemo(() => students.filter((s) => !s.feePaid), [students]);
-  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(unpaid, 10);
+  const { page, setPage, pageSize, setPageSize, totalPages, total, paged } = useClientPagination(unpaidStudents, 10);
+
+  const saveFees = async () => {
+    setSavingFee(true);
+    setFeeError(null);
+    setFeeMessage(null);
+    try {
+      const result = await api.adminSetExamFee({
+        default_exam_fee: Number(examFee),
+        default_college_fee: Number(collegeFee),
+        apply_to_unpaid: applyToUnpaid,
+        fee_due_date: feeDueDate || undefined,
+      });
+      setFeeMessage(result.message || "Fee amounts saved");
+      notifySystemSettingsUpdated();
+      await reload();
+    } catch (err: any) {
+      setFeeError(err.message || "Failed to save fees");
+    } finally {
+      setSavingFee(false);
+    }
+  };
 
   const approvePayment = async (paymentId: number) => {
     setActionId(paymentId);
@@ -2166,9 +2223,6 @@ export function AdminFees() {
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading from MySQL…</div>;
-  const paid = students.filter(s => s.feePaid);
-  const totalDue = unpaid.reduce((a, s) => a + s.feeAmount, 0);
-  const totalCollected = paid.reduce((a, s) => a + s.feeAmount, 0);
 
   const methodLabel = (method: string) => {
     if (method === "online") return "Online";
@@ -2179,23 +2233,62 @@ export function AdminFees() {
 
   return (
     <div>
-      <PageHeader title="Fee Payment Management" subtitle="Verify student payments and track fee collection" />
+      <PageHeader
+        title="Fee Management"
+        subtitle="Set fee amounts and approve payments submitted by students. Admin cannot mark fees paid directly."
+      />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card className="p-5"><p className="text-xs text-slate-500">Total Collected</p><p className="text-2xl font-bold text-emerald-600 mt-2">₹{totalCollected.toLocaleString()}</p></Card>
-        <Card className="p-5"><p className="text-xs text-slate-500">Total Due</p><p className="text-2xl font-bold text-rose-600 mt-2">₹{totalDue.toLocaleString()}</p></Card>
-        <Card className="p-5"><p className="text-xs text-slate-500">Awaiting Verification</p><p className="text-2xl font-bold text-indigo-600 mt-2">{pending.length}</p></Card>
-        <Card className="p-5"><p className="text-xs text-slate-500">Pending Students</p><p className="text-2xl font-bold text-amber-600 mt-2">{unpaid.length}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">College Fee</p><p className="text-2xl font-bold text-sky-600 mt-2">₹{Number(collegeFee).toLocaleString()}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Exam Fee</p><p className="text-2xl font-bold text-indigo-600 mt-2">₹{Number(examFee).toLocaleString()}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Total Collected</p><p className="text-2xl font-bold text-emerald-600 mt-2">₹{totals.collected.toLocaleString()}</p></Card>
+        <Card className="p-5"><p className="text-xs text-slate-500">Awaiting Student Pay</p><p className="text-2xl font-bold text-rose-600 mt-2">{totals.unpaidCount}</p></Card>
       </div>
 
+      <Card className="p-5 mb-6 border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20">
+        <h3 className="font-semibold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-indigo-600" /> Set College & Exam Fee
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Students must pay both fees. New students inherit these amounts. Optionally update unpaid students now.
+        </p>
+        {(feeMessage || feeError) && (
+          <div className={cn("mb-3 p-3 rounded-lg text-sm", feeError ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700")}>
+            {feeError || feeMessage}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Field label="College Fee (₹)">
+            <TextInput type="number" min={0} value={collegeFee} onChange={(e) => setCollegeFee(+e.target.value)} />
+          </Field>
+          <Field label="Exam Fee (₹)">
+            <TextInput type="number" min={0} value={examFee} onChange={(e) => setExamFee(+e.target.value)} />
+          </Field>
+          <Field label="Due Date (optional)">
+            <TextInput type="date" value={feeDueDate} onChange={(e) => setFeeDueDate(e.target.value)} />
+          </Field>
+          <div className="flex flex-col justify-end gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+              <input type="checkbox" checked={applyToUnpaid} onChange={(e) => setApplyToUnpaid(e.target.checked)} className="rounded border-slate-300" />
+              Apply to unpaid students
+            </label>
+            <Button variant="primary" onClick={saveFees} disabled={savingFee}>
+              <Save className="w-4 h-4" /> {savingFee ? "Saving…" : "Save Fees"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       <Card className="overflow-hidden mb-6">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white">
-          Pending Verifications
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800">
+          <p className="font-semibold text-slate-900 dark:text-white">Pending Verifications ({pending.length})</p>
+          <p className="text-xs text-slate-500 mt-1">Only payments started by students appear here. Approve or reject them.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
+                <th className="p-4 font-medium">Fee Type</th>
                 <th className="p-4 font-medium">Method</th>
                 <th className="p-4 font-medium">Amount</th>
                 <th className="p-4 font-medium">Transaction</th>
@@ -2215,6 +2308,13 @@ export function AdminFees() {
                       </div>
                     </div>
                   </td>
+                  <td className="p-4"><Badge variant="indigo">{
+                    (p.fee_type || "exam") === "college"
+                      ? "College"
+                      : (p.fee_type || "") === "backlog"
+                        ? (p.backlog_subject || "Backlog")
+                        : (p.exam_title || "Exam")
+                  }</Badge></td>
                   <td className="p-4">{methodLabel(p.method)}</td>
                   <td className="p-4 font-semibold">₹{p.amount.toLocaleString()}</td>
                   <td className="p-4">
@@ -2235,7 +2335,7 @@ export function AdminFees() {
                 </tr>
               ))}
               {pending.length === 0 && (
-                <tr><td colSpan={6} className="p-10 text-center text-slate-500">No payments awaiting verification</td></tr>
+                <tr><td colSpan={7} className="p-10 text-center text-slate-500">No payments awaiting verification</td></tr>
               )}
             </tbody>
           </table>
@@ -2243,43 +2343,58 @@ export function AdminFees() {
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white">Unpaid Students</div>
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800">
+          <p className="font-semibold text-slate-900 dark:text-white">Students with Pending Fees ({totals.unpaidCount})</p>
+          <p className="text-xs text-slate-500 mt-1">Read-only. Students must pay from their Payments page; then approve above.</p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr className="text-left text-slate-600 dark:text-slate-300">
                 <th className="p-4 font-medium">Student</th>
                 <th className="p-4 font-medium">Roll No</th>
-                <th className="p-4 font-medium">Amount</th>
+                <th className="p-4 font-medium">College Fee</th>
+                <th className="p-4 font-medium">Exam Fee</th>
                 <th className="p-4 font-medium">Due Date</th>
-                <th className="p-4 font-medium text-right">Actions</th>
+                <th className="p-4 font-medium">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {paged.map((s) => {
-                const overdue = new Date(s.feeDueDate) < new Date();
+                const overdue = s.due_date && new Date(s.due_date) < new Date();
                 return (
                   <tr key={s.id}>
-                    <td className="p-4"><div className="flex items-center gap-3"><img src={s.photo} className="w-8 h-8 rounded-full" alt="" /><span className="font-medium">{s.name}</span></div></td>
-                    <td className="p-4 text-slate-600 dark:text-slate-300">{s.rollNo}</td>
-                    <td className="p-4 font-semibold">₹{s.feeAmount.toLocaleString()}</td>
-                    <td className="p-4">{s.feeDueDate} {overdue && <Badge variant="red">Overdue</Badge>}</td>
-                    <td className="p-4 text-right"><div className="flex gap-2 justify-end">
-                      <Button variant="secondary"><Mail className="w-3.5 h-3.5" /> Remind</Button>
-                      <Button variant="primary" onClick={async () => {
-                        const sid = s.id.replace("s", "");
-                        try {
-                          await api.adminMarkFeePaid(Number(sid));
-                          await reload();
-                        } catch (err: any) {
-                          alert(err.message || "Mark paid failed");
-                        }
-                      }}><CheckCircle2 className="w-3.5 h-3.5" /> Mark Paid</Button>
-                    </div></td>
+                    <td className="p-4"><div className="flex items-center gap-3"><img src={s.photo || "https://api.dicebear.com/7.x/avataaars/svg?seed=student"} className="w-8 h-8 rounded-full" alt="" /><span className="font-medium">{s.name}</span></div></td>
+                    <td className="p-4 text-slate-600 dark:text-slate-300">{s.roll_no}</td>
+                    <td className="p-4">
+                      {s.college_fee_paid ? <Badge variant="green">Paid</Badge> : (
+                        <span className="font-semibold">₹{Number(s.college_fee_amount || 0).toLocaleString()}</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      {s.exam_fee_paid ? <Badge variant="green">Paid</Badge> : (
+                        <div className="space-y-1">
+                          {(s.unpaid_exams || []).length === 0 ? (
+                            <span className="font-semibold">₹{Number(s.exam_fee_amount || 0).toLocaleString()}</span>
+                          ) : (
+                            (s.unpaid_exams || []).map((ex) => (
+                              <div key={ex.exam_id} className="text-xs">
+                                <span className="font-medium">{ex.title}</span>
+                                <span className="ml-1 font-semibold">₹{Number(ex.fee_amount || 0).toLocaleString()}</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4">{s.due_date || "—"} {overdue && <Badge variant="red">Overdue</Badge>}</td>
+                    <td className="p-4">
+                      <Badge variant="amber">Awaiting student payment</Badge>
+                    </td>
                   </tr>
                 );
               })}
-              {unpaid.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-slate-500">All fees collected 🎉</td></tr>}
+              {unpaidStudents.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-slate-500">All college and exam fees collected</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2506,6 +2621,10 @@ type SystemSettings = {
   academic_year: string;
   current_semester: number;
   contact_email: string;
+  college_logo_url: string;
+  default_exam_fee: number;
+  default_college_fee: number;
+  default_backlog_fee: number;
   attendance_threshold: number;
   internal_marks_threshold: number;
   min_sgpa: number;
@@ -2524,6 +2643,11 @@ export function AdminSettings() {
     academic_year: "",
     current_semester: 5,
     contact_email: "",
+    college_logo_url: "",
+    default_exam_fee: 45000,
+    default_college_fee: 25000,
+    default_backlog_fee: 1500,
+    apply_fee_to_unpaid: false,
   });
   const [aiForm, setAiForm] = useState({
     attendance_threshold: 75,
@@ -2542,6 +2666,11 @@ export function AdminSettings() {
           academic_year: data.academic_year,
           current_semester: data.current_semester,
           contact_email: data.contact_email,
+          college_logo_url: data.college_logo_url || "",
+          default_exam_fee: data.default_exam_fee ?? 45000,
+          default_college_fee: data.default_college_fee ?? 25000,
+          default_backlog_fee: data.default_backlog_fee ?? 1500,
+          apply_fee_to_unpaid: false,
         });
         setAiForm({
           attendance_threshold: data.attendance_threshold,
@@ -2565,6 +2694,7 @@ export function AdminSettings() {
       await api.adminUpdateSettings(uniForm);
       notifySystemSettingsUpdated();
       add({ title: "University settings saved", message: "Settings updated successfully.", audience: "admin" });
+      setUniForm((f) => ({ ...f, apply_fee_to_unpaid: false }));
     } catch (e: any) {
       add({ title: "Save failed", message: e?.message || "Could not save university settings", audience: "admin" });
     } finally {
@@ -2626,6 +2756,27 @@ export function AdminSettings() {
             <Field label="Contact Email">
               <TextInput type="email" value={uniForm.contact_email} onChange={(e) => setUniForm({ ...uniForm, contact_email: e.target.value })} />
             </Field>
+            <Field label="College Logo URL">
+              <TextInput value={uniForm.college_logo_url} onChange={(e) => setUniForm({ ...uniForm, college_logo_url: e.target.value })} placeholder="https://..." />
+            </Field>
+            <Field label="Default College Fee">
+              <TextInput type="number" min={0} value={uniForm.default_college_fee} onChange={(e) => setUniForm({ ...uniForm, default_college_fee: Number(e.target.value) })} />
+            </Field>
+            <Field label="Default Exam Fee">
+              <TextInput type="number" min={0} value={uniForm.default_exam_fee} onChange={(e) => setUniForm({ ...uniForm, default_exam_fee: Number(e.target.value) })} />
+            </Field>
+            <Field label="Default Backlog Fee (per paper)">
+              <TextInput type="number" min={0} value={uniForm.default_backlog_fee} onChange={(e) => setUniForm({ ...uniForm, default_backlog_fee: Number(e.target.value) })} />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={uniForm.apply_fee_to_unpaid}
+                onChange={(e) => setUniForm({ ...uniForm, apply_fee_to_unpaid: e.target.checked })}
+                className="rounded border-slate-300"
+              />
+              Apply fee amounts to unpaid students
+            </label>
           </div>
           <Button variant="primary" className="mt-4" onClick={saveUniversity} disabled={savingUni}>
             <Save className="w-4 h-4" /> {savingUni ? "Saving…" : "Save Settings"}

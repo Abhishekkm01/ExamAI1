@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, PageHeader, StatCard, Button, Badge, TextInput, Select } from "../../components/Layout";
 import { Pagination } from "../../components/Pagination";
 import { useClientPagination } from "../../hooks/useClientPagination";
 import { fetchTeacherStudents, getStudentEligibility } from "../../data/apiData";
 import type { Student, Exam } from "../../data/types";
-import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle } from "lucide-react";
+import { Users, BookOpen, CheckCircle2, BarChart3, ClipboardList, Camera, AlertTriangle, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { cn } from "../../utils/cn";
 import { FaceCapture } from "../../components/FaceCapture";
@@ -12,6 +13,22 @@ import { INTERNAL_MARKS_MAX, ASSIGNMENT_MARKS_MAX, INTERNAL_ASSIGNMENT_TOTAL } f
 
 import { API_BASE, api } from "../../data/api";
 const token = () => localStorage.getItem("examshield_token") || "";
+
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+type ClassSlot = {
+  id: number;
+  subject_code: string;
+  subject_name: string;
+  day_of_week: number;
+  day_name: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  semester: number;
+  section: string;
+  department: string;
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -142,16 +159,26 @@ export function TeacherDashboard() {
 }
 
 export function TeacherAttendance() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [subject, setSubject] = useState("CS301");
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [date, setDate] = useState(searchParams.get("date") || new Date().toISOString().slice(0, 10));
+  const [subject, setSubject] = useState(searchParams.get("subject") || "CS301");
   const [subjects, setSubjects] = useState<string[]>(["CS301", "CS302"]);
   const [department, setDepartment] = useState("");
+  const [todayClasses, setTodayClasses] = useState<ClassSlot[]>([]);
   const [students, setStudents] = useState<Array<Student & { todayStatus?: string | null }>>([]);
   const [records, setRecords] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sub = searchParams.get("subject");
+    const d = searchParams.get("date");
+    if (sub) setSubject(sub);
+    if (d) setDate(d);
+  }, [searchParams]);
 
   const loadRoll = async (sub = subject, d = date) => {
     setLoading(true);
@@ -189,7 +216,11 @@ export function TeacherAttendance() {
       }));
       setStudents(list);
       setDepartment(data.department || "");
-      if (Array.isArray(data.subjects) && data.subjects.length) setSubjects(data.subjects);
+      if (Array.isArray(data.subjects) && data.subjects.length) {
+        setSubjects(data.subjects);
+        if (!data.subjects.includes(sub) && data.subjects[0]) setSubject(data.subjects[0]);
+      }
+      setTodayClasses(data.today_classes || []);
       setRecords(Object.fromEntries(list.map((s) => [
         s.id,
         s.todayStatus ? s.todayStatus === "Present" : true,
@@ -239,12 +270,45 @@ export function TeacherAttendance() {
       <PageHeader
         title="Attendance Management"
         subtitle={department ? `Mark attendance for ${department} students` : "Mark attendance for your classes"}
+        actions={
+          <Button variant="secondary" onClick={() => navigate("/teacher/timetable")}>
+            <Calendar className="w-4 h-4" /> Class Timetable
+          </Button>
+        }
       />
 
       {(message || error) && (
         <div className={cn("mb-4 p-3 rounded-lg text-sm", error ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300")}>
           {error || message}
         </div>
+      )}
+
+      {todayClasses.length > 0 && (
+        <Card className="p-5 mb-6">
+          <h3 className="font-semibold mb-3">Today&apos;s Classes</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {todayClasses.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { setSubject(c.subject_code); setPage(1); }}
+                className={cn(
+                  "text-left p-3 rounded-xl border transition",
+                  subject === c.subject_code
+                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
+                    : "border-slate-200 dark:border-slate-700 hover:border-indigo-300"
+                )}
+              >
+                <p className="font-semibold text-slate-900 dark:text-white">{c.subject_code}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{c.subject_name}</p>
+                <p className="text-sm mt-2 text-indigo-600 dark:text-indigo-400">
+                  {c.start_time} – {c.end_time}{c.room ? ` · ${c.room}` : ""}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">Sem {c.semester} · Sec {c.section}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
       )}
 
       <Card className="p-5 mb-6">
@@ -312,6 +376,110 @@ export function TeacherAttendance() {
         </div>
         <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </Card>
+    </div>
+  );
+}
+
+export function TeacherTimetable() {
+  const navigate = useNavigate();
+  const [slots, setSlots] = useState<ClassSlot[]>([]);
+  const [department, setDepartment] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/teacher/timetable`, {
+          headers: { Authorization: `Bearer ${token()}` },
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.detail || "Failed to load timetable");
+        }
+        const data = await res.json();
+        setSlots(data.slots || []);
+        setDepartment(data.department || "");
+      } catch (e: any) {
+        setError(e.message || "Failed to load class timetable");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const byDay = useMemo(() => {
+    return DAY_NAMES.map((name, day) => ({
+      day,
+      name,
+      slots: slots.filter((s) => s.day_of_week === day),
+    }));
+  }, [slots]);
+
+  const markAttendance = (slot: ClassSlot) => {
+    const today = new Date().toISOString().slice(0, 10);
+    navigate(`/teacher/attendance?subject=${encodeURIComponent(slot.subject_code)}&date=${today}`);
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading class timetable…</div>;
+
+  return (
+    <div>
+      <PageHeader
+        title="Class Timetable"
+        subtitle={department ? `Assigned by HOD • ${department}` : "Assigned by HOD — view only"}
+        actions={
+          <Button variant="secondary" onClick={() => navigate("/teacher/attendance")}>
+            <ClipboardList className="w-4 h-4" /> Mark Attendance
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg text-sm bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">{error}</div>
+      )}
+
+      <Card className="p-4 mb-6 bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800">
+        <p className="text-sm text-indigo-900 dark:text-indigo-200">
+          Your weekly class schedule is assigned by the HOD. You can view classes here and mark attendance — editing is not allowed.
+        </p>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {byDay.map(({ day, name, slots: daySlots }) => (
+          <Card key={day} className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-slate-900 dark:text-white">{name}</h3>
+              <Badge variant="indigo">{`${daySlots.length} ${daySlots.length === 1 ? "class" : "classes"}`}</Badge>
+            </div>
+            <div className="space-y-2">
+              {daySlots.map((s) => (
+                <div key={s.id} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                  <p className="font-semibold text-indigo-600 dark:text-indigo-400">{s.subject_code}</p>
+                  <p className="text-xs text-slate-500">{s.subject_name}</p>
+                  <p className="text-sm mt-1">{s.start_time} – {s.end_time}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {s.room || "Room TBA"} · Sem {s.semester} · Sec {s.section}
+                  </p>
+                  <Button variant="secondary" className="w-full mt-2" onClick={() => markAttendance(s)}>
+                    <ClipboardList className="w-3.5 h-3.5" /> Mark Attendance
+                  </Button>
+                </div>
+              ))}
+              {daySlots.length === 0 && (
+                <p className="text-sm text-slate-500 py-6 text-center">No classes</p>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {slots.length === 0 && !error && (
+        <Card className="p-8 mt-4 text-center text-slate-500">
+          No classes assigned yet. Ask your HOD to assign your class timetable.
+        </Card>
+      )}
     </div>
   );
 }

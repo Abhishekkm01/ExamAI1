@@ -285,6 +285,54 @@ class SeatingArrangementService:
         )
 
     @staticmethod
+    def even_odd_strategy(students, rooms, leave_empty_seats=False, seats_between_students=0):
+        """
+        AI anti-cheating seating: fill odd columns first (1,3,5…), then even (2,4,6…).
+        Students never sit in adjacent seats until odd seats are full.
+        """
+        ordered = sorted(
+            SeatingArrangementService._eligible_students(students),
+            key=lambda s: SeatingArrangementService._roll_sort_key(s.roll_no),
+        )
+        return SeatingArrangementService._assign_even_odd(ordered, rooms)
+
+    @staticmethod
+    def _assign_even_odd(students, rooms):
+        """Assign odd columns first across rooms, then even columns."""
+        arrangements = []
+        student_idx = 0
+        n = len(students)
+
+        def seat_pass(parity):
+            nonlocal student_idx
+            for room in rooms:
+                if student_idx >= n:
+                    return
+                for row in range(room.rows):
+                    if student_idx >= n:
+                        return
+                    for col in range(room.columns):
+                        if student_idx >= n:
+                            return
+                        if col % 2 != parity:
+                            continue
+                        student = students[student_idx]
+                        arrangements.append({
+                            "student": student,
+                            "room": room,
+                            "seat_row": row,
+                            "seat_column": col,
+                            "seat_number": SeatingArrangementService.generate_seat_number(
+                                row, col, room.room_code,
+                            ),
+                        })
+                        student_idx += 1
+
+        seat_pass(0)  # odd seat numbers (col 0 -> A1)
+        seat_pass(1)  # even seat numbers
+        return arrangements
+
+    @staticmethod
     def _assign_in_order(students, rooms, leave_empty_seats=False, seats_between_students=0):
         """
         Fill seats left-to-right, top-to-bottom across rooms in the given student order.
@@ -371,16 +419,18 @@ class SeatingArrangementService:
         # Delete existing arrangements for this exam
         SeatingArrangement.objects.filter(exam=exam).delete()
         
-        # Apply strategy
-        strategy_key = (strategy or "sequential").strip().lower()
+        # Apply strategy — default AI even/odd anti-cheating layout
+        strategy_key = (strategy or "even_odd").strip().lower()
         strategy_map = {
+            "even_odd": SeatingArrangementService.even_odd_strategy,
+            "ai": SeatingArrangementService.even_odd_strategy,
             "sequential": SeatingArrangementService.sequential_strategy,
             "department": SeatingArrangementService.department_strategy,
             "alphabetical": SeatingArrangementService.alphabetical_strategy,
             "random": SeatingArrangementService.random_strategy,
         }
         
-        strategy_func = strategy_map.get(strategy_key, SeatingArrangementService.sequential_strategy)
+        strategy_func = strategy_map.get(strategy_key, SeatingArrangementService.even_odd_strategy)
         arrangements_data = strategy_func(
             students,
             rooms,
@@ -424,7 +474,7 @@ class SeatingArrangementService:
             'subject_count': len(subjects),
             'rooms_used': len({a.room_id for a in created_arrangements}),
             'students_seated': len(created_arrangements),
-            'strategy_used': strategy_key if strategy_key in strategy_map else 'sequential',
+            'strategy_used': strategy_key if strategy_key in strategy_map else 'even_odd',
             'seating_preview': [
                 {
                     'seat_number': a.seat_number,

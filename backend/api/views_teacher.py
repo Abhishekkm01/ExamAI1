@@ -3,7 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Q
-from .models import User, Student, Teacher, Attendance, InternalMark, Exam, ExamSubject, SeatingArrangement, HallTicket, Notification
+from .models import User, Student, Teacher, Attendance, InternalMark, Exam, ExamSubject, SeatingArrangement, HallTicket, Notification, ClassTimetable
 from .serializers import (FaceVerifyRequestSerializer, FaceVerifyResponseSerializer,
                           TeacherProfileUpdateSerializer, MarksUpdateSerializer)
 from .permissions import IsTeacher, IsOwner
@@ -116,6 +116,7 @@ def get_roll(request):
     try:
         t = Teacher.objects.get(user_id=user.id)
     except Teacher.DoesNotExist:
+        t = None
         dept = "Computer Science"
         subjects = ["CS301", "CS302"]
     else:
@@ -141,12 +142,23 @@ def get_roll(request):
             'today_status': today_record.status if today_record else None,
         })
 
+    today_classes = []
+    if t:
+        from datetime import date as dt_date
+        weekday = dt_date.today().weekday()
+        if weekday <= 5:
+            today_classes = [
+                _slot_to_dict(s)
+                for s in ClassTimetable.objects.filter(teacher=t, day_of_week=weekday).order_by('start_time')
+            ]
+
     return Response({
         'students': data,
         'department': dept,
         'subjects': subjects,
         'subject_code': subject_code,
         'date': date,
+        'today_classes': today_classes,
     })
 
 
@@ -585,3 +597,73 @@ def upload_profile_photo(request):
     user.save()
 
     return Response({'message': 'Photo updated', 'photo': photo_url})
+
+
+DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+
+def _slot_to_dict(slot):
+    return {
+        'id': slot.id,
+        'teacher_id': slot.teacher_id,
+        'teacher_name': slot.teacher.user.name if slot.teacher_id and getattr(slot.teacher, 'user', None) else '',
+        'subject_code': slot.subject_code,
+        'subject_name': slot.subject_name or slot.subject_code,
+        'day_of_week': slot.day_of_week,
+        'day_name': DAY_NAMES[slot.day_of_week] if 0 <= slot.day_of_week < len(DAY_NAMES) else str(slot.day_of_week),
+        'start_time': slot.start_time,
+        'end_time': slot.end_time,
+        'room': slot.room or '',
+        'semester': slot.semester,
+        'section': slot.section or 'A',
+        'department': slot.department or '',
+    }
+
+
+def _get_teacher_or_403(request):
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'teacher':
+        return None, Response({'detail': 'Teacher access required'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        teacher = Teacher.objects.get(user_id=user.id, is_deleted=False)
+    except Teacher.DoesNotExist:
+        return None, Response({'detail': 'Teacher profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    return teacher, None
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_timetable(request):
+    """View-only weekly class timetable assigned by HOD for the logged-in teacher."""
+    teacher, err = _get_teacher_or_403(request)
+    if err:
+        return err
+
+    slots = ClassTimetable.objects.filter(teacher=teacher).select_related('teacher__user').order_by(
+        'day_of_week', 'start_time', 'id'
+    )
+    today = __import__('datetime').date.today().weekday()  # Mon=0 … Sun=6
+    today_slots = [_slot_to_dict(s) for s in slots if s.day_of_week == today]
+    subjects = [s.strip() for s in (teacher.assigned_subjects or '').split(',') if s.strip()] or []
+    return Response({
+        'slots': [_slot_to_dict(s) for s in slots],
+        'today_slots': today_slots,
+        'today_day': today if today <= 5 else None,
+        'day_names': DAY_NAMES,
+        'subjects_assigned': subjects,
+        'department': teacher.department,
+        'read_only': True,
+        'message': 'Class timetable is assigned by HOD and cannot be edited by teachers.',
+    })
+
+
+@api_view(['PUT', 'DELETE', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_timetable_detail(request, slot_id):
+    """Teachers cannot edit timetable — HOD assigns class schedules."""
+    return Response(
+        {'detail': 'Class timetable can only be assigned or edited by the HOD.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )

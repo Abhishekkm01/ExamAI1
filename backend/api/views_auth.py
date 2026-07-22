@@ -18,6 +18,7 @@ from .marks_constants import INTERNAL_MARKS_MAX
 from .photo_utils import save_profile_photo
 from .face_service import try_enroll_student_face
 from .exam_service import create_exam_record
+from .settings_service import get_default_exam_fee, get_default_college_fee
 
 
 @api_view(['POST'])
@@ -127,6 +128,8 @@ def _create_student_account(data, password):
             student = Student.objects.filter(user=user).first() or Student(user=user)
             student.roll_no = data['roll_no']
             student.mobile = data.get('mobile')
+            student.gender = data.get('gender') or ''
+            student.date_of_birth = data.get('date_of_birth') or None
             student.department = data['department']
             student.semester = data.get('semester', 5)
             student.section = data.get('section', 'A') or 'A'
@@ -136,8 +139,11 @@ def _create_student_account(data, password):
             student.assignment_marks = data.get('assignment_marks', 0)
             student.previous_result = data.get('previous_result', 0)
             student.backlogs = data.get('backlogs', 0)
-            student.fee_paid = data.get('fee_paid', False)
-            student.fee_amount = data.get('fee_amount', 45000)
+            student.fee_paid = False
+            student.fee_amount = data.get('fee_amount', get_default_exam_fee())
+            student.exam_fee_paid = False
+            student.college_fee_amount = data.get('college_fee_amount', get_default_college_fee())
+            student.college_fee_paid = False
             student.fee_due_date = data.get('fee_due_date')
             student.is_eligible = passed
             student.eligibility_percentage = pct

@@ -331,33 +331,55 @@ def validate_subject_seats(hall_ticket, exam, subjects_data, auto_resolve=False)
 
 
 def merge_hall_ticket_subjects(hall_ticket, exam):
-    """Return exam subjects enriched with per-subject seat and hall."""
+    """Return exam + backlog subjects enriched with per-subject seat and hall."""
+    from .backlog_service import backlog_subjects_for_hall_ticket
+
     exam_subjects = get_exam_subjects(exam)
+    backlog_subjects = backlog_subjects_for_hall_ticket(hall_ticket.student, exam)
+    # Prefer exam paper metadata when the same code exists on the current exam
+    exam_codes = {s['subject_code'] for s in exam_subjects}
+    backlog_only = [b for b in backlog_subjects if b['subject_code'] not in exam_codes]
+    # Mark exam subjects that are also backlogs
+    backlog_codes = {b['subject_code'] for b in backlog_subjects}
+    combined = []
+    for subj in exam_subjects:
+        combined.append({**subj, 'is_backlog': subj['subject_code'] in backlog_codes})
+    combined.extend(backlog_only)
+
     overrides = {
         row.subject_code: row
         for row in hall_ticket.subject_assignments.all()
     }
     merged = []
-    for subj in exam_subjects:
+    for subj in combined:
         row = overrides.get(subj['subject_code'])
         merged.append({
             **subj,
             'seat_number': row.seat_number if row else hall_ticket.seat_number,
             'room': row.room if row else hall_ticket.room,
+            'is_backlog': bool(subj.get('is_backlog')),
         })
     return merged
 
 
 def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room=None, force_defaults=False):
-    """Ensure HallTicketSubject rows exist for every exam subject.
+    """Ensure HallTicketSubject rows exist for every exam + backlog subject.
 
     When force_defaults=True (e.g. after seating arrangement changes), overwrite
     each subject's hall/seat with default_seat / default_room. Otherwise keep
     any existing per-subject overrides.
     """
+    from .backlog_service import backlog_subjects_for_hall_ticket
+
     seat = default_seat or hall_ticket.seat_number
     room = default_room or hall_ticket.room
     exam_subjects = get_exam_subjects(exam)
+    backlog_subjects = backlog_subjects_for_hall_ticket(hall_ticket.student, exam)
+    exam_codes = {s['subject_code'] for s in exam_subjects}
+    backlog_only = [b for b in backlog_subjects if b['subject_code'] not in exam_codes]
+    backlog_codes = {b['subject_code'] for b in backlog_subjects}
+    all_subjects = [{**s, 'is_backlog': s['subject_code'] in backlog_codes} for s in exam_subjects] + backlog_only
+
     existing = {row.subject_code: row for row in hall_ticket.subject_assignments.all()}
     codes = set()
 
@@ -365,7 +387,7 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
         hall_ticket.exam = exam
         hall_ticket.save(update_fields=['exam', 'updated_at'])
 
-    for idx, subj in enumerate(exam_subjects):
+    for idx, subj in enumerate(all_subjects):
         code = subj['subject_code']
         codes.add(code)
         exam_date = subj.get('exam_date') or exam.exam_date
@@ -379,10 +401,11 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
         assigned_seat = assign_available_seat(
             exam.id, hall_ticket, code, exam_date, exam_time, target_room, preferred_seat,
         )
+        subject_name = subj['subject_name']
         if code in existing:
             row = existing[code]
             row.exam = exam
-            row.subject_name = subj['subject_name']
+            row.subject_name = subject_name
             row.exam_date = exam_date
             row.exam_time = exam_time
             row.duration = subj.get('duration', '')
@@ -396,7 +419,7 @@ def sync_hall_ticket_subjects(hall_ticket, exam, default_seat=None, default_room
                 hall_ticket=hall_ticket,
                 exam=exam,
                 subject_code=code,
-                subject_name=subj['subject_name'],
+                subject_name=subject_name,
                 exam_date=exam_date,
                 exam_time=exam_time,
                 duration=subj.get('duration', ''),

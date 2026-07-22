@@ -28,10 +28,15 @@ export function getStudentEligibilityLocal(s: Student) {
 function mapApiStudent(s: any): Student {
   return {
     id: `s${s.id}`, rollNo: s.roll_no, name: s.name, email: s.email, mobile: s.mobile || "",
+    gender: s.gender || "", dateOfBirth: s.date_of_birth || "",
     department: s.department, semester: s.semester, section: s.section, photo: s.photo,
     attendance: s.attendance, internalMarks: s.internal_marks, assignmentMarks: s.assignment_marks,
     previousResult: s.previous_result, backlogs: s.backlogs, feePaid: s.fee_paid,
-    feeAmount: s.fee_amount, feeDueDate: s.fee_due_date || "", createdAt: "2023-08-12",
+    feeAmount: s.fee_amount,
+    examFeePaid: !!s.exam_fee_paid,
+    collegeFeeAmount: s.college_fee_amount ?? 0,
+    collegeFeePaid: !!s.college_fee_paid,
+    feeDueDate: s.fee_due_date || "", createdAt: "2023-08-12",
   };
 }
 
@@ -74,6 +79,7 @@ function mapExam(e: any): Exam {
     duration: e.duration,
     room: e.room,
     totalMarks: e.total_marks,
+    feeAmount: e.fee_amount != null ? Number(e.fee_amount) : undefined,
     requiresFaceVerification: e.requires_face_verification ?? true,
     invigilatorId: e.invigilator_id ?? null,
     invigilatorName: e.invigilator_name ?? null,

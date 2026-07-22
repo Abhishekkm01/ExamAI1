@@ -80,6 +80,10 @@ def meta(request):
         'university_name': cfg.university_name,
         'academic_year': cfg.academic_year,
         'current_semester': cfg.current_semester,
+        'college_logo_url': cfg.college_logo_url or '',
+        'default_exam_fee': float(cfg.default_exam_fee or 45000),
+        'default_college_fee': float(getattr(cfg, 'default_college_fee', None) or 25000),
+        'default_backlog_fee': float(getattr(cfg, 'default_backlog_fee', None) or 1500),
         'eligibility_thresholds': {
             'attendance': cfg.attendance_threshold,
             'internal_marks': cfg.internal_marks_threshold,

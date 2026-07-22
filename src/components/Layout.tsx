@@ -3,7 +3,7 @@ import { useAuth, useTheme, useNotifications } from "../contexts/AppContext";
 import {
   Shield, LogOut, Moon, Sun, Menu, X, Bell, User as UserIcon, ChevronDown,
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList, TicketCheck,
-  BarChart3, FileText, MessageSquare, Wallet, AlertTriangle, Settings, School, Camera, Mail, Armchair
+  BarChart3, FileText, MessageSquare, Wallet, AlertTriangle, Settings, School, Camera, Mail, Armchair, Calendar
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../utils/cn";
@@ -23,7 +23,7 @@ const adminNav: NavItem[] = [
   { to: "/admin/seating", label: "Seating", icon: Armchair },
   { to: "/admin/halltickets", label: "Hall Tickets", icon: TicketCheck },
   { to: "/admin/backlogs", label: "Backlogs", icon: AlertTriangle },
-  { to: "/admin/fees", label: "Fee Payments", icon: Wallet },
+  { to: "/admin/fees", label: "Exam Fees", icon: Wallet },
   { to: "/admin/notifications", label: "Notifications", icon: Bell },
   { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/admin/reports", label: "Reports", icon: FileText },
@@ -34,6 +34,7 @@ const adminNav: NavItem[] = [
 const teacherNav: NavItem[] = [
   { to: "/teacher", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/teacher/attendance", label: "Attendance", icon: ClipboardList },
+  { to: "/teacher/timetable", label: "Class Timetable", icon: Calendar },
   { to: "/teacher/marks", label: "Internal Marks", icon: FileText },
   { to: "/teacher/students", label: "Student Monitoring", icon: GraduationCap },
   { to: "/teacher/face-verify", label: "Face Verification", icon: Camera },
@@ -44,6 +45,7 @@ const hodNav: NavItem[] = [
   { to: "/hod", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/hod/students", label: "Students", icon: GraduationCap },
   { to: "/hod/teachers", label: "Faculty", icon: Users },
+  { to: "/hod/timetable", label: "Class Timetable", icon: Calendar },
   { to: "/hod/exams", label: "Examinations", icon: BookOpen },
   { to: "/hod/marks", label: "Internal Marks", icon: ClipboardList },
   { to: "/hod/eligibility", label: "Eligibility", icon: TicketCheck },
@@ -58,10 +60,11 @@ const hodNav: NavItem[] = [
 const studentNav: NavItem[] = [
   { to: "/student", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/student/payments", label: "Payments", icon: Wallet },
+  { to: "/student/backlogs", label: "My Backlogs", icon: AlertTriangle },
   { to: "/student/profile", label: "Profile", icon: UserIcon },
   { to: "/student/eligibility", label: "Eligibility", icon: TicketCheck },
   { to: "/student/hallticket", label: "Hall Ticket", icon: TicketCheck },
-  { to: "/student/exams", label: "Exams", icon: BookOpen },
+  { to: "/student/exams", label: "Timetable", icon: BookOpen },
   { to: "/student/face-verify", label: "Face Verification", icon: Camera },
   { to: "/student/notifications", label: "Notifications", icon: Mail },
   { to: "/student/chatbot", label: "AI Assistant", icon: MessageSquare },

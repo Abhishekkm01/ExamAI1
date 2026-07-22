@@ -24,6 +24,8 @@ export interface Student {
   name: string;
   email: string;
   mobile: string;
+  gender?: string;
+  dateOfBirth?: string;
   department: string;
   semester: number;
   section: string;
@@ -35,6 +37,9 @@ export interface Student {
   backlogs: number;
   feePaid: boolean;
   feeAmount: number;
+  examFeePaid?: boolean;
+  collegeFeeAmount?: number;
+  collegeFeePaid?: boolean;
   feeDueDate: string;
   createdAt: string;
 }
@@ -71,6 +76,7 @@ export interface Exam {
   duration: string;
   room: string;
   totalMarks: number;
+  feeAmount?: number;
   requiresFaceVerification?: boolean;
   invigilatorId?: number | null;
   invigilatorName?: string | null;

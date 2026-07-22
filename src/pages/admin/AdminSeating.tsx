@@ -59,12 +59,11 @@ export default function AdminSeating() {
   const [arrangements, setArrangements] = useState<Arrangement[]>([]);
   const [examId, setExamId] = useState("");
   const [selectedRooms, setSelectedRooms] = useState<number[]>([]);
-  const [strategy, setStrategy] = useState("sequential");
+  const [strategy] = useState("even_odd");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [edits, setEdits] = useState<Record<number, { seat_number: string; room_id: number }>>({});
   const [newRoom, setNewRoom] = useState({ room_code: "", room_name: "", rows: 8, columns: 6 });
   const [viewRoomId, setViewRoomId] = useState<number | null>(null);
   const [mapRefresh, setMapRefresh] = useState(0);
@@ -96,11 +95,6 @@ export default function AdminSeating() {
     try {
       const data = await apiFetch(`/api/admin/seating/arrangements?exam_id=${id}`);
       setArrangements(data);
-      const next: Record<number, { seat_number: string; room_id: number }> = {};
-      data.forEach((a: Arrangement) => {
-        next[a.id] = { seat_number: a.seat_number, room_id: a.room_id };
-      });
-      setEdits(next);
       setMapRefresh((n) => n + 1);
     } catch (e: any) {
       setError(e.message);
@@ -159,11 +153,13 @@ export default function AdminSeating() {
       });
       const subjectCount = result.subject_count || result.subjects?.length || 1;
       const strategyLabel = {
+        even_odd: "AI even/odd anti-cheating seats",
+        ai: "AI even/odd anti-cheating seats",
         sequential: "roll number order",
         alphabetical: "alphabetical name order",
         department: "section then roll order",
         random: "random order",
-      }[result.strategy_used || strategy] || strategy;
+      }[result.strategy_used || strategy] || "AI even/odd seating";
       // Push seats onto all hall-ticket subjects for this exam
       const sync = await apiFetch("/api/admin/seating/sync-halltickets", {
         method: "POST",
@@ -176,25 +172,6 @@ export default function AdminSeating() {
       await loadArrangements(examId);
       // Jump map to first selected room if needed
       if (selectedRooms[0]) setViewRoomId(selectedRooms[0]);
-    } catch (e: any) {
-      setError(e.message);
-    }
-    setBusy(false);
-  };
-
-  const saveRow = async (arr: Arrangement) => {
-    const edit = edits[arr.id];
-    if (!edit) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/admin/seating/arrangements/${arr.id}/update`, {
-        method: "PUT",
-        body: JSON.stringify({ seat_number: edit.seat_number, room_id: edit.room_id }),
-      });
-      setMessage(`Updated seating for ${arr.student_name}`);
-      await loadArrangements(examId);
-      if (edit.room_id) setViewRoomId(edit.room_id);
     } catch (e: any) {
       setError(e.message);
     }
@@ -296,18 +273,13 @@ export default function AdminSeating() {
                 ))}
               </div>
               <p className="text-[11px] text-slate-500">
-                Auto Arrange seats students once for this examination, then syncs that seat to every subject on the hall ticket.
-                Override per-subject seats on Hall Tickets if needed — the map follows the primary subject seat.
+                AI Auto Arrange seats students using even/odd columns (odd seats first, then even) so neighbouring seats stay empty when possible. Seats cannot be edited manually.
               </p>
             </div>
           )}
-          <label className="block text-xs font-medium text-slate-500 mb-1">Strategy</label>
-          <Select value={strategy} onChange={(e) => setStrategy(e.target.value)} className="mb-3">
-            <option value="sequential">Sequential by roll number</option>
-            <option value="alphabetical">Alphabetical by name</option>
-            <option value="department">By section (then roll no)</option>
-            <option value="random">Random</option>
-          </Select>
+          <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg px-3 py-2">
+            Strategy: AI Even/Odd seating (system assigned)
+          </p>
           <label className="block text-xs font-medium text-slate-500 mb-2">Select hall(s)</label>
           <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
             {rooms.map((r) => (
@@ -333,7 +305,7 @@ export default function AdminSeating() {
             {rooms.length === 0 && <p className="text-sm text-slate-500">Add a hall/room below first.</p>}
           </div>
           <Button variant="primary" className="w-full" onClick={autoArrange} disabled={busy}>
-            <Armchair className="w-4 h-4" /> Auto Arrange Seats
+            <Armchair className="w-4 h-4" /> AI Auto Arrange Seats
           </Button>
         </Card>
 
@@ -395,7 +367,6 @@ export default function AdminSeating() {
                 <th className="p-4 font-medium">Roll No</th>
                 <th className="p-4 font-medium">Hall / Room</th>
                 <th className="p-4 font-medium">Seat Number</th>
-                <th className="p-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -403,33 +374,12 @@ export default function AdminSeating() {
                 <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                   <td className="p-4 font-medium">{a.student_name}</td>
                   <td className="p-4 text-slate-500">{a.roll_no}</td>
-                  <td className="p-4">
-                    <Select
-                      value={String(edits[a.id]?.room_id ?? a.room_id)}
-                      onChange={(e) => setEdits({ ...edits, [a.id]: { ...edits[a.id], room_id: +e.target.value, seat_number: edits[a.id]?.seat_number ?? a.seat_number } })}
-                      className="min-w-[180px]"
-                    >
-                      {rooms.map((r) => (
-                        <option key={r.id} value={r.id}>{r.room_name} ({r.room_code})</option>
-                      ))}
-                    </Select>
-                  </td>
-                  <td className="p-4">
-                    <TextInput
-                      value={edits[a.id]?.seat_number ?? a.seat_number}
-                      onChange={(e) => setEdits({ ...edits, [a.id]: { ...edits[a.id], seat_number: e.target.value, room_id: edits[a.id]?.room_id ?? a.room_id } })}
-                      className="w-24"
-                    />
-                  </td>
-                  <td className="p-4 text-right">
-                    <Button variant="secondary" onClick={() => saveRow(a)} disabled={busy}>
-                      <Save className="w-3.5 h-3.5" /> Save
-                    </Button>
-                  </td>
+                  <td className="p-4">{a.room_name} ({a.room_code})</td>
+                  <td className="p-4 font-semibold text-indigo-600">{a.seat_number}</td>
                 </tr>
               ))}
               {arrangements.length === 0 && (
-                <tr><td colSpan={5} className="p-10 text-center text-slate-500">No seating yet — select halls and run Auto Arrange</td></tr>
+                <tr><td colSpan={4} className="p-10 text-center text-slate-500">No seating yet — select halls and run AI Auto Arrange</td></tr>
               )}
             </tbody>
           </table>

@@ -62,6 +62,10 @@ export default function StudentRegister() {
     e.preventDefault();
     setError(null);
 
+    if (!form.mobile.trim() || form.mobile.replace(/\D/g, "").length < 10) {
+      setError("Phone number is required (at least 10 digits)");
+      return;
+    }
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -81,7 +85,7 @@ export default function StudentRegister() {
       body.append("department", form.department);
       body.append("semester", String(form.semester));
       body.append("section", form.section);
-      if (form.mobile) body.append("mobile", form.mobile);
+      body.append("mobile", form.mobile);
       if (photoFile) body.append("photo", photoFile);
 
       const res = await fetch(`${API_BASE}/api/auth/register-student`, {
@@ -170,9 +174,11 @@ export default function StudentRegister() {
                 />
               </Field>
 
-              <Field label="Mobile (optional)" icon={Phone}>
+              <Field label="Mobile / Phone Number" icon={Phone}>
                 <input
                   type="tel"
+                  required
+                  minLength={10}
                   value={form.mobile}
                   onChange={(e) => update("mobile", e.target.value)}
                   className={inputClass}

@@ -46,12 +46,9 @@ def _hall_ticket_payload(student, user):
             if seating and not ht.subject_assignments.exists():
                 seat_number = seating.seat_number
                 room = room_display_name(seating.room)
-            if not ht.subject_assignments.exists():
-                subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
-            else:
-                subjects = merge_hall_ticket_subjects(ht, exam)
-            if not ht.qr_code_content or not ht.qr_code_content.startswith('{'):
-                refresh_hall_ticket_qr(ht, exam, student)
+            # Always sync so newly added backlog subjects appear on the ticket
+            subjects = sync_hall_ticket_subjects(ht, exam, seat_number, room)
+            refresh_hall_ticket_qr(ht, exam, student)
             qr = ht.qr_code_content
             room = subjects[0]['room'] if subjects else ht.room
             seat_number = subjects[0]['seat_number'] if subjects else ht.seat_number
@@ -193,6 +190,8 @@ def profile(request):
         'email': user.email,
         'roll_no': s.roll_no,
         'mobile': s.mobile,
+        'gender': s.gender or '',
+        'date_of_birth': s.date_of_birth,
         'department': s.department,
         'semester': s.semester,
         'section': s.section,
@@ -204,6 +203,9 @@ def profile(request):
         'backlogs': s.backlogs,
         'fee_paid': s.fee_paid,
         'fee_amount': s.fee_amount,
+        'exam_fee_paid': s.exam_fee_paid,
+        'college_fee_amount': s.college_fee_amount,
+        'college_fee_paid': s.college_fee_paid,
         'fee_due_date': s.fee_due_date,
         'face_enrolled': is_face_enrolled(s),
         'is_eligible': s.is_eligible,
@@ -583,6 +585,56 @@ def get_fees(request):
     return Response(get_fee_summary(s))
 
 
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def student_backlogs(request):
+    """List this student's backlog subjects and apply/pay status."""
+    from .backlog_service import list_student_backlogs, sync_student_backlog_count
+    from .fee_service import backlog_fee_rows
+    from .settings_service import get_default_backlog_fee
+
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    sync_student_backlog_count(s)
+    return Response({
+        'backlogs': s.backlogs,
+        'default_backlog_fee': get_default_backlog_fee(),
+        'subjects': list_student_backlogs(s),
+        'fee_rows': backlog_fee_rows(s),
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def apply_student_backlog(request, backlog_id):
+    """Apply to write a previous-semester backlog in the current exam cycle."""
+    from .backlog_service import apply_backlog, backlog_to_dict
+
+    user = getattr(request, '_jwt_user', request.user)
+    if not user or not hasattr(user, 'role') or user.role != 'student':
+        return Response({'detail': 'Student access required'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        s = Student.objects.get(user_id=user.id)
+    except Student.DoesNotExist:
+        return Response({'detail': 'Student profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    row, error = apply_backlog(s, backlog_id)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        'message': 'Applied. Pay the backlog fee from Payments / My Backlogs, then wait for admin approval.',
+        'subject': backlog_to_dict(row),
+    })
+
+
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -602,20 +654,31 @@ def pay_fee(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
-    payment, error = process_fee_payment(s, data['method'], data.get('reference', ''))
+    fee_type = data.get('fee_type', 'exam')
+    payment, error = process_fee_payment(
+        s,
+        data['method'],
+        data.get('reference', ''),
+        fee_type=fee_type,
+        exam_id=data.get('exam_id'),
+        backlog_id=data.get('backlog_id'),
+    )
     if error:
         return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
 
     s.refresh_from_db()
     summary = get_fee_summary(s)
     return Response({
-        'message': 'Payment submitted for admin verification',
+        'message': f'{fee_type.title()} fee payment submitted for admin verification',
         'transaction_id': payment.transaction_id,
+        'fee_type': fee_type,
         'fee_paid': s.fee_paid,
+        'college_fee_paid': s.college_fee_paid,
+        'exam_fee_paid': s.exam_fee_paid,
         'payment_pending': True,
         'is_eligible': s.is_eligible,
         'eligibility_percentage': s.eligibility_percentage,
-        'payment': summary['pending_payment'],
+        'payment': summary.get('pending_payment'),
     }, status=status.HTTP_201_CREATED)
 
 

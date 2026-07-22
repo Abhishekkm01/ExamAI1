@@ -5,14 +5,14 @@ import Layout from "./components/Layout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import { AdminStudents, AdminTeachers, AdminHods, AdminExams, AdminMarks, AdminEligibility, AdminHallTickets, AdminBacklogs, AdminFees, AdminNotifications, AdminAnalytics, AdminReports, AdminSettings } from "./pages/admin/AdminModules";
 import { AdminProfileSettings } from "./pages/admin/AdminProfile";
-import { TeacherDashboard, TeacherAttendance, TeacherMarks, TeacherStudents, TeacherFaceVerify } from "./pages/teacher/TeacherPages";
+import { TeacherDashboard, TeacherAttendance, TeacherTimetable, TeacherMarks, TeacherStudents, TeacherFaceVerify } from "./pages/teacher/TeacherPages";
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
 import {
-  HodDashboard, HodStudents, HodTeachers, HodExams, HodMarks, HodEligibility,
+  HodDashboard, HodStudents, HodTeachers, HodTimetable, HodExams, HodMarks, HodEligibility,
   HodBacklogs, HodFees, HodNotifications, HodAnalytics, HodReports,
 } from "./pages/hod/HodPages";
 import { HodProfile } from "./pages/hod/HodProfile";
-import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot, StudentPayments } from "./pages/student/StudentPages";
+import { StudentDashboard, StudentProfile, StudentEligibility, StudentHallTicket, StudentExams, StudentFaceVerify, StudentNotifications, StudentChatbot, StudentPayments, StudentBacklogs } from "./pages/student/StudentPages";
 import { QRVerify } from "./pages/shared/QRVerify";
 import AdminSeating from "./pages/admin/AdminSeating";
 import { FirstTimeSetup } from "./pages/Setup";
@@ -76,6 +76,7 @@ function Router() {
         <Route path="/hod" element={<HodDashboard />} />
         <Route path="/hod/students" element={<HodStudents />} />
         <Route path="/hod/teachers" element={<HodTeachers />} />
+        <Route path="/hod/timetable" element={<HodTimetable />} />
         <Route path="/hod/exams" element={<HodExams />} />
         <Route path="/hod/marks" element={<HodMarks />} />
         <Route path="/hod/eligibility" element={<HodEligibility />} />
@@ -90,6 +91,7 @@ function Router() {
       <Route element={<ProtectedRoute role="teacher"><Layout /></ProtectedRoute>}>
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/teacher/attendance" element={<TeacherAttendance />} />
+        <Route path="/teacher/timetable" element={<TeacherTimetable />} />
         <Route path="/teacher/marks" element={<TeacherMarks />} />
         <Route path="/teacher/students" element={<TeacherStudents />} />
         <Route path="/teacher/face-verify" element={<TeacherFaceVerify />} />
@@ -99,6 +101,7 @@ function Router() {
       <Route element={<ProtectedRoute role="student"><Layout /></ProtectedRoute>}>
         <Route path="/student" element={<StudentDashboard />} />
         <Route path="/student/payments" element={<StudentPayments />} />
+        <Route path="/student/backlogs" element={<StudentBacklogs />} />
         <Route path="/student/profile" element={<StudentProfile />} />
         <Route path="/student/eligibility" element={<StudentEligibility />} />
         <Route path="/student/hallticket" element={<StudentHallTicket />} />

@@ -151,6 +151,7 @@ def exam_to_dict(exam):
         'duration': exam.duration,
         'room': exam.room,
         'total_marks': exam.total_marks,
+        'fee_amount': float(getattr(exam, 'fee_amount', None) or 0),
         'requires_face_verification': exam.requires_face_verification,
         'invigilator_id': primary.get('invigilator_id'),
         'invigilator_name': primary.get('invigilator_name'),
@@ -160,21 +161,29 @@ def exam_to_dict(exam):
 
 def create_exam_record(validated_data, subjects=None):
     """Create exam with optional subjects and per-subject invigilator assignment."""
+    from .fee_service import refresh_students_fee_for_exam
+    from .settings_service import get_default_exam_fee
+
     data = dict(validated_data)
     invigilator_id = data.pop('invigilator_id', None)
     subjects_data = subjects if subjects is not None else data.pop('subjects', None)
     subjects_data = _apply_legacy_invigilator(subjects_data, invigilator_id)
     if 'room' in data:
         data['room'] = resolve_exam_room_label(data['room'])
+    if data.get('fee_amount') is None:
+        data['fee_amount'] = get_default_exam_fee()
 
     exam = Exam.objects.create(**data)
     sync_exam_subjects(exam, subjects_data)
     validate_subject_invigilators(exam)
+    refresh_students_fee_for_exam(exam)
     return exam
 
 
 def update_exam_record(exam, validated_data, subjects=None):
     """Update exam fields, subjects, and per-subject invigilators."""
+    from .fee_service import refresh_students_fee_for_exam
+
     data = dict(validated_data)
     invigilator_id = data.pop('invigilator_id', None)
     if subjects is not None:
@@ -192,4 +201,5 @@ def update_exam_record(exam, validated_data, subjects=None):
 
     validate_subject_invigilators(exam)
     exam.save()
+    refresh_students_fee_for_exam(exam)
     return exam
